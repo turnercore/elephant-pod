@@ -1,0 +1,34 @@
+{
+  "name": "elephant-ears",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Local-first, sync-capable podcast app for web, desktop, iOS, and Android via Tauri.",
+  "type": "module",
+  "workspaces": [
+    "apps/web",
+    "apps/server"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace @elephant-ears/web run dev",
+    "dev:server": "npm --workspace @elephant-ears/server run dev",
+    "build:web": "npm --workspace @elephant-ears/web run build",
+    "build:server": "npm --workspace @elephant-ears/server run build",
+    "build": "npm run build:web && npm run build:server",
+    "preview:web": "npm --workspace @elephant-ears/web run preview",
+    "start:server": "npm --workspace @elephant-ears/server run start",
+    "typecheck": "npm --workspace @elephant-ears/web run typecheck && npm --workspace @elephant-ears/server run typecheck",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "docker:build": "docker build -f apps/server/Dockerfile -t elephant-ears:local .",
+    "docker:run": "docker run --env-file .env -p 8787:8787 elephant-ears:local",
+    "supabase:start": "cd infra/supabase && docker compose up -d",
+    "supabase:stop": "cd infra/supabase && docker compose down",
+    "supabase:logs": "cd infra/supabase && docker compose logs -f --tail=100"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,30 @@
+services:
+  elephant-ears:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    container_name: elephant-ears
+    env_file:
+      - ../.env
+    environment:
+      PORT: 8787
+      WEB_DIST: apps/web/dist
+      CLIP_STORE_DIR: /app/.data/clips
+      MEDIA_STORE_DIR: /app/.data/media
+      SUPABASE_URL: ${SUPABASE_URL:-http://localhost:8000}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      PODCASTINDEX_API_KEY: ${PODCASTINDEX_API_KEY}
+      PODCASTINDEX_API_SECRET: ${PODCASTINDEX_API_SECRET}
+      PODCASTINDEX_USER_AGENT: ${PODCASTINDEX_USER_AGENT}
+      CLIP_RENDER_ENABLED: "true"
+      SILENCE_RENDER_ENABLED: "true"
+      FFMPEG_PATH: ffmpeg
+    ports:
+      - "8787:8787"
+    volumes:
+      - elephant_ears_data:/app/.data
+    restart: unless-stopped
+
+volumes:
+  elephant_ears_data:

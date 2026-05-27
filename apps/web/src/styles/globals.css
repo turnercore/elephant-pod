@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --color-canvas: 19 16 20;      /* #131014 */
+  --color-cream: 255 251 229;    /* #FFFBE5 */
+  --color-surface: 44 36 48;     /* #2C2430 */
+  --color-bone: 194 197 187;     /* #C2C5BB */
+  --color-coral: 237 106 90;     /* #ED6A5A */
+  --color-yellow: 255 230 110;   /* #FFE66E */
+  --color-mauve: 115 93 120;     /* #735D78 */
+  --color-sage: 155 193 188;     /* #9BC1BC */
+  --color-teal: 92 164 169;      /* #5CA4A9 */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgb(var(--color-mauve) / 0.18), transparent 28rem),
+    radial-gradient(circle at 90% 12%, rgb(var(--color-coral) / 0.10), transparent 24rem),
+    rgb(var(--color-canvas));
+  color: rgb(var(--color-cream));
+  font-family: 'Noto Sans', system-ui, sans-serif;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid rgb(var(--color-yellow));
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(var(--color-yellow) / 0.35);
+}
+
+.scrollbar-soft {
+  scrollbar-color: rgb(var(--color-bone) / 0.35) transparent;
+  scrollbar-width: thin;
+}
+
+.scrollbar-soft::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.scrollbar-soft::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-bone) / 0.25);
+  border-radius: 0;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.eh-card {
+  background: rgb(var(--color-surface) / 0.92);
+  border: 1px solid rgb(var(--color-bone) / 0.2);
+  border-radius: 6px;
+}
+
+.eh-title {
+  font-family: 'Noto Sans', system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.eh-brand {
+  font-family: 'DynaPuff', 'Noto Sans', system-ui, sans-serif;
+}
+
+.eh-note {
+  font-family: 'Delius', 'Noto Sans', system-ui, sans-serif;
+}
+
+.range-track {
+  accent-color: rgb(var(--color-yellow));
+}

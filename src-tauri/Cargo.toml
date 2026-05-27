@@ -1,0 +1,28 @@
+[package]
+name = "elephant-ears"
+version = "0.2.0"
+description = "Elephant Ears podcast player"
+authors = ["Elephant Hand Games"]
+edition = "2021"
+
+[lib]
+name = "elephant_ears_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-elephant-audio = { path = "plugins/tauri-plugin-elephant-audio" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread"] }
+futures-util = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

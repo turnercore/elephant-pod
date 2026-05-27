@@ -1,0 +1,98 @@
+# Server and Sync
+
+## Goals
+
+- Accounts are optional.
+- The app is useful on a single device without any backend.
+- A self-hosted server unlocks cross-device sync and public clip sharing.
+- Core playback, RSS/OPML, and local backup remain first-class in local-only mode.
+
+## Runtime sync contract
+
+The web/Tauri client keeps a local IndexedDB-first model and stores only `serverUrl` in settings.
+
+Client responsibilities:
+
+- Keep local tables as the source of truth for UI state.
+- Use authenticated server routes with an `Authorization: Bearer <token>` header.
+- Store no Supabase or PodcastIndex credentials in app settings, query params, or persisted UI config.
+
+Server responsibilities:
+
+- Validate bearer tokens from the app session.
+- Proxy all Supabase reads/writes through server env secrets.
+- Serve optional PodcastIndex discovery for logged-in users.
+- Expose auth/sync endpoints (`/api/auth/*`, `/api/sync`) for client-mediated sign-in and merge.
+
+Auth/sync contract endpoints:
+
+- `GET /api/auth/config`: validates and reports auth configuration availability.
+- `POST /api/auth/github/start`: returns a GitHub OAuth authorization URL and callback path.
+- `GET /api/auth/github/callback`: exchanges `code` when possible and returns session payload.
+- `GET /api/auth/session`: validates bearer token and returns user info.
+- `POST /api/sync`: accepts local payload and returns merged `pulledData` + merge stats.
+
+The v2 sync flow is:
+
+```text
+client local rows -> POST sync request + bearer token -> server validates token -> server reads/writes Supabase -> server resolves conflicts -> server returns merged rows + tombstones -> client applies IndexedDB updates -> local sync metadata updates
+```
+
+Current tables and entities:
+
+- `subscriptions`
+- `episodes`
+- `episode_states`
+- `clips`
+- `user_settings`
+- `sync_tombstones`
+
+## Conflict rules implemented
+
+| Data | Merge rule |
+|---|---|
+| Subscriptions | Newer `updated_at` row wins. |
+| Episodes | Newer `updated_at` row wins. |
+| Episode state | Newer `updated_at` row wins. |
+| Queue | Queue fields are part of episode state, so newer state wins. |
+| Settings | Newer settings blob wins. |
+| Clips | Newer clip row wins. |
+| Tombstones | Pulled tombstones delete matching local rows. |
+| Downloads | Not synced; every device owns its own downloaded files. |
+
+## Search contract
+
+- Local search is always available in unauthenticated mode.
+- Local search covers on-device feed and episode metadata (`title`, `description`, `podcast` fields).
+- PodcastIndex discovery/search is only available when authenticated and runs through server routes.
+
+## Public clips
+
+Public clip links use the Express server.
+
+`POST /api/clips` stores the clip, returns a public page URL, and starts an ffmpeg render job for an MP3 excerpt. If rendering fails or is disabled, the public page falls back to a source audio time-range URL.
+
+Security rules:
+
+- Do not expose private-feed credentials through public clips.
+- Do not render/share paid/private audio unless the user has rights to share it.
+- Service-role Supabase keys belong only in server env; UI code must not persist them.
+- Supabase and PodcastIndex credentials are server-only.
+- Browsers should only be configured with `VITE_API_BASE_URL` in build-time env.
+
+## Remaining sync hardening
+
+- Add paginated incremental pulls by cursor.
+- Add mutation-log table and server revisions.
+- Add per-field settings merge instead of blob merge.
+- Add queue-specific merge rules for multi-device concurrent reordering.
+- Add integration tests with two simulated devices.
+
+## Validation notes
+
+- The app should function in local-only mode with `serverUrl` unset or unreachable:
+  - RSS feed import, playback queue, OPML import/export, and backups remain usable.
+- When `serverUrl` is reachable:
+  - `GET /api/health` should return `{ "ok": true }`.
+  - A valid bearer token should return authenticated sync responses.
+  - A missing or invalid token should keep sync/search disabled and return auth-related errors.

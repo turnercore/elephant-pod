@@ -1,0 +1,10 @@
+{
+  "name": "Elephant Ears",
+  "short_name": "Ears",
+  "description": "Local-first, sync-capable podcast player.",
+  "display": "standalone",
+  "background_color": "#131014",
+  "theme_color": "#131014",
+  "start_url": "/",
+  "icons": []
+}

@@ -1,0 +1,7 @@
+ears.example.com {
+  reverse_proxy elephant-ears:8787
+}
+
+supabase.example.com {
+  reverse_proxy supabase-kong:8000
+}

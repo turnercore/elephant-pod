@@ -1,0 +1,6 @@
+<!-- Merge into generated iOS Info.plist for production mobile builds. -->
+<key>UIBackgroundModes</key>
+<array>
+  <string>audio</string>
+  <string>fetch</string>
+</array>
