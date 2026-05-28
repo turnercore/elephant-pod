@@ -2,14 +2,15 @@
 
 ## Goals
 
-- Accounts are optional.
-- The app is useful on a single device without any backend.
+- Accounts are required in the browser/web runtime because the hosted app runs through the server auth boundary.
+- Accounts are optional in Tauri/native runtime.
+- The native app is useful on a single device without any backend.
 - A self-hosted server unlocks cross-device sync and public clip sharing.
-- Core playback, RSS/OPML, and local backup remain first-class in local-only mode.
+- Core playback, RSS/OPML, and local backup remain first-class in Tauri local-only mode.
 
 ## Runtime sync contract
 
-The web/Tauri client keeps a local IndexedDB-first model and stores only `serverUrl` in settings.
+The web/Tauri client keeps a local IndexedDB-first model and stores only `serverUrl` in settings. Browser/web runtime blocks on a valid server session before exposing app actions. Tauri/native runtime can skip sign-in and use the same local store without server connectivity.
 
 Client responsibilities:
 
@@ -62,7 +63,8 @@ Current tables and entities:
 
 ## Search contract
 
-- Local search is always available in unauthenticated mode.
+- Local search is available without authentication in Tauri/native local-only mode.
+- Browser/web runtime requires authentication before local or remote search UI is available.
 - Local search covers on-device feed and episode metadata (`title`, `description`, `podcast` fields).
 - PodcastIndex discovery/search is only available when authenticated and runs through server routes.
 
@@ -90,8 +92,9 @@ Security rules:
 
 ## Validation notes
 
-- The app should function in local-only mode with `serverUrl` unset or unreachable:
+- Tauri/native runtime should function in local-only mode with `serverUrl` unset or unreachable:
   - RSS feed import, playback queue, OPML import/export, and backups remain usable.
+- Browser/web runtime should show the sign-in gate until a valid server session is present.
 - When `serverUrl` is reachable:
   - `GET /api/health` should return `{ "ok": true }`.
   - A valid bearer token should return authenticated sync responses.

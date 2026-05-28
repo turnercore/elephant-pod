@@ -53,7 +53,7 @@ Open `http://localhost:5173`.
 
 ### Server runtime contract
 
-The web/Tauri UI is client-first and local-first. It only needs a trusted server URL and does not receive Supabase or PodcastIndex secrets.
+The shared UI is IndexedDB-first and never receives Supabase or PodcastIndex secrets. Browser/web runtime is server-account gated: it requires a trusted server URL plus GitHub sign-in before use. Tauri/native runtime remains local-first and can run without a server connection or sign-in.
 
 Set these in the app server environment (example in `.env.example`):
 
@@ -75,7 +75,7 @@ Security assumptions:
 - `SUPABASE_*` and `PODCASTINDEX_*` stay server-only.
 - Client runtime variables remain public and should only include `VITE_API_BASE_URL`.
 - Server should validate and forward bearer tokens for logged-in sync/discovery calls.
-- Local mode works with zero server keys present; accounts and sync/discovery stay disabled until sign-in.
+- Tauri local mode works with zero server keys present; accounts and sync/discovery stay disabled until sign-in.
 - Server boots with `dotenv` support, so a repository-root `.env` is loaded automatically during local dev.
 
 ## Build web + server

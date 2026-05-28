@@ -7,7 +7,7 @@ React/Vite UI
   - local-first app state
   - IndexedDB/Dexie persistence
   - shared web/Tauri UI
-  - browser audio fallback
+  - browser audio fallback behind server sign-in
   - serverUrl-only backend endpoint config
 
 Tauri shell
@@ -33,6 +33,12 @@ Self-hosted Supabase
 ## Local-first model
 
 The app always writes to local IndexedDB first. Supabase sync is a second layer that can pull, merge, and push state for signed-in accounts.
+
+Runtime policy:
+
+- Browser/web runtime is account-required and blocks the app behind a server GitHub sign-in before playback, library actions, sync, or PodcastIndex discovery.
+- Tauri/native runtime remains local-first and can run without a server or account. If a server is configured and the user signs in, sync and server discovery are additive.
+- Both runtimes use local IndexedDB/Dexie app state. Tauri adds native filesystem/audio bridges where available.
 
 Local tables:
 
@@ -62,7 +68,7 @@ The plugin is registered in the Tauri shell so desktop builds degrade safely. Mo
 
 ## Server model
 
-The server is not required for basic app use. It adds:
+The server is required for the hosted browser build because that runtime is account-gated. It remains optional for Tauri/native builds. It adds:
 
 - RSS proxying to avoid browser CORS issues.
 - Static web app hosting.

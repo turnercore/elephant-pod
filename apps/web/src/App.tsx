@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Github } from 'lucide-react';
 import type { AppSettings, BackupFile, Clip, EpisodeWithState, Podcast, SectionKey } from '@/types/domain';
 import { AppShell } from '@/components/Layout/AppShell';
 import { PlayerBar } from '@/components/Player/PlayerBar';
 import { ClipComposer } from '@/components/Clips/ClipComposer';
+import { Button } from '@/components/ui/Button';
 import { InboxPage } from '@/pages/InboxPage';
 import { QueuePage } from '@/pages/QueuePage';
 import { LibraryPage } from '@/pages/LibraryPage';
@@ -15,7 +17,7 @@ import { fetchFeedThroughServer } from '@/lib/rss';
 import { exportOpml, importOpml } from '@/lib/opml';
 import { downloadEpisodeToCache } from '@/lib/storage/cache';
 import { ensureSeedData } from '@/lib/storage/db';
-import { clearServerSession, consumeAuthTokenFromCallback, isServerSessionExpired, loadServerSession, saveServerSession, type ServerSession } from '@/lib/sync/serverAuth';
+import { clearServerSession, consumeAuthTokenFromCallback, isServerSessionExpired, loadServerSession, saveServerSession, startGithubSignIn, type ServerSession } from '@/lib/sync/serverAuth';
 import {
   exportBackup,
   getSettings,
@@ -32,6 +34,7 @@ import {
   upsertParsedFeed
 } from '@/lib/storage/repository';
 import { autoDeleteAfterListen, maybeAutoDownload, pruneDownloadsOverCap } from '@/lib/features/automation';
+import { isTauriRuntime } from '@/lib/native/tauriBridge';
 
 export default function App() {
   const [active, setActive] = useState<SectionKey>('inbox');
@@ -44,6 +47,7 @@ export default function App() {
   const [serverSession, setServerSession] = useState<ServerSession | null>(null);
 
   const audio = useAudioController(settings || fallbackSettings);
+  const runtimeServerUrl = settings?.serverUrl || getBrowserRuntimeServerUrl();
 
   const refreshLocalState = useCallback(async () => {
     await ensureSeedData();
@@ -58,18 +62,18 @@ export default function App() {
   }, [refreshLocalState]);
 
   useEffect(() => {
-    if (!settings?.serverUrl) {
+    if (!runtimeServerUrl) {
       if (serverSession) setServerSession(null);
       return;
     }
     const callbackSession = consumeAuthTokenFromCallback();
     if (callbackSession) {
-      saveServerSession(settings.serverUrl, callbackSession);
+      saveServerSession(runtimeServerUrl, callbackSession);
       setServerSession(callbackSession);
       return;
     }
-    setServerSession(loadServerSession(settings.serverUrl));
-  }, [settings?.serverUrl]);
+    setServerSession(loadServerSession(runtimeServerUrl));
+  }, [runtimeServerUrl]);
 
   useEffect(() => {
     if (!settings) return;
@@ -126,14 +130,14 @@ export default function App() {
   }
 
   function handleSessionChange(nextSession: ServerSession | null) {
-    if (!settings?.serverUrl) {
+    if (!runtimeServerUrl) {
       setServerSession(null);
       return;
     }
     if (nextSession) {
-      saveServerSession(settings.serverUrl, nextSession);
+      saveServerSession(runtimeServerUrl, nextSession);
     } else {
-      clearServerSession(settings.serverUrl);
+      clearServerSession(runtimeServerUrl);
     }
     setServerSession(nextSession);
   }
@@ -153,6 +157,21 @@ export default function App() {
     setStatus(refreshed ? `Refreshed ${refreshed} feed${refreshed === 1 ? '' : 's'}.` : 'No feeds refreshed.');
     await refreshLocalState();
   }
+
+  async function handleBrowserSignIn() {
+    if (!runtimeServerUrl) {
+      setStatus('Add a server URL in Playback + Automation settings first.');
+      return;
+    }
+    try {
+      setStatus('Opening GitHub sign-in...');
+      await startGithubSignIn(runtimeServerUrl);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not start GitHub sign-in.');
+    }
+  }
+
+  const browserNeedsSignIn = Boolean(settings) && !isTauriRuntime() && (!serverSession || isServerSessionExpired(serverSession));
 
   async function handlePlay(episode: EpisodeWithState) {
     await audio.playEpisode(episode);
@@ -322,6 +341,26 @@ export default function App() {
 
   const page = (() => {
     if (!settings) return <div className="eh-card grid h-full place-items-center p-8">Loading local library…</div>;
+
+    if (browserNeedsSignIn) {
+      return (
+        <div className="eh-card grid h-full place-items-center p-8">
+          <div className="max-w-lg text-center">
+            <div className="mb-2 text-sm font-bold uppercase tracking-[0.08em] text-yellow">Server Login Required</div>
+            <h2 className="eh-title text-xl">Sign in with GitHub to continue</h2>
+            <p className="mt-2 text-sm leading-6 text-bone">
+              This web/runtime build requires a signed-in server session before playback and library actions are available.
+            </p>
+            <Button onClick={() => void handleBrowserSignIn()} className="mt-5" aria-label="Start GitHub sign-in">
+              <Github size={16} aria-hidden />
+              Sign in with GitHub
+            </Button>
+            {status && <p className="mt-4 text-sm text-yellow" role="status">{status}</p>}
+          </div>
+        </div>
+      );
+    }
+
     switch (active) {
       case 'inbox':
         return <InboxPage episodes={inboxEpisodes} feedUrl={feedUrl} setFeedUrl={setFeedUrl} onAddFeed={handleAddFeed} onRefreshFeeds={handleRefreshFeeds} handlers={handlers} />;
@@ -334,10 +373,10 @@ export default function App() {
           <SearchPage
             episodes={episodes}
             handlers={handlers}
-            canSearchRemote={Boolean(settings.serverUrl && serverSession && !isServerSessionExpired(serverSession))}
+            canSearchRemote={Boolean(runtimeServerUrl && serverSession && !isServerSessionExpired(serverSession))}
             accessToken={serverSession && !isServerSessionExpired(serverSession) ? serverSession.accessToken : null}
             onAddPodcast={handleAddFeedFromUrl}
-            serverUrl={settings.serverUrl}
+            serverUrl={runtimeServerUrl}
           />
         );
       case 'downloads':
@@ -433,6 +472,13 @@ const fallbackSettings: AppSettings = {
 
 function sortNewest(a: EpisodeWithState, b: EpisodeWithState) {
   return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+}
+
+function getBrowserRuntimeServerUrl() {
+  if (isTauriRuntime()) return '';
+  if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
+  if (typeof window !== 'undefined' && window.location.port !== '5173') return window.location.origin;
+  return 'http://localhost:8787';
 }
 
 function downloadFile(fileName: string, content: string, type: string) {

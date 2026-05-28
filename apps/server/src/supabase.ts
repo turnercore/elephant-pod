@@ -1,6 +1,27 @@
 import { createClient } from '@supabase/supabase-js';
 import type { ServerClip } from './types.js';
 
+const placeholderPattern = /^(CHANGE_ME|REPLACE_ME|TODO|PLACEHOLDER)/i;
+
+function readStringEnv(name: string) {
+  const value = process.env[name];
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function hasRealEnvValue(value?: string) {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return !placeholderPattern.test(trimmed);
+}
+
+function readBooleanEnv(name: string) {
+  const value = readStringEnv(name)?.toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
 export function getServerSupabase() {
   return createServerSupabaseClient('service');
 }
@@ -10,22 +31,33 @@ export function getServerSupabaseWithMode(mode: 'service' | 'anon') {
 }
 
 export function getServerSupabaseConfig() {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
-  const anonKey = process.env.SUPABASE_ANON_KEY;
+  const supabaseUrl = readStringEnv('SUPABASE_URL');
+  const serviceRoleKey = hasRealEnvValue(
+    readStringEnv('SUPABASE_SERVICE_ROLE_KEY') || readStringEnv('SUPABASE_SERVICE_KEY')
+  );
+  const anonKey = readStringEnv('SUPABASE_ANON_KEY');
+  const githubEnabled = readBooleanEnv('GOTRUE_EXTERNAL_GITHUB_ENABLED');
+  const githubClientId = readStringEnv('GOTRUE_EXTERNAL_GITHUB_CLIENT_ID');
+  const githubSecret = readStringEnv('GOTRUE_EXTERNAL_GITHUB_SECRET');
+  const githubRedirectUri = readStringEnv('GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI');
 
   return {
     supabaseUrl,
-    hasServiceRoleKey: Boolean(serviceRoleKey),
-    hasAnonKey: Boolean(anonKey)
+    hasServiceRoleKey: serviceRoleKey,
+    hasAnonKey: hasRealEnvValue(anonKey),
+    hasGitHubProvider: githubEnabled && hasRealEnvValue(githubClientId) && hasRealEnvValue(githubSecret) && hasRealEnvValue(githubRedirectUri)
   };
 }
 
 function createServerSupabaseClient(mode: 'service' | 'anon') {
-  const url = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
-  const anonKey = process.env.SUPABASE_ANON_KEY;
-  const key = mode === 'service' ? serviceRoleKey || anonKey : anonKey;
+  const url = readStringEnv('SUPABASE_URL');
+  const serviceRoleKey = readStringEnv('SUPABASE_SERVICE_ROLE_KEY') || readStringEnv('SUPABASE_SERVICE_KEY');
+  const anonKey = readStringEnv('SUPABASE_ANON_KEY');
+  const serviceRoleHasValue = hasRealEnvValue(serviceRoleKey);
+  const anonHasValue = hasRealEnvValue(anonKey);
+  const serviceRole = serviceRoleHasValue ? serviceRoleKey : undefined;
+  const anon = anonHasValue ? anonKey : undefined;
+  const key = mode === 'service' ? serviceRole || anon : anon;
 
   if (!url || !key) return null;
   return createClient(url, key, {

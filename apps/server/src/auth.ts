@@ -3,6 +3,8 @@ import { getServerSupabaseWithMode, getServerSupabaseConfig } from './supabase.j
 
 const authErrorMap = {
   missingConfig: 'Server auth is unavailable. Set SUPABASE_URL and SUPABASE_ANON_KEY in the server environment.',
+  missingProviderConfig:
+    'Server auth provider is unavailable. Set GOTRUE_EXTERNAL_GITHUB_ENABLED=true, GOTRUE_EXTERNAL_GITHUB_CLIENT_ID, GOTRUE_EXTERNAL_GITHUB_SECRET, and GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI in the server environment.',
   missingToken: 'Missing Authorization: Bearer <access token> header.',
   invalidToken: 'Invalid or expired access token.',
   authExchangeFailed: 'Unable to complete GitHub sign-in exchange.'
@@ -17,14 +19,16 @@ export type ServerAuthContext = {
 export function getServerAuthConfig() {
   const base = getServerSupabaseConfig();
   const isConfigured = Boolean(base.supabaseUrl && base.hasAnonKey);
+  const hasProvider = Boolean(base.hasGitHubProvider);
+  const message = isConfigured ? (hasProvider ? null : authErrorMap.missingProviderConfig) : authErrorMap.missingConfig;
 
   return {
     isConfigured,
     provider: 'github',
     hasServiceRole: base.hasServiceRoleKey,
-    hasProvider: true,
+    hasProvider,
     callbackPath: '/api/auth/github/callback',
-    message: isConfigured ? null : authErrorMap.missingConfig
+    message
   };
 }
 
@@ -125,6 +129,13 @@ export async function githubStartHandler(req: Request, res: Response) {
   if (!serverAuth.isConfigured) {
     res.status(503).json({
       error: authErrorMap.missingConfig,
+      ...serverAuth
+    });
+    return;
+  }
+  if (!serverAuth.hasProvider) {
+    res.status(503).json({
+      error: authErrorMap.missingProviderConfig,
       ...serverAuth
     });
     return;

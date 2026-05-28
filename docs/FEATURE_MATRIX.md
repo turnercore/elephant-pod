@@ -16,6 +16,8 @@
 | RSS-first/no lock-in | Implemented | Add RSS URL, OPML import/export, JSON backup. |
 | Search (local catalog) | Implemented | Local search over on-device titles/show/description without account. |
 | Search (PodcastIndex discovery) | Logged-in only | Server-mediated discovery for new feeds using PodcastIndex credentials. |
+| Browser/web runtime sign-in gate | Implemented | Non-Tauri browser builds require a valid server GitHub session before app use. |
+| Tauri/native local-only runtime | Implemented | Native builds can run without server connection or sign-in and keep local/native storage behavior. |
 | Offline downloads/streaming | Partial native-ready | Streaming works; native filesystem commands are present but need Tauri/mobile validation. |
 | Played/unplayed tracking | Implemented | Filter and sync schema. |
 | Mark all as played in show | Implemented | Library action. |

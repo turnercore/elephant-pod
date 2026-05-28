@@ -1,9 +1,10 @@
-import 'dotenv/config';
 import cors from 'cors';
+import { config as loadDotenv } from 'dotenv';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { ClipStore, clipHtml, parseClipPayload } from './clips.js';
 import { createOrGetSilenceJob, getSilenceJob, renderClipFile } from './mediaJobs.js';
@@ -12,6 +13,9 @@ import { githubCallbackHandler, githubStartHandler, getServerAuthConfig, getAuth
 import { podcastIndexBrowseHandler, podcastIndexSearchHandler } from './podcastIndex.js';
 import { syncHandler } from './sync.js';
 import { publishClipToSupabase } from './supabase.js';
+
+loadDotenv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
+loadDotenv();
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
