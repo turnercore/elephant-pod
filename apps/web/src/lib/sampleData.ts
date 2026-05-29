@@ -67,7 +67,7 @@ function episode(feed: Podcast, n: number, title: string, daysAgo: number, durat
     podcastTitle: feed.title,
     title,
     description:
-      'Demo episode with chapters, playback state, queue actions, clip sharing, and local-first persistence. Replace this seed data by adding real RSS feeds.',
+      'Demo episode with chapters, playback state, queue actions, and local-first persistence. Replace this seed data by adding real RSS feeds.',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     websiteUrl: feed.websiteUrl,
     imageUrl: feed.imageUrl,

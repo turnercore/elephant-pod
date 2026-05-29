@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import type { ServerClip, SilenceJob } from './types.js';
+import type { ServerClip, SilenceJob, SilenceMapJob, SilenceMapSegment } from './types.js';
 
 export interface MediaJobOptions {
   dataDir: string;
@@ -14,6 +14,7 @@ export interface MediaJobOptions {
 }
 
 const runningSilenceJobs = new Map<string, SilenceJob>();
+const runningSilenceMapJobs = new Map<string, SilenceMapJob>();
 
 export async function renderClipFile(clip: ServerClip, options: MediaJobOptions): Promise<Partial<ServerClip>> {
   const renderFlag = process.env.CLIP_RENDER_ENABLED ?? process.env.CLIP_RENDERING ?? 'true';
@@ -131,6 +132,67 @@ export function getSilenceJob(jobId: string): SilenceJob | null {
   return runningSilenceJobs.get(jobId) || null;
 }
 
+export interface SilenceMapRequest {
+  episodeId: string;
+  audioUrl: string;
+}
+
+export interface SilenceMapConfig {
+  thresholdDb: number;
+  minimumSilenceSec: number;
+  retainedSilenceSec: number;
+  analyzerVersion: string;
+}
+
+export function resolveSilenceMapConfig(env: NodeJS.ProcessEnv = process.env): SilenceMapConfig {
+  const thresholdDb = envNumber(env.SILENCE_THRESHOLD_DB, -42, { min: -90, max: -10, name: 'SILENCE_THRESHOLD_DB' });
+  const minimumSilenceSec = envNumber(env.SILENCE_MINIMUM_SEC, 0.7, { min: 0.1, max: 10, name: 'SILENCE_MINIMUM_SEC' });
+  const retainedSilenceSec = envNumber(env.SILENCE_RETAINED_SEC, 0.25, { min: 0, max: 5, name: 'SILENCE_RETAINED_SEC' });
+  const analyzerVersion = (env.SILENCE_ANALYZER_VERSION || 'v1').trim() || 'v1';
+  return {
+    thresholdDb,
+    minimumSilenceSec,
+    retainedSilenceSec: Math.min(retainedSilenceSec, Math.max(0, minimumSilenceSec - 0.01)),
+    analyzerVersion
+  };
+}
+
+export async function createOrGetSilenceMapJob(request: SilenceMapRequest, options: MediaJobOptions): Promise<SilenceMapJob> {
+  const config = resolveSilenceMapConfig();
+  const id = hash([request.audioUrl, config.thresholdDb, config.minimumSilenceSec, config.retainedSilenceSec, config.analyzerVersion].join('|'));
+  const mapDir = path.join(options.dataDir, 'silence-maps');
+  await fs.mkdir(mapDir, { recursive: true });
+  const outputPath = path.join(mapDir, `${id}.json`);
+
+  const persisted = await readSilenceMap(outputPath);
+  if (persisted) return { ...persisted, episodeId: request.episodeId };
+
+  const existing = runningSilenceMapJobs.get(id);
+  if (existing) return { ...existing, episodeId: request.episodeId };
+
+  const now = new Date().toISOString();
+  const job: SilenceMapJob = {
+    id,
+    episodeId: request.episodeId,
+    audioUrl: request.audioUrl,
+    status: 'queued',
+    segments: [],
+    ...config,
+    createdAt: now,
+    updatedAt: now
+  };
+  runningSilenceMapJobs.set(id, job);
+  void renderSilenceMapJob(job, outputPath, options).then((updated) => runningSilenceMapJobs.set(id, updated));
+  return job;
+}
+
+export async function getSilenceMapJob(id: string, options: MediaJobOptions): Promise<SilenceMapJob | null> {
+  const running = runningSilenceMapJobs.get(id);
+  if (running) return running;
+  const persisted = await readSilenceMap(path.join(options.dataDir, 'silence-maps', `${id}.json`));
+  return persisted;
+}
+
 async function renderSilenceJob(job: SilenceJob, options: MediaJobOptions): Promise<SilenceJob> {
   const ffmpeg = options.ffmpegPath || process.env.FFMPEG_PATH || 'ffmpeg';
   const now = new Date().toISOString();
@@ -165,7 +227,133 @@ async function renderSilenceJob(job: SilenceJob, options: MediaJobOptions): Prom
   }
 }
 
+async function renderSilenceMapJob(job: SilenceMapJob, outputPath: string, options: MediaJobOptions): Promise<SilenceMapJob> {
+  const ffmpeg = options.ffmpegPath || process.env.FFMPEG_PATH || 'ffmpeg';
+  const processing = { ...job, status: 'processing' as const, updatedAt: new Date().toISOString() };
+  runningSilenceMapJobs.set(job.id, processing);
+
+  try {
+    const stderr = await runFfmpegForOutput(
+      ffmpeg,
+      [
+        '-hide_banner',
+        '-i',
+        job.audioUrl,
+        '-af',
+        `silencedetect=noise=${job.thresholdDb}dB:d=${job.minimumSilenceSec}`,
+        '-f',
+        'null',
+        '-'
+      ],
+      options.timeoutMs || Number(process.env.SILENCE_MAP_TIMEOUT_MS || 900_000)
+    );
+    const parsed = parseSilenceDetect(stderr, job.minimumSilenceSec, job.retainedSilenceSec);
+    const ready: SilenceMapJob = {
+      ...processing,
+      status: 'ready',
+      segments: parsed.segments,
+      durationSec: parsed.durationSec,
+      updatedAt: new Date().toISOString()
+    };
+    await writeSilenceMap(outputPath, ready);
+    return ready;
+  } catch (error) {
+    const failed: SilenceMapJob = {
+      ...processing,
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'ffmpeg silence-map analysis failed.',
+      updatedAt: new Date().toISOString()
+    };
+    await writeSilenceMap(outputPath, failed).catch(() => undefined);
+    return failed;
+  }
+}
+
+export function parseSilenceDetect(stderr: string, minimumSilenceSec: number, retainedSilenceSec: number): { segments: SilenceMapSegment[]; durationSec?: number } {
+  const events: Array<{ type: 'start' | 'end'; value: number; duration?: number }> = [];
+  const startPattern = /silence_start:\s*([0-9.]+)/g;
+  const endPattern = /silence_end:\s*([0-9.]+)\s*\|\s*silence_duration:\s*([0-9.]+)/g;
+  const durationPattern = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = startPattern.exec(stderr))) {
+    events.push({ type: 'start', value: Number(match[1]) });
+  }
+  while ((match = endPattern.exec(stderr))) {
+    events.push({ type: 'end', value: Number(match[1]), duration: Number(match[2]) });
+  }
+
+  events.sort((a, b) => a.value - b.value || (a.type === 'start' ? -1 : 1));
+  const segments: SilenceMapSegment[] = [];
+  let openStart: number | null = null;
+  for (const event of events) {
+    if (event.type === 'start') {
+      openStart = Number.isFinite(event.value) ? event.value : null;
+      continue;
+    }
+    const silenceEndSec = event.value;
+    const silenceStartSec = openStart ?? (event.duration ? silenceEndSec - event.duration : NaN);
+    openStart = null;
+    if (!Number.isFinite(silenceStartSec) || !Number.isFinite(silenceEndSec)) continue;
+    const duration = silenceEndSec - silenceStartSec;
+    if (duration < minimumSilenceSec) continue;
+    const skipFromSec = roundSec(silenceStartSec + retainedSilenceSec);
+    const skipToSec = roundSec(silenceEndSec);
+    if (skipToSec <= skipFromSec) continue;
+    segments.push({
+      silenceStartSec: roundSec(silenceStartSec),
+      silenceEndSec: skipToSec,
+      skipFromSec,
+      skipToSec,
+      retainedSilenceSec: roundSec(retainedSilenceSec)
+    });
+  }
+
+  let durationSec: number | undefined;
+  while ((match = durationPattern.exec(stderr))) {
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3]);
+    if ([hours, minutes, seconds].every(Number.isFinite)) durationSec = roundSec(hours * 3600 + minutes * 60 + seconds);
+  }
+
+  return { segments: mergeSegments(segments), durationSec };
+}
+
+function mergeSegments(segments: SilenceMapSegment[]): SilenceMapSegment[] {
+  const sorted = [...segments].sort((a, b) => a.skipFromSec - b.skipFromSec);
+  const merged: SilenceMapSegment[] = [];
+  for (const segment of sorted) {
+    const previous = merged[merged.length - 1];
+    if (!previous || segment.skipFromSec > previous.skipToSec) {
+      merged.push(segment);
+      continue;
+    }
+    previous.silenceEndSec = Math.max(previous.silenceEndSec, segment.silenceEndSec);
+    previous.skipToSec = Math.max(previous.skipToSec, segment.skipToSec);
+  }
+  return merged;
+}
+
+async function readSilenceMap(outputPath: string): Promise<SilenceMapJob | null> {
+  try {
+    const content = await fs.readFile(outputPath, 'utf8');
+    const parsed = JSON.parse(content) as SilenceMapJob;
+    return parsed?.id ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSilenceMap(outputPath: string, job: SilenceMapJob): Promise<void> {
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, JSON.stringify(job, null, 2));
+}
+
 function runFfmpeg(binary: string, args: string[], timeoutMs: number): Promise<void> {
+  return runFfmpegForOutput(binary, args, timeoutMs).then(() => undefined);
+}
+
+function runFfmpegForOutput(binary: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
@@ -183,10 +371,22 @@ function runFfmpeg(binary: string, args: string[], timeoutMs: number): Promise<v
     });
     child.on('exit', (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve();
+      if (code === 0) resolve(stderr);
       else reject(new Error(stderr || `ffmpeg exited with code ${code}`));
     });
   });
+}
+
+function envNumber(value: string | undefined, fallback: number, options: { min: number; max: number; name: string }): number {
+  if (value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed >= options.min && parsed <= options.max) return parsed;
+  console.warn(`${options.name} must be a number between ${options.min} and ${options.max}; using default ${fallback}.`);
+  return fallback;
+}
+
+function roundSec(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function safeFilePart(value: string): string {

@@ -19,6 +19,7 @@ interface PlayerBarProps {
   duration: number;
   settings: AppSettings;
   currentSkipSilence: boolean;
+  canUseSilenceShortening: boolean;
   collapseToken?: number;
   onCurrentSkipSilenceChange: (enabled: boolean) => void;
   onToggle: () => void;
@@ -47,6 +48,7 @@ export function PlayerBar({
   duration,
   settings,
   currentSkipSilence,
+  canUseSilenceShortening,
   collapseToken,
   onCurrentSkipSilenceChange,
   onToggle,
@@ -197,7 +199,7 @@ export function PlayerBar({
               onOpenQueue={toggleSheet}
             />
           ) : (
-          <div className="grid w-full grid-cols-7 gap-1 md:w-auto md:justify-self-end md:gap-2">
+          <div className={cn('grid w-full gap-1 md:w-auto md:justify-self-end md:gap-2', canUseSilenceShortening ? 'grid-cols-7' : 'grid-cols-6')}>
               <IconButton label={`Skip back ${settings.skipBackSec} seconds`} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-10 w-full md:h-12 md:w-12">
                 <Rewind size={18} aria-hidden />
               </IconButton>
@@ -211,9 +213,11 @@ export function PlayerBar({
                 {formatSpeed(settings.playbackRate)}
               </IconButton>
               <SleepTimer currentTime={currentTime} duration={effectiveDuration} onExpire={onStopForSleep} className="h-10 w-full md:h-12 md:w-12" />
-              <IconButton label={currentSkipSilence ? 'Disable skip silence for this episode' : 'Enable skip silence for this episode'} onClick={() => onCurrentSkipSilenceChange(!currentSkipSilence)} disabled={!current} className="h-10 w-full md:h-12 md:w-12">
-                <Scissors size={18} aria-hidden />
-              </IconButton>
+              {canUseSilenceShortening ? (
+                <IconButton label={currentSkipSilence ? 'Disable skip silence for this episode' : 'Enable skip silence for this episode'} onClick={() => onCurrentSkipSilenceChange(!currentSkipSilence)} disabled={!current} className="h-10 w-full md:h-12 md:w-12">
+                  <Scissors size={18} aria-hidden />
+                </IconButton>
+              ) : null}
               <IconButton
                 label="Skip to next podcast"
                 onClick={() => {

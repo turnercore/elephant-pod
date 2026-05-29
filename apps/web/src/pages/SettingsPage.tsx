@@ -22,7 +22,8 @@ export function SettingsPage({
   serverTestStatus,
   serverConnectionOk,
   onSignIn,
-  showServerControls = true
+  showServerControls = true,
+  canUseSilenceShortening = false
 }: {
   settings: AppSettings;
   listeningStats?: ListeningStats | null;
@@ -40,6 +41,7 @@ export function SettingsPage({
   serverConnectionOk?: boolean;
   onSignIn: () => void;
   showServerControls?: boolean;
+  canUseSilenceShortening?: boolean;
 }) {
   return (
     <Panel title="Settings" className="h-full">
@@ -52,6 +54,7 @@ export function SettingsPage({
             onTestServer={onTestServer}
             serverTestStatus={serverTestStatus}
             showServerControls={showServerControls}
+            canUseSilenceShortening={canUseSilenceShortening}
           />
 
           <section className="grid gap-3 border-b border-bone/15 py-5">

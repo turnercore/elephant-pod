@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { ClipStore, clipHtml, parseClipPayload } from './clips.js';
-import { createOrGetSilenceJob, getSilenceJob, renderClipFile } from './mediaJobs.js';
+import { createOrGetSilenceJob, createOrGetSilenceMapJob, getSilenceJob, getSilenceMapJob, renderClipFile } from './mediaJobs.js';
 import { parseRemoteFeed } from './rss.js';
 import { githubCallbackHandler, githubStartHandler, getServerAuthConfig, getAuthSession, requireBearerAuth } from './auth.js';
 import { podcastIndexBrowseHandler, podcastIndexSearchHandler } from './podcastIndex.js';
@@ -147,6 +147,11 @@ const silenceJobSchema = z.object({
   bitRate: z.string().regex(/^\d{2,3}k$/).default('96k')
 });
 
+const silenceMapSchema = z.object({
+  episodeId: z.string().min(1),
+  audioUrl: z.string().url()
+});
+
 app.post('/api/audio/silence-shortening-jobs', async (req, res) => {
   try {
     const input = silenceJobSchema.parse(req.body);
@@ -155,6 +160,25 @@ app.post('/api/audio/silence-shortening-jobs', async (req, res) => {
   } catch (error) {
     res.status(422).json({ error: error instanceof Error ? error.message : 'Invalid silence-shortening request.' });
   }
+});
+
+app.post('/api/audio/silence-maps', requireBearerAuth(), async (req, res) => {
+  try {
+    const input = silenceMapSchema.parse(req.body);
+    const job = await createOrGetSilenceMapJob(input, { dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
+    res.status(job.status === 'ready' ? 200 : 202).json(job);
+  } catch (error) {
+    res.status(422).json({ error: error instanceof Error ? error.message : 'Invalid silence-map request.' });
+  }
+});
+
+app.get('/api/audio/silence-maps/:id', requireBearerAuth(), async (req, res) => {
+  const job = await getSilenceMapJob(String(req.params.id), { dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
+  if (!job) {
+    res.status(404).json({ error: 'Silence map not found.' });
+    return;
+  }
+  res.json(job);
 });
 
 app.get('/api/audio/silence-shortening-jobs/:id', (req, res) => {

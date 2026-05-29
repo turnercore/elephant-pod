@@ -20,7 +20,7 @@ The browser path intentionally does not attach a Web Audio analyser to the prima
 audio element for remote podcast media. Many podcast CDNs either omit CORS headers
 or return invalid duplicated CORS headers after redirects; routing those streams
 through `MediaElementAudioSourceNode` can make playback output silence. Browser
-silence shortening should use the server-rendered ffmpeg path when available.
+silence shortening uses signed-in server-generated silence maps.
 
 ## 2. Tauri/native bridge
 
@@ -44,15 +44,16 @@ silence shortening should use the server-rendered ffmpeg path when available.
 
 - rendered MP3 clip files for public sharing
 - cached silence-shortened MP3 jobs
+- signed-in silence-map analysis jobs
 
-Clip rendering uses `ffmpeg -ss`, `-t`, `-vn`, and MP3 output. Silence shortening uses ffmpeg's `silenceremove` filter and writes a cached MP3 file under the media directory.
+Clip rendering uses `ffmpeg -ss`, `-t`, `-vn`, and MP3 output. Silence maps use ffmpeg's `silencedetect` filter and cache JSON under the media directory. A segment shortens long silence rather than deleting it: by default a silence over `0.7s` keeps `0.25s` and skips the rest. These defaults are controlled by `SILENCE_THRESHOLD_DB`, `SILENCE_MINIMUM_SEC`, `SILENCE_RETAINED_SEC`, and `SILENCE_ANALYZER_VERSION`.
 
 ## Silence shortening
 
 The app exposes silence shortening as an on/off preference, not a user-selected engine mode. Runtime resolution is automatic:
 
-- Native builds use the native audio bridge when available and pass silence-shortening options through that path.
-- If a server is configured, the app can request a cached ffmpeg `silenceremove` render and use it when ready.
+- Signed-in server builds can request cached ffmpeg `silencedetect` maps and use them when ready.
+- Native builds do not analyze silence locally in this pass; native audio remains focused on platform media playback.
 - Web playback does not run low-RMS Web Audio analysis on the primary audio element because cross-origin podcast audio can be silenced by browser CORS protections.
 
 Playback telemetry records real listening time, content time heard, estimated speed-up savings, and estimated silence-skip savings in local profile stats.

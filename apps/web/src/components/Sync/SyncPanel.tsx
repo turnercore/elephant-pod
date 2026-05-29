@@ -59,8 +59,8 @@ export function SyncPanel({
         </div>
         <p className="text-sm leading-6 text-bone">
           {hostedWebRuntime
-            ? 'This hosted web app uses its own server for sign-in, search, public clips, and sync.'
-            : 'Sign-in is optional. Without it, the app uses only local IndexedDB. With a configured server URL and GitHub session, subscriptions, queue, settings, progress, played state, and clips sync automatically through the app server.'}
+            ? 'This hosted web app uses its own server for sign-in, search, and sync.'
+            : 'Sign-in is optional. Without it, the app uses only local IndexedDB. With a configured server URL and GitHub session, subscriptions, queue, settings, progress, and played state sync automatically through the app server.'}
         </p>
       </div>
       <div className="grid gap-2 rounded-eh border border-bone/15 bg-canvas/30 p-4">

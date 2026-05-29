@@ -35,7 +35,7 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - `src-tauri/mobile/ios/ElephantPodAudioPlugin.swift`: AVAudioSession / AVPlayer / MPRemoteCommandCenter implementation reference.
 - `src-tauri/mobile/android/.../ElephantPodAudioPlugin.kt` and `ElephantPodPlaybackService.kt`: Android Media3 / ExoPlayer / MediaSessionService reference.
 - `apps/server/src/mediaJobs.ts`: ffmpeg clip rendering and silence-shortening jobs.
-- `apps/web/src/lib/audio/serverSilence.ts`: frontend handoff to server-rendered silence-shortened audio.
+- `apps/web/src/lib/audio/silenceMaps.ts`: frontend handoff to signed-in server-generated silence maps.
 - `apps/web/src/lib/sync/syncEngine.ts`: bidirectional Supabase sync with merge conflict accounting.
 - `infra/docker-compose.yml`: local Postgres plus Elephant Pod server for local development.
 - `.github/workflows/publish-container.yml`: GitHub-hosted build-and-push flow for the server image.
@@ -73,6 +73,7 @@ Set these in the app server environment (example in `.env.example`):
 - `GOTRUE_EXTERNAL_GITHUB_SECRET`
 - `GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI`
 - `SITE_URL` and `API_EXTERNAL_URL` for Supabase auth redirects/hosting expectations
+- `SILENCE_THRESHOLD_DB`, `SILENCE_MINIMUM_SEC`, `SILENCE_RETAINED_SEC`, and `SILENCE_ANALYZER_VERSION` for signed-in server silence-map analysis defaults
 
 Security assumptions:
 

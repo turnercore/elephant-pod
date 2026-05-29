@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import type { AppSettings, EpisodeWithState, PodcastPreference } from '@/types/domain';
 import { getCachedEpisodeUrl } from '../storage/cache';
 import { isTauriRuntime, listenNativeMediaCommands, nativeClearAudioSession, nativePlaybackState, nativeSetSilenceShortening } from '../native/tauriBridge';
 import { getNativeAudioStatus, pauseNativeAudio, playNativeAudio, prepareNativeAudio, seekNativeAudio, setNativeAudioRate, stopNativeAudio } from '../native/nativeAudio';
-import { maybePrepareServerSilenceShortenedUrl } from './serverSilence';
+import { ensureServerSilenceMap, getCachedReadySilenceMap } from './silenceMaps';
 import { shouldUseNativeAudio } from '../runtime';
+import type { SilenceMap } from '@/types/domain';
 
 const RESUME_REWIND_AFTER_MS = 30_000;
 
@@ -24,12 +25,14 @@ export interface AudioController {
   silenceSupported: boolean;
 }
 
-export function useAudioController(settings: AppSettings, podcastPreferences: PodcastPreference[] = [], episodeSilenceOverrides: Record<string, boolean> = {}): AudioController {
+export function useAudioController(settings: AppSettings, podcastPreferences: PodcastPreference[] = [], episodeSilenceOverrides: Record<string, boolean> = {}, serverAccessToken?: string | null): AudioController {
   const audioRef = useRef<HTMLAudioElement>(null);
   const nativeActiveRef = useRef(false);
   const [nativeActive, setNativeActive] = useState(false);
   const [current, setCurrent] = useState<EpisodeWithState | null>(null);
   const currentRef = useRef<EpisodeWithState | null>(null);
+  const silenceMapRef = useRef<SilenceMap | null>(null);
+  const lastSilenceSkipRef = useRef<{ episodeId: string; skipFromSec: number; skippedAtMs: number } | null>(null);
   const outroCompletedEpisodeRef = useRef<string | null>(null);
   const pausedAtRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -72,7 +75,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     const audio = audioRef.current;
     if (audio) audio.playbackRate = resolved.playbackRate;
 
-    setSilenceSupported(Boolean(resolved.silenceShortening && nativeActiveRef.current));
+    setSilenceSupported(Boolean(resolved.silenceShortening && (nativeActiveRef.current || silenceMapRef.current?.status === 'ready')));
 
     if (nativeActiveRef.current) void setNativeAudioRate(resolved.playbackRate);
 
@@ -92,12 +95,29 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
 
   const resolveEpisodeUrl = useCallback(
     async (episode: EpisodeWithState) => {
-      const shortened = await maybePrepareServerSilenceShortenedUrl(episode, effectiveSettings()).catch(() => null);
-      if (shortened) return shortened;
       return getCachedEpisodeUrl(episode);
     },
-    [effectiveSettings]
+    []
   );
+
+  const refreshSilenceMap = useCallback(async (episode: EpisodeWithState) => {
+    const resolved = effectiveSettings();
+    if (!resolved.silenceShortening || !resolved.serverUrl || !serverAccessToken) {
+      silenceMapRef.current = null;
+      setSilenceSupported(false);
+      return null;
+    }
+    const cached = await getCachedReadySilenceMap(episode);
+    if (cached) {
+      silenceMapRef.current = cached;
+      setSilenceSupported(cached.segments.length > 0);
+      return cached;
+    }
+    const map = await ensureServerSilenceMap(episode, resolved.serverUrl, serverAccessToken);
+    silenceMapRef.current = map?.status === 'ready' ? map : null;
+    setSilenceSupported(Boolean(map?.status === 'ready' && map.segments.length > 0));
+    return map;
+  }, [effectiveSettings, serverAccessToken]);
 
   const setNativeActiveFlag = useCallback((active: boolean) => {
     nativeActiveRef.current = active;
@@ -121,7 +141,10 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         : Math.max(progressSec > 0 ? Math.max(0, progressSec - resolved.resumeRewindSec) : 0, introOffset);
 
       setCurrent(episode);
+      silenceMapRef.current = null;
+      lastSilenceSkipRef.current = null;
       pausedAtRef.current = null;
+      void refreshSilenceMap(episode);
 
       if (shouldUseNativeAudio() && resolved.nativeAudioPreferred) {
         if (wasSameEpisode && nativeActiveRef.current) {
@@ -157,7 +180,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       await audio.play();
       setIsPlaying(true);
     },
-    [applyPlaybackSettings, effectiveSettings, resolveEpisodeUrl, setNativeActiveFlag]
+    [applyPlaybackSettings, effectiveSettings, refreshSilenceMap, resolveEpisodeUrl, setNativeActiveFlag]
   );
 
   const toggle = useCallback(async () => {
@@ -256,6 +279,12 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         if (!status) return;
         const positionSec = status.positionSec || 0;
         const durationSec = status.durationSec || currentRef.current?.durationSec || 0;
+        const skipped = maybeSkipSilenceSegment(positionSec, (target) => {
+          setCurrentTime(target);
+          currentTimeRef.current = target;
+          void seekNativeAudio(target);
+        }, currentRef.current, silenceMapRef.current, lastSilenceSkipRef);
+        if (skipped) return;
         setCurrentTime(positionSec);
         currentTimeRef.current = positionSec;
         setDuration(durationSec);
@@ -287,6 +316,11 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     const onTime = () => {
       if (nativeActiveRef.current) return;
       setCurrentTime(audio.currentTime);
+      maybeSkipSilenceSegment(audio.currentTime, (target) => {
+        audio.currentTime = target;
+        setCurrentTime(target);
+        currentTimeRef.current = target;
+      }, currentRef.current, silenceMapRef.current, lastSilenceSkipRef);
       const resolved = effectiveSettings();
       const currentEpisodeId = currentRef.current?.id;
       const durationSec = Number.isFinite(audio.duration) ? audio.duration : currentRef.current?.durationSec || 0;
@@ -343,6 +377,17 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
   }, [effectiveSettings]);
 
   useEffect(() => {
+    const episode = currentRef.current;
+    if (!episode) return;
+    const resolved = effectiveSettings();
+    if (!resolved.silenceShortening || !resolved.serverUrl || !serverAccessToken) return;
+    const timer = window.setInterval(() => {
+      void refreshSilenceMap(episode);
+    }, 12_000);
+    return () => window.clearInterval(timer);
+  }, [effectiveSettings, refreshSilenceMap, serverAccessToken, current?.id]);
+
+  useEffect(() => {
     void listenNativeMediaCommands((command) => {
       if (command.command === 'play' || command.command === 'toggle') void toggle();
       if (command.command === 'pause') {
@@ -359,6 +404,23 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
   }, [seek, settings.skipBackSec, settings.skipForwardSec, skipBy, toggle]);
 
   return { audioRef, current, isPlaying, currentTime, duration, volume, setVolume, playEpisode, toggle, seek, skipBy, stop, silenceSupported };
+}
+
+function maybeSkipSilenceSegment(
+  positionSec: number,
+  seekTo: (targetSec: number) => void,
+  episode: EpisodeWithState | null,
+  map: SilenceMap | null,
+  lastSkipRef: MutableRefObject<{ episodeId: string; skipFromSec: number; skippedAtMs: number } | null>
+): boolean {
+  if (!episode || map?.status !== 'ready') return false;
+  const segment = map.segments.find((candidate) => positionSec >= candidate.skipFromSec && positionSec < candidate.skipToSec - 0.05);
+  if (!segment) return false;
+  const last = lastSkipRef.current;
+  if (last && last.episodeId === episode.id && last.skipFromSec === segment.skipFromSec && Date.now() - last.skippedAtMs < 1500) return false;
+  lastSkipRef.current = { episodeId: episode.id, skipFromSec: segment.skipFromSec, skippedAtMs: Date.now() };
+  seekTo(segment.skipToSec);
+  return true;
 }
 
 function shouldResumeRewind(pausedAt: number | null): boolean {

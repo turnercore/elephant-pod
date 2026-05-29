@@ -139,7 +139,7 @@ export function NavigationRail({
             >
               {hasSession ? (
                 <>
-                  <p className="text-xs leading-5 text-bone">Signed in with GitHub. Sync, search, and clip publishing can use the server.</p>
+                  <p className="text-xs leading-5 text-bone">Signed in with GitHub. Sync and search can use the server.</p>
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -155,7 +155,7 @@ export function NavigationRail({
               ) : (
                 <>
                   <p className="text-xs leading-5 text-bone">
-                    {hasServer ? 'Use GitHub sign-in to unlock sync, search, and public clips.' : hostedWebRuntime ? 'Server sign-in is unavailable.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
+                    {hasServer ? 'Use GitHub sign-in to unlock sync and search.' : hostedWebRuntime ? 'Server sign-in is unavailable.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
                   </p>
                   <Button
                     variant="primary"
@@ -194,7 +194,7 @@ export function NavigationRail({
           {profileOpen && (
             <div id={profileMobileMenuId} role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-[220px] rounded-eh border border-bone/15 bg-canvas/95 p-3 shadow-xl shadow-black/30">
               <p className="text-xs leading-5 text-bone">
-                {hasSession ? 'Signed in with GitHub. Sync, search, and clip publishing can use the server.' : hasServer ? 'Use GitHub sign-in to unlock sync, search, and public clips.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
+                {hasSession ? 'Signed in with GitHub. Sync and search can use the server.' : hasServer ? 'Use GitHub sign-in to unlock sync and search.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
               </p>
               <div className="mt-3 grid gap-2">
                 {hasSession ? (
@@ -307,7 +307,7 @@ export function MobileNavigationRail({
       {profileOpen ? (
         <div id={profileMenuId} role="menu" className="absolute right-2 top-full z-30 mt-2 w-[240px] rounded-eh border border-bone/15 bg-canvas/95 p-3 shadow-xl shadow-black/40">
           <p className="text-xs leading-5 text-bone">
-            {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Use GitHub sign-in to unlock sync, search, and public clips.' : hostedWebRuntime ? 'Server sign-in is unavailable.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
+            {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Use GitHub sign-in to unlock sync and search.' : hostedWebRuntime ? 'Server sign-in is unavailable.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
           </p>
           <div className="mt-3 grid gap-2">
             {hasSession ? (

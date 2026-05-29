@@ -34,3 +34,27 @@ export interface SilenceJob {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface SilenceMapSegment {
+  silenceStartSec: number;
+  silenceEndSec: number;
+  skipFromSec: number;
+  skipToSec: number;
+  retainedSilenceSec: number;
+}
+
+export interface SilenceMapJob {
+  id: string;
+  episodeId: string;
+  audioUrl: string;
+  status: 'queued' | 'processing' | 'ready' | 'failed';
+  segments: SilenceMapSegment[];
+  durationSec?: number;
+  thresholdDb: number;
+  minimumSilenceSec: number;
+  retainedSilenceSec: number;
+  analyzerVersion: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -12,7 +12,8 @@ export function SettingsPanel({
   onChange,
   onTestServer,
   serverTestStatus,
-  showServerControls = true
+  showServerControls = true,
+  canUseSilenceShortening = false
 }: {
   settings: AppSettings;
   stats?: ListeningStats | null;
@@ -20,10 +21,8 @@ export function SettingsPanel({
   onTestServer?: () => void;
   serverTestStatus?: string;
   showServerControls?: boolean;
+  canUseSilenceShortening?: boolean;
 }) {
-  const thresholdDb = settings.silenceThresholdDb ?? -42;
-  const boostRate = settings.silenceBoostRate ?? 2.15;
-  const minSilence = settings.silenceMinimumDurationSec ?? 0.35;
   const topPodcasts = Object.values(stats?.byPodcast || {}).sort((a, b) => b.listeningSec - a.listeningSec).slice(0, 3);
 
   return (
@@ -110,36 +109,11 @@ export function SettingsPanel({
         )}
       </SettingsSection>
 
-      <SettingsSection title="Silence Shortening">
-        <Switch label="Silence shortening" checked={settings.silenceShortening} onCheckedChange={(checked) => onChange({ ...settings, silenceShortening: checked })} description="Automatically uses the best available runtime path." />
-        <Slider
-          label="Silence threshold"
-          valueLabel={`${thresholdDb} dB`}
-          min={-70}
-          max={-25}
-          step={1}
-          value={thresholdDb}
-          onChange={(event) => onChange({ ...settings, silenceThresholdDb: Number(event.currentTarget.value) })}
-        />
-        <Slider
-          label="Minimum silence span"
-          valueLabel={`${minSilence.toFixed(2)}s`}
-          min={0.1}
-          max={2}
-          step={0.05}
-          value={minSilence}
-          onChange={(event) => onChange({ ...settings, silenceMinimumDurationSec: Number(event.currentTarget.value) })}
-        />
-        <Slider
-          label="Silence boost rate"
-          valueLabel={`${boostRate.toFixed(2)}x`}
-          min={1.25}
-          max={3}
-          step={0.05}
-          value={boostRate}
-          onChange={(event) => onChange({ ...settings, silenceBoostRate: Number(event.currentTarget.value) })}
-        />
-      </SettingsSection>
+      {canUseSilenceShortening ? (
+        <SettingsSection title="Silence Shortening">
+          <Switch label="Silence shortening" checked={settings.silenceShortening} onCheckedChange={(checked) => onChange({ ...settings, silenceShortening: checked })} description="Uses signed-in server analysis with server-managed defaults." />
+        </SettingsSection>
+      ) : null}
 
       {showServerControls ? (
         <SettingsSection title="Server">

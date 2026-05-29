@@ -24,7 +24,8 @@ export function PodcastDetailPage({
   onSendAllUnplayedToInbox,
   onMarkAllPlayed,
   onMarkAllUnplayed,
-  handlers
+  handlers,
+  canUseSilenceShortening = false
 }: {
   podcast: CachedPodcast;
   subscribed: boolean;
@@ -38,6 +39,7 @@ export function PodcastDetailPage({
   onMarkAllPlayed: () => void;
   onMarkAllUnplayed: () => void;
   handlers: EpisodeHandlers;
+  canUseSilenceShortening?: boolean;
 }) {
   const [filter, setFilter] = useState<'all' | 'played' | 'unplayed'>('all');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -146,7 +148,7 @@ export function PodcastDetailPage({
               </label>
               <div className="grid gap-2 text-xs font-bold uppercase tracking-[0.05em] text-bone md:col-span-2 xl:col-span-4">
                 {subscribed ? <Switch checked={preference.addNewEpisodesToInbox} onCheckedChange={(checked) => onPreferenceChange({ ...preference, addNewEpisodesToInbox: checked })} label="New episodes to Inbox" /> : null}
-                <Switch checked={preference.silenceShortening ?? false} onCheckedChange={(checked) => onPreferenceChange({ ...preference, silenceShortening: checked })} label="Skip silence" />
+                {canUseSilenceShortening ? <Switch checked={preference.silenceShortening ?? false} onCheckedChange={(checked) => onPreferenceChange({ ...preference, silenceShortening: checked })} label="Skip silence" /> : null}
               </div>
               <div className="grid gap-2 md:col-span-2 xl:col-span-4">
                 <ConfirmActionButton

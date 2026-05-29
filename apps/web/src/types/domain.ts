@@ -118,6 +118,32 @@ export interface Clip {
   updatedAt: string;
 }
 
+export interface SilenceMapSegment {
+  silenceStartSec: number;
+  silenceEndSec: number;
+  skipFromSec: number;
+  skipToSec: number;
+  retainedSilenceSec: number;
+}
+
+export interface SilenceMap {
+  id: string;
+  episodeId: string;
+  audioUrl: string;
+  status: 'queued' | 'processing' | 'ready' | 'failed';
+  segments: SilenceMapSegment[];
+  durationSec?: number;
+  thresholdDb: number;
+  minimumSilenceSec: number;
+  retainedSilenceSec: number;
+  analyzerVersion: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastRequestedAt?: string;
+  lastCheckedAt?: string;
+}
+
 export interface AppSettings {
   id: 'local';
   skipForwardSec: number;

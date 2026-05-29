@@ -69,12 +69,20 @@ Download-related settings such as queued auto-download, inbox auto-download, del
 
 Listening stats are also local-only. They are profile facts on the device and can be exported in JSON backup, but they are not currently merged through Supabase/server sync.
 
+Silence maps are server-derived cache data. They are created through signed-in server endpoints, cached locally in IndexedDB, and not merged through Supabase/server sync.
+
 ## Search contract
 
 - Local search is available without authentication in Tauri/native local-only mode.
 - Browser/web runtime requires authentication before local or remote search UI is available.
 - Local search covers on-device feed and episode metadata (`title`, `description`, `podcast` fields).
 - PodcastIndex discovery/search is only available when authenticated and runs through server routes.
+
+## Silence maps
+
+`POST /api/audio/silence-maps` and `GET /api/audio/silence-maps/:id` require `Authorization: Bearer <token>`.
+
+The server uses ffmpeg `silencedetect` and server env defaults to create map segments. Defaults are `SILENCE_THRESHOLD_DB=-42`, `SILENCE_MINIMUM_SEC=0.7`, `SILENCE_RETAINED_SEC=0.25`, and `SILENCE_ANALYZER_VERSION=v1`. Segments shorten long silences by keeping the retained portion and skipping the rest.
 
 ## Public clips
 

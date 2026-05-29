@@ -1,4 +1,4 @@
-import type { AppSettings, BackupFile, CachedPodcast, Clip, Episode, EpisodeState, EpisodeWithState, ListeningStats, Podcast, PodcastPreference, ParsedFeedResult, SortDirection } from '@/types/domain';
+import type { AppSettings, BackupFile, CachedPodcast, Clip, Episode, EpisodeState, EpisodeWithState, ListeningStats, Podcast, PodcastPreference, ParsedFeedResult, SilenceMap, SortDirection } from '@/types/domain';
 import { nowIso } from '../dates';
 import { defaultStateFor } from '../sampleData';
 import { db } from './db';
@@ -105,6 +105,30 @@ export async function listCachedEpisodes(podcastId?: string): Promise<EpisodeWit
 
 export async function listClips(): Promise<Clip[]> {
   return db.clips.orderBy('createdAt').reverse().toArray();
+}
+
+export async function getReadySilenceMap(episodeId: string, audioUrl: string): Promise<SilenceMap | null> {
+  const maps = await db.silenceMaps.where('episodeId').equals(episodeId).toArray();
+  return maps
+    .filter((map) => map.audioUrl === audioUrl && map.status === 'ready' && map.segments.length > 0)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0] || null;
+}
+
+export async function getSilenceMapForEpisode(episodeId: string, audioUrl: string): Promise<SilenceMap | null> {
+  const maps = await db.silenceMaps.where('episodeId').equals(episodeId).toArray();
+  return maps
+    .filter((map) => map.audioUrl === audioUrl)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0] || null;
+}
+
+export async function saveSilenceMap(map: SilenceMap): Promise<void> {
+  await db.silenceMaps.put({ ...map, updatedAt: map.updatedAt || nowIso() });
+}
+
+export async function markSilenceMapChecked(mapId: string): Promise<void> {
+  const existing = await db.silenceMaps.get(mapId);
+  if (!existing) return;
+  await db.silenceMaps.put({ ...existing, lastCheckedAt: nowIso() });
 }
 
 export async function upsertParsedFeed(result: ParsedFeedResult): Promise<void> {

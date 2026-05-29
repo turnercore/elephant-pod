@@ -57,6 +57,8 @@ Per-podcast preferences are keyed by podcast/feed id. They can override speed, s
 
 Listening stats are local profile facts stored in `listeningStats`: real time spent listening, podcast content time heard, per-podcast listening totals, estimated time saved by speed, and estimated time saved by silence skipping. They are exported in JSON backups but are not part of server sync.
 
+Silence maps are derived cache facts. Signed-in server analysis creates maps for playback, clients cache them locally, and maps are not part of Supabase sync.
+
 Downloaded episode storage is device-local. Automatic queued downloads are enabled by default in Tauri/native builds; browser builds only auto-download same-origin media because most podcast CDNs block cross-origin `fetch()` even when an `<audio>` element can play the stream. Optional inbox downloads are lower priority. Delete-after-listen is enabled by default and treats an episode as inactive once it is no longer in Queue or Inbox; inactive non-favorite downloads are removed. Manual downloads are tagged locally so they can remain while active, then follow the same delete-after-listen/favorite retention rule once played, dismissed, or removed from the triage stack. Storage pruning preserves downloads in this order:
 
 1. Favorited episodes.
@@ -85,7 +87,7 @@ The server is required for the hosted browser build because that runtime is acco
 - Static web app hosting.
 - Public clip pages.
 - Rendered MP3 clip files via ffmpeg.
-- Silence-shortened MP3 render jobs via ffmpeg.
+- Signed-in silence-map analysis jobs via ffmpeg.
 - Sync/search mediation layer (server validates auth and calls Supabase/PodcastIndex)
 
 Future server jobs should include:

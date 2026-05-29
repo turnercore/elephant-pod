@@ -1,4 +1,4 @@
-import { ArchiveX, Check, Download, Inbox, ListEnd, ListStart, MoreHorizontal, Pause, Play, RotateCcw, Scissors, Star } from 'lucide-react';
+import { ArchiveX, Check, Download, Inbox, ListEnd, ListStart, MoreHorizontal, Pause, Play, RotateCcw, Star } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
 import { formatDate, formatDuration } from '@/lib/dates';
@@ -16,7 +16,6 @@ interface EpisodeCardProps {
   onDismiss?: (episode: EpisodeWithState) => void;
   onDownload?: (episode: EpisodeWithState) => void;
   onTogglePlayed: (episode: EpisodeWithState) => void;
-  onClip?: (episode: EpisodeWithState) => void;
   onOpenEpisode?: (episode: EpisodeWithState) => void;
   onOpenPodcast?: (podcastId: string) => void;
   podcastImageUrl?: string;
@@ -35,7 +34,6 @@ export function EpisodeCard({
   onDismiss,
   onDownload,
   onTogglePlayed,
-  onClip,
   onOpenEpisode,
   onOpenPodcast,
   podcastImageUrl,
@@ -131,11 +129,6 @@ export function EpisodeCard({
           {onDownload ? (
             <IconButton label="Download" onClick={() => onDownload(episode)} active={episode.state.downloaded} className="h-9 w-full">
               <Download size={16} aria-hidden />
-            </IconButton>
-          ) : null}
-          {onClip ? (
-            <IconButton label="Create clip" onClick={() => onClip(episode)} className="h-9 w-full">
-              <Scissors size={16} aria-hidden />
             </IconButton>
           ) : null}
           {onSendInbox ? (

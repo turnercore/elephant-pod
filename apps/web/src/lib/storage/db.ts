@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { AppSettings, CachedPodcast, Clip, Episode, EpisodeState, ListeningStats, Podcast, PodcastPreference, SyncMeta, SyncTombstone } from '@/types/domain';
+import type { AppSettings, CachedPodcast, Clip, Episode, EpisodeState, ListeningStats, Podcast, PodcastPreference, SilenceMap, SyncMeta, SyncTombstone } from '@/types/domain';
 import { defaultSettings, defaultStateFor, demoEpisodes, demoPodcasts } from '../sampleData';
 import { nowIso } from '../dates';
 
@@ -15,6 +15,7 @@ export class ElephantPodDatabase extends Dexie {
   cachedEpisodes!: Table<Episode, string>;
   podcastPreferences!: Table<PodcastPreference, string>;
   listeningStats!: Table<ListeningStats, string>;
+  silenceMaps!: Table<SilenceMap, string>;
 
   constructor() {
     super('elephant-pod');
@@ -152,6 +153,20 @@ export class ElephantPodDatabase extends Dexie {
         nativeAudioPreferred: settings.nativeAudioPreferred ?? defaultSettings.nativeAudioPreferred,
         updatedAt: settings.updatedAt || nowIso()
       });
+    });
+    this.version(9).stores({
+      feeds: 'id, feedUrl, title, updatedAt',
+      episodes: 'id, podcastId, podcastTitle, publishedAt, title, guid, updatedAt',
+      states: 'episodeId, played, inboxState, inboxPosition, queuePosition, downloaded, downloadedAt, updatedAt',
+      clips: 'id, episodeId, createdAt, updatedAt, renderStatus',
+      settings: 'id, updatedAt',
+      syncMeta: 'id, deviceId, updatedAt',
+      tombstones: 'id, tableName, localId, deletedAt, pushedAt',
+      podcastCache: 'id, feedUrl, title, cachedAt, cacheExpiresAt, updatedAt',
+      cachedEpisodes: 'id, podcastId, podcastTitle, publishedAt, title, guid, updatedAt',
+      podcastPreferences: 'podcastId, updatedAt',
+      listeningStats: 'id, updatedAt',
+      silenceMaps: 'id, episodeId, audioUrl, status, updatedAt, lastRequestedAt, lastCheckedAt'
     });
   }
 }

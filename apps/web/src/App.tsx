@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Github } from 'lucide-react';
-import type { AppSettings, BackupFile, CachedPodcast, Clip, EpisodeWithState, ListeningStats, Podcast, PodcastPreference, SectionKey } from '@/types/domain';
+import type { AppSettings, BackupFile, CachedPodcast, EpisodeWithState, ListeningStats, Podcast, PodcastPreference, SectionKey } from '@/types/domain';
 import { AppShell } from '@/components/Layout/AppShell';
 import { PlayerBar } from '@/components/Player/PlayerBar';
-import { ClipComposer } from '@/components/Clips/ClipComposer';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { InboxPage } from '@/pages/InboxPage';
@@ -16,6 +15,7 @@ import { HistoryPage } from '@/pages/HistoryPage';
 import { DownloadsPage } from '@/pages/DownloadsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { useAudioController } from '@/lib/audio/useAudioController';
+import { prefetchServerSilenceMaps } from '@/lib/audio/silenceMaps';
 import { nowIso } from '@/lib/dates';
 import { fetchFeedThroughServer } from '@/lib/rss';
 import { exportOpml, importOpml } from '@/lib/opml';
@@ -44,7 +44,6 @@ import {
   playEpisodeAtQueueTop,
   removeFromQueue,
   reorderQueue,
-  saveClip,
   saveSettings,
   savePodcastPreference,
   sendAllUnplayedToInbox,
@@ -82,7 +81,6 @@ export default function App() {
   const [status, setStatus] = useState('');
   const [serverTestStatus, setServerTestStatus] = useState('');
   const [serverConnectionOk, setServerConnectionOk] = useState(false);
-  const [clipEpisode, setClipEpisode] = useState<EpisodeWithState | null>(null);
   const [serverSession, setServerSession] = useState<ServerSession | null>(null);
   const telemetryRef = useRef<{ episodeId: string; mediaAt: number; wallAt: number } | null>(null);
   const profileHydrationRef = useRef<string | null>(null);
@@ -97,7 +95,9 @@ export default function App() {
     }),
     [runtimeServerUrl, settings]
   );
-  const audio = useAudioController(runtimeSettings, podcastPreferences, episodeSilenceOverrides);
+  const serverAccessToken = serverSession && !isServerSessionExpired(serverSession) ? serverSession.accessToken : null;
+  const canUseServerSilence = Boolean(runtimeServerUrl && serverAccessToken);
+  const audio = useAudioController(runtimeSettings, podcastPreferences, episodeSilenceOverrides, serverAccessToken);
 
   function navigateTo(snapshot: ViewSnapshot) {
     setPlayerCollapseToken((token) => token + 1);
@@ -271,6 +271,18 @@ export default function App() {
     () => knownEpisodes.filter((episode) => episode.state.queuePosition).sort((a, b) => (a.state.queuePosition || 0) - (b.state.queuePosition || 0)),
     [knownEpisodes]
   );
+
+  useEffect(() => {
+    if (!settings || !canUseServerSilence) return;
+    const candidates = [
+      ...(audio.current ? [audio.current] : []),
+      ...queueEpisodes.filter((episode) => episode.id !== audio.current?.id).slice(0, 3),
+      ...inboxEpisodes.slice(0, 3)
+    ];
+    const relevant = candidates.filter((episode) => episodeSilenceOverrides[episode.id] ?? podcastPreferences.find((preference) => preference.podcastId === episode.podcastId)?.silenceShortening ?? settings.silenceShortening);
+    if (!relevant.length) return;
+    void prefetchServerSilenceMaps(relevant, runtimeServerUrl, serverAccessToken);
+  }, [audio.current?.id, canUseServerSilence, episodeSilenceOverrides, inboxEpisodes, podcastPreferences, queueEpisodes, runtimeServerUrl, serverAccessToken, settings]);
 
   const selectedPodcast = useMemo(() => selectedPodcastId ? cachedPodcasts.find((podcast) => podcast.id === selectedPodcastId) : null, [cachedPodcasts, selectedPodcastId]);
   const selectedPodcastEpisodes = useMemo(() => selectedPodcastId ? knownEpisodes.filter((episode) => episode.podcastId === selectedPodcastId) : [], [knownEpisodes, selectedPodcastId]);
@@ -565,47 +577,6 @@ export default function App() {
     }
   }
 
-  async function handleSaveClip(clip: Clip): Promise<Clip> {
-    let saved = clip;
-    const serverUrl = runtimeServerUrl?.replace(/\/$/, '');
-    if (serverUrl) {
-      try {
-        const response = await fetch(`${serverUrl}/api/clips`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(clip)
-        });
-        if (response.ok) {
-          const payload = (await response.json()) as {
-            id: string;
-            publicUrl: string;
-            renderedAudioUrl?: string;
-            renderedVideoUrl?: string;
-            renderStatus?: Clip['renderStatus'];
-            renderError?: string;
-            fileSizeBytes?: number;
-          };
-          saved = {
-            ...clip,
-            serverClipId: payload.id,
-            publicUrl: payload.publicUrl,
-            renderedAudioUrl: payload.renderedAudioUrl,
-            renderedVideoUrl: payload.renderedVideoUrl,
-            renderStatus: payload.renderStatus || 'pending',
-            renderError: payload.renderError,
-            fileSizeBytes: payload.fileSizeBytes,
-            updatedAt: nowIso()
-          };
-        }
-      } catch {
-        // Keep local clip even if server publication fails.
-      }
-    }
-    await saveClip(saved);
-    await refreshLocalState();
-    return saved;
-  }
-
   async function handleExportJson() {
     const backup = await exportBackup();
     downloadFile(`elephant-pod-backup-${Date.now()}.json`, JSON.stringify(backup, null, 2), 'application/json');
@@ -715,7 +686,6 @@ export default function App() {
     onDismiss: handleDismiss,
     onDownload: handleDownload,
     onTogglePlayed: handleTogglePlayed,
-    onClip: setClipEpisode,
     onOpenEpisode: (episode: EpisodeWithState) => navigateEpisode(episode.id),
     onOpenPodcast: (podcastId: string) => navigatePodcast(podcastId),
     currentEpisodeId: audio.current?.id,
@@ -802,6 +772,7 @@ export default function App() {
           onMarkAllPlayed={() => void handleMarkSelectedPodcastPlayed(true)}
           onMarkAllUnplayed={() => void handleMarkSelectedPodcastPlayed(false)}
           handlers={handlers}
+          canUseSilenceShortening={canUseServerSilence}
         />
       );
     }
@@ -852,6 +823,7 @@ export default function App() {
             serverConnectionOk={serverConnectionOk}
             onSignIn={() => void handleBrowserSignIn()}
             showServerControls={!hostedWebRuntime}
+            canUseSilenceShortening={canUseServerSilence}
           />
         );
       default:
@@ -859,7 +831,7 @@ export default function App() {
     }
   })();
 
-  const currentSkipSilence = audio.current
+  const currentSkipSilence = canUseServerSilence && audio.current
     ? episodeSilenceOverrides[audio.current.id] ?? podcastPreferences.find((preference) => preference.podcastId === audio.current?.podcastId)?.silenceShortening ?? settings?.silenceShortening ?? false
     : false;
 
@@ -884,6 +856,7 @@ export default function App() {
               duration={audio.duration}
               settings={settings}
               currentSkipSilence={currentSkipSilence}
+              canUseSilenceShortening={canUseServerSilence}
               collapseToken={playerCollapseToken}
               onCurrentSkipSilenceChange={(enabled) => {
                 if (!audio.current) return;
@@ -921,15 +894,6 @@ export default function App() {
       <audio ref={audio.audioRef} preload="metadata" onEnded={() => void handleEnded()} onTimeUpdate={() => void handleTimeUpdate()}>
         <track kind="captions" />
       </audio>
-      {clipEpisode && (
-        <ClipComposer
-          episode={clipEpisode}
-          currentTime={audio.current?.id === clipEpisode.id ? audio.currentTime : clipEpisode.state.progressSec}
-          serverUrl={runtimeServerUrl}
-          onClose={() => setClipEpisode(null)}
-          onSave={handleSaveClip}
-        />
-      )}
     </>
   );
 }
