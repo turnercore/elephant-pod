@@ -4,7 +4,17 @@ import { Select, Input } from '../ui/Input';
 import { Slider } from '../ui/Slider';
 import { Switch } from '../ui/Switch';
 
-export function SettingsPanel({ settings, stats, onChange }: { settings: AppSettings; stats?: ListeningStats | null; onChange: (settings: AppSettings) => void }) {
+export function SettingsPanel({
+  settings,
+  stats,
+  onChange,
+  showServerControls = true
+}: {
+  settings: AppSettings;
+  stats?: ListeningStats | null;
+  onChange: (settings: AppSettings) => void;
+  showServerControls?: boolean;
+}) {
   const thresholdDb = settings.silenceThresholdDb ?? -42;
   const boostRate = settings.silenceBoostRate ?? 2.15;
   const minSilence = settings.silenceMinimumDurationSec ?? 0.35;
@@ -125,18 +135,14 @@ export function SettingsPanel({ settings, stats, onChange }: { settings: AppSett
         />
       </SettingsSection>
 
-      <SettingsSection title="Server">
-        <label className="grid gap-2 rounded-eh border border-bone/15 bg-canvas/30 p-3">
-          <span className="text-sm font-bold">App server URL</span>
-          <Input value={settings.serverUrl || ''} onChange={(event) => onChange({ ...settings, serverUrl: event.target.value })} placeholder="https://ears.example.com" />
-        </label>
-        <Switch
-          label="Enable sync"
-          checked={settings.syncEnabled}
-          onCheckedChange={(checked) => onChange({ ...settings, syncEnabled: checked })}
-          description="Requires a signed-in server session. Local-only mode stays unchanged until you turn this on."
-        />
-      </SettingsSection>
+      {showServerControls ? (
+        <SettingsSection title="Server">
+          <label className="grid gap-2 rounded-eh border border-bone/15 bg-canvas/30 p-3">
+            <span className="text-sm font-bold">App server URL</span>
+            <Input value={settings.serverUrl || ''} onChange={(event) => onChange({ ...settings, serverUrl: event.target.value })} placeholder="https://ears.example.com" />
+          </label>
+        </SettingsSection>
+      ) : null}
     </div>
   );
 }

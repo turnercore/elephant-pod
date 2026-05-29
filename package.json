@@ -17,6 +17,7 @@
     "preview:web": "npm --workspace @elephant-pod/web run preview",
     "start:server": "npm --workspace @elephant-pod/server run start",
     "typecheck": "npm --workspace @elephant-pod/web run typecheck && npm --workspace @elephant-pod/server run typecheck",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "docker:build": "docker build -f apps/server/Dockerfile -t elephant-pod:local .",

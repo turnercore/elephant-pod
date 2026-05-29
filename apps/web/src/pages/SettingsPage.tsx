@@ -17,7 +17,8 @@ export function SettingsPage({
   onImportOpml,
   onRefresh,
   serverSession,
-  onSessionChange
+  onSessionChange,
+  showServerControls = true
 }: {
   settings: AppSettings;
   listeningStats?: ListeningStats | null;
@@ -30,12 +31,13 @@ export function SettingsPage({
   onRefresh: () => void;
   serverSession: ServerSession | null;
   onSessionChange: (next: ServerSession | null) => void;
+  showServerControls?: boolean;
 }) {
   return (
     <Panel title="Settings" className="h-full">
       <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-4 pb-6 md:px-5">
         <div className="mx-auto grid w-full max-w-5xl gap-0">
-          <SettingsPanel settings={settings} stats={listeningStats} onChange={onSettingsChange} />
+          <SettingsPanel settings={settings} stats={listeningStats} onChange={onSettingsChange} showServerControls={showServerControls} />
 
           <section className="grid gap-3 border-b border-bone/15 py-5">
             <h3 className="eh-title text-sm text-yellow">Sync</h3>

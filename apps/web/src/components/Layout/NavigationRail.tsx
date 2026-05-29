@@ -4,6 +4,7 @@ import type { SectionKey } from '@/types/domain';
 import type { ServerSession } from '@/lib/sync/serverAuth';
 import { cn } from '@/lib/cn';
 import { isServerSessionExpired, normalizeServerUrl } from '@/lib/sync/serverAuth';
+import { isHostedWebRuntime } from '@/lib/runtime';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { BrandMark } from './BrandMark';
@@ -42,7 +43,8 @@ export function NavigationRail({
   const hasServer = Boolean(normalizeServerUrl(serverUrl));
   const sessionExpired = isServerSessionExpired(serverSession);
   const hasSession = Boolean(serverSession && !sessionExpired);
-  const profileLabel = hasSession ? (serverSession?.username || serverSession?.email || 'Signed in') : 'Local';
+  const hostedWebRuntime = isHostedWebRuntime();
+  const profileLabel = hasSession ? (serverSession?.username || serverSession?.email || 'Signed in') : hostedWebRuntime ? 'Sign in' : 'Local';
 
   return (
     <aside
@@ -153,7 +155,7 @@ export function NavigationRail({
               ) : (
                 <>
                   <p className="text-xs leading-5 text-bone">
-                    {hasServer ? 'Use GitHub sign-in to unlock sync, search, and public clips.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
+                    {hasServer ? 'Use GitHub sign-in to unlock sync, search, and public clips.' : hostedWebRuntime ? 'Server sign-in is unavailable.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
                   </p>
                   <Button
                     variant="primary"
@@ -253,7 +255,8 @@ export function MobileNavigationRail({
   const hasServer = Boolean(normalizeServerUrl(serverUrl));
   const sessionExpired = isServerSessionExpired(serverSession);
   const hasSession = Boolean(serverSession && !sessionExpired);
-  const profileLabel = hasSession ? (serverSession?.username || serverSession?.email || 'Signed in') : 'Local';
+  const hostedWebRuntime = isHostedWebRuntime();
+  const profileLabel = hasSession ? (serverSession?.username || serverSession?.email || 'Signed in') : hostedWebRuntime ? 'Sign in' : 'Local';
   const mobileItems = [...items, ...footerItems];
 
   return (
@@ -300,7 +303,7 @@ export function MobileNavigationRail({
       {profileOpen ? (
         <div id={profileMenuId} role="menu" className="absolute right-2 top-full z-30 mt-2 w-[240px] rounded-eh border border-bone/15 bg-canvas/95 p-3 shadow-xl shadow-black/40">
           <p className="text-xs leading-5 text-bone">
-            {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Use GitHub sign-in to unlock sync, search, and public clips.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
+            {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Use GitHub sign-in to unlock sync, search, and public clips.' : hostedWebRuntime ? 'Server sign-in is unavailable.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
           </p>
           <div className="mt-3 grid gap-2">
             {hasSession ? (

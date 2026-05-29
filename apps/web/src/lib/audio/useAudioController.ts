@@ -5,6 +5,7 @@ import { isTauriRuntime, listenNativeMediaCommands, nativeClearAudioSession, nat
 import { getNativeAudioStatus, pauseNativeAudio, playNativeAudio, prepareNativeAudio, seekNativeAudio, setNativeAudioRate, stopNativeAudio } from '../native/nativeAudio';
 import { maybePrepareServerSilenceShortenedUrl } from './serverSilence';
 import { attachSilenceShortener, type SilenceShortenerHandle } from './silenceShortener';
+import { shouldUseNativeAudio } from '../runtime';
 
 const RESUME_REWIND_AFTER_MS = 30_000;
 
@@ -90,7 +91,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
 
     if (nativeActiveRef.current) void setNativeAudioRate(resolved.playbackRate);
 
-    if (isTauriRuntime()) {
+    if (shouldUseNativeAudio()) {
       void nativeSetSilenceShortening({
         enabled: Boolean(resolved.silenceShortening),
         thresholdDb: resolved.silenceThresholdDb ?? -42,
@@ -138,7 +139,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       setCurrent(episode);
       pausedAtRef.current = null;
 
-      if (isTauriRuntime()) {
+      if (shouldUseNativeAudio() && resolved.nativeAudioPreferred) {
         if (wasSameEpisode && nativeActiveRef.current) {
           await seekNativeAudio(startSec);
           const nativePlaying = await playNativeAudio();

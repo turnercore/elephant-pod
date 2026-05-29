@@ -60,6 +60,7 @@ The shared UI is IndexedDB-first and never receives Supabase or PodcastIndex sec
 Set these in the app server environment (example in `.env.example`):
 
 - `SERVER_PUBLIC_URL` (browser-facing base URL for clip links and OAuth redirect targets, for example `https://pod.elephanthand.com` in production)
+- `VITE_RUNTIME_MODE=server` for hosted browser builds; the Docker server image sets this at build time so the web app uses its own origin instead of a user-editable server URL
 - `DATABASE_URL` (local Postgres for sync data, public clip registry, and server-owned metadata)
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`

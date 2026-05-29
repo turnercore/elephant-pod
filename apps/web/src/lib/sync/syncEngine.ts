@@ -66,7 +66,6 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
   const base = normalizeServerUrl(serverUrl || settings.serverUrl);
   if (!base) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Server URL is not configured.' };
   if (!accessToken) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Sign in before syncing.' };
-  if (!settings.syncEnabled) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Enable sync in Settings before syncing.' };
 
   const [localFeeds, localEpisodes, localStates, localPodcastPreferences, localClips, localTombstones] = await Promise.all([
     db.feeds.toArray(),
@@ -535,7 +534,14 @@ async function syncSettings(local: AppSettings, remote: RemoteSettingsPayload | 
   }
 
   if (isRemoteNewer(local.updatedAt, remoteUpdated)) {
-    await saveSettings({ ...local, ...remote, id: 'local', updatedAt: remoteUpdated });
+    await saveSettings({
+      ...local,
+      ...remote,
+      id: 'local',
+      serverUrl: local.serverUrl,
+      nativeAudioPreferred: local.nativeAudioPreferred,
+      updatedAt: remoteUpdated
+    });
     stats.pulled += 1;
     stats.conflicts += 1;
   }

@@ -1,3 +1,5 @@
+import { isHostedWebRuntime } from '@/lib/runtime';
+
 const AUTH_STORAGE_KEY = 'elephant-pod-server-auth';
 
 export interface ServerSession {
@@ -37,24 +39,12 @@ export function normalizeServerUrl(input?: string): string {
   return input.replace(/\/$/, '');
 }
 
-function isLoopbackUrl(input: string): boolean {
-  try {
-    const url = new URL(input);
-    return url.hostname === 'localhost' || url.hostname === '0.0.0.0' || url.hostname.startsWith('127.');
-  } catch {
-    return false;
-  }
-}
-
 export function resolveBrowserServerUrl(configuredUrl?: string): string {
   const configured = normalizeServerUrl(configuredUrl);
   if (typeof window === 'undefined') return configured;
 
   const currentOrigin = window.location.origin;
-  const isHostedHttp = window.location.protocol === 'http:' || window.location.protocol === 'https:';
-  const currentIsLoopback = isLoopbackUrl(currentOrigin);
-
-  if (isHostedHttp && !currentIsLoopback && (!configured || isLoopbackUrl(configured))) {
+  if (isHostedWebRuntime()) {
     return currentOrigin;
   }
 

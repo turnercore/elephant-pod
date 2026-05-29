@@ -25,7 +25,6 @@ export const defaultSettings: AppSettings = {
   silenceMinMs: 350,
   silenceBoostRate: 2.15,
   nativeAudioPreferred: true,
-  syncEnabled: false,
   serverUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787',
   theme: 'dark',
   updatedAt: nowIso()

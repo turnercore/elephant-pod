@@ -55,6 +55,8 @@ import {
 } from '@/lib/storage/repository';
 import { deleteInactiveDownloadIfNeeded, deleteInactiveDownloadsIfNeeded, maybeAutoDownload, pruneDownloadsOverCap } from '@/lib/features/automation';
 import { isTauriRuntime } from '@/lib/native/tauriBridge';
+import { isHostedWebRuntime } from '@/lib/runtime';
+import { syncNow } from '@/lib/sync/syncEngine';
 
 type ViewSnapshot = {
   active: SectionKey;
@@ -81,9 +83,18 @@ export default function App() {
   const [serverSession, setServerSession] = useState<ServerSession | null>(null);
   const telemetryRef = useRef<{ episodeId: string; mediaAt: number; wallAt: number } | null>(null);
   const profileHydrationRef = useRef<string | null>(null);
+  const syncHydrationRef = useRef<string | null>(null);
 
-  const audio = useAudioController(settings || fallbackSettings, podcastPreferences, episodeSilenceOverrides);
+  const hostedWebRuntime = isHostedWebRuntime();
   const runtimeServerUrl = resolveBrowserServerUrl(settings?.serverUrl || getBrowserRuntimeServerUrl());
+  const runtimeSettings = useMemo(
+    () => ({
+      ...(settings || fallbackSettings),
+      serverUrl: runtimeServerUrl
+    }),
+    [runtimeServerUrl, settings]
+  );
+  const audio = useAudioController(runtimeSettings, podcastPreferences, episodeSilenceOverrides);
 
   function navigateTo(snapshot: ViewSnapshot) {
     setPlayerCollapseToken((token) => token + 1);
@@ -177,9 +188,14 @@ export default function App() {
 
   useEffect(() => {
     if (!settings || !serverSession || isServerSessionExpired(serverSession)) {
+      syncHydrationRef.current = null;
       return;
     }
-  }, [settings, serverSession]);
+    const syncKey = `${runtimeServerUrl}:${serverSession.accessToken}`;
+    if (!runtimeServerUrl || syncHydrationRef.current === syncKey) return;
+    syncHydrationRef.current = syncKey;
+    void syncNow(runtimeServerUrl, serverSession.accessToken).then(() => refreshLocalState());
+  }, [refreshLocalState, runtimeServerUrl, settings, serverSession]);
 
   useEffect(() => {
     if (!settings) return;
@@ -262,13 +278,13 @@ export default function App() {
   const effectivePlayerSettings = useMemo(() => {
     const preference = audio.current ? podcastPreferences.find((item) => item.podcastId === audio.current?.podcastId) : undefined;
     return {
-      ...(settings || fallbackSettings),
-      playbackRate: preference?.playbackRate ?? (settings || fallbackSettings).playbackRate,
-      skipForwardSec: preference?.skipForwardSec ?? (settings || fallbackSettings).skipForwardSec,
-      skipBackSec: preference?.skipBackSec ?? (settings || fallbackSettings).skipBackSec,
-      silenceShortening: preference?.silenceShortening ?? (settings || fallbackSettings).silenceShortening
+      ...runtimeSettings,
+      playbackRate: preference?.playbackRate ?? runtimeSettings.playbackRate,
+      skipForwardSec: preference?.skipForwardSec ?? runtimeSettings.skipForwardSec,
+      skipBackSec: preference?.skipBackSec ?? runtimeSettings.skipBackSec,
+      silenceShortening: preference?.silenceShortening ?? runtimeSettings.silenceShortening
     };
-  }, [audio.current, podcastPreferences, settings]);
+  }, [audio.current, podcastPreferences, runtimeSettings]);
 
   async function persistSettings(next: AppSettings) {
     setSettings(next);
@@ -280,7 +296,7 @@ export default function App() {
     if (!url.trim()) throw new Error('Enter an RSS feed URL.');
     try {
       setStatus('Fetching feed…');
-      const parsed = await fetchFeedThroughServer(url.trim(), settings.serverUrl);
+      const parsed = await fetchFeedThroughServer(url.trim(), runtimeServerUrl);
       await cacheParsedPodcast(parsed);
       setStatus(`Cached ${parsed.podcast.title}.`);
       await refreshLocalState();
@@ -308,7 +324,7 @@ export default function App() {
     let refreshed = 0;
     for (const feed of feeds) {
       try {
-        const parsed = await fetchFeedThroughServer(feed.feedUrl, settings.serverUrl);
+        const parsed = await fetchFeedThroughServer(feed.feedUrl, runtimeServerUrl);
         await upsertParsedFeed(parsed);
         refreshed += 1;
       } catch {
@@ -516,7 +532,7 @@ export default function App() {
 
   async function handleSaveClip(clip: Clip): Promise<Clip> {
     let saved = clip;
-    const serverUrl = settings?.serverUrl?.replace(/\/$/, '');
+    const serverUrl = runtimeServerUrl?.replace(/\/$/, '');
     if (serverUrl) {
       try {
         const response = await fetch(`${serverUrl}/api/clips`, {
@@ -575,7 +591,7 @@ export default function App() {
     const urls = importOpml(await file.text());
     for (const url of urls) {
       try {
-        const parsed = await fetchFeedThroughServer(url, settings.serverUrl);
+        const parsed = await fetchFeedThroughServer(url, runtimeServerUrl);
         await upsertParsedFeed(parsed);
       } catch {
         // Continue importing the rest.
@@ -588,7 +604,7 @@ export default function App() {
     if (!settings) return;
     setStatus(`Loading ${result.title}...`);
     try {
-      const parsed = await fetchFeedThroughServer(result.feedUrl, settings.serverUrl);
+      const parsed = await fetchFeedThroughServer(result.feedUrl, runtimeServerUrl);
       await cacheParsedPodcast(parsed, result.id);
       await refreshLocalState();
       navigatePodcast(parsed.podcast.id);
@@ -602,7 +618,7 @@ export default function App() {
     if (!settings) return;
     setStatus(`Subscribing to ${result.title}...`);
     try {
-      const parsed = await fetchFeedThroughServer(result.feedUrl, settings.serverUrl);
+      const parsed = await fetchFeedThroughServer(result.feedUrl, runtimeServerUrl);
       await cacheParsedPodcast(parsed, result.id);
       await subscribeCachedPodcast(parsed.podcast.id);
       await refreshLocalState();
@@ -617,7 +633,7 @@ export default function App() {
     if (!settings || !selectedPodcast) return;
     setStatus(`Refreshing ${selectedPodcast.title}...`);
     try {
-      const parsed = await fetchFeedThroughServer(selectedPodcast.feedUrl, settings.serverUrl);
+      const parsed = await fetchFeedThroughServer(selectedPodcast.feedUrl, runtimeServerUrl);
       await cacheParsedPodcast(parsed, selectedPodcast.podcastIndexId);
       if (feeds.some((feed) => feed.id === selectedPodcast.id)) await upsertParsedFeed(parsed);
       await refreshLocalState();
@@ -769,6 +785,7 @@ export default function App() {
             onRefresh={refreshLocalState}
             serverSession={serverSession}
             onSessionChange={handleSessionChange}
+            showServerControls={!hostedWebRuntime}
           />
         );
       default:
@@ -842,7 +859,7 @@ export default function App() {
         <ClipComposer
           episode={clipEpisode}
           currentTime={audio.current?.id === clipEpisode.id ? audio.currentTime : clipEpisode.state.progressSec}
-          serverUrl={settings?.serverUrl}
+          serverUrl={runtimeServerUrl}
           onClose={() => setClipEpisode(null)}
           onSave={handleSaveClip}
         />
@@ -873,7 +890,6 @@ const fallbackSettings: AppSettings = {
   silenceMinMs: 350,
   silenceMinimumDurationSec: 0.35,
   silenceBoostRate: 2.15,
-  syncEnabled: false,
   theme: 'dark'
 };
 

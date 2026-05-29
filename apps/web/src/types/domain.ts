@@ -142,7 +142,6 @@ export interface AppSettings {
   silenceMinimumDurationSec?: number;
   silenceBoostRate: number;
   nativeAudioPreferred: boolean;
-  syncEnabled: boolean;
   serverUrl?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;

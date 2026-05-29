@@ -1,5 +1,7 @@
 FROM node:22-alpine AS build
 WORKDIR /app
+ARG VITE_RUNTIME_MODE=server
+ENV VITE_RUNTIME_MODE=${VITE_RUNTIME_MODE}
 COPY package.json package.json
 COPY tsconfig.base.json tsconfig.base.json
 COPY apps/web/package.json apps/web/package.json
