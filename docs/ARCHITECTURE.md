@@ -59,6 +59,8 @@ Listening stats are local profile facts stored in `listeningStats`: real time sp
 
 Silence maps are derived cache facts. Signed-in server analysis creates maps for playback, clients cache them locally, and maps are not part of Supabase sync.
 
+Smart Skip segment maps are also server-derived cache facts. They require a signed-in server session, store transcripts and segment metadata on the server, and are not part of Supabase sync. Local/offline playback ignores Smart Skip entirely.
+
 Downloaded episode storage is device-local. Automatic queued downloads are enabled by default in Tauri/native builds; browser builds only auto-download same-origin media because most podcast CDNs block cross-origin `fetch()` even when an `<audio>` element can play the stream. Optional inbox downloads are lower priority. Delete-after-listen is enabled by default and treats an episode as inactive once it is no longer in Queue or Inbox; inactive non-favorite downloads are removed. Manual downloads are tagged locally so they can remain while active, then follow the same delete-after-listen/favorite retention rule once played, dismissed, or removed from the triage stack. Storage pruning preserves downloads in this order:
 
 1. Favorited episodes.
@@ -88,6 +90,7 @@ The server is required for the hosted browser build because that runtime is acco
 - Public clip pages.
 - Rendered MP3 clip files via ffmpeg.
 - Signed-in silence-map analysis jobs via ffmpeg.
+- Signed-in Smart Skip metadata jobs for media versions, transcripts, segment maps, segments, feedback, and worker orchestration.
 - Sync/search mediation layer (server validates auth and calls Supabase/PodcastIndex)
 
 Future server jobs should include:
@@ -97,6 +100,7 @@ Future server jobs should include:
 - web-push subscription management
 - optional server-side search index
 - durable background queues for clip/silence rendering
+- active-user discovery for proactive Smart Skip processing
 
 ## Sync model
 

@@ -25,7 +25,8 @@ export function PodcastDetailPage({
   onMarkAllPlayed,
   onMarkAllUnplayed,
   handlers,
-  canUseSilenceShortening = false
+  canUseSilenceShortening = false,
+  canUseSmartSkip = false
 }: {
   podcast: CachedPodcast;
   subscribed: boolean;
@@ -40,6 +41,7 @@ export function PodcastDetailPage({
   onMarkAllUnplayed: () => void;
   handlers: EpisodeHandlers;
   canUseSilenceShortening?: boolean;
+  canUseSmartSkip?: boolean;
 }) {
   const [filter, setFilter] = useState<'all' | 'played' | 'unplayed'>('all');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -149,6 +151,17 @@ export function PodcastDetailPage({
               <div className="grid gap-2 text-xs font-bold uppercase tracking-[0.05em] text-bone md:col-span-2 xl:col-span-4">
                 {subscribed ? <Switch checked={preference.addNewEpisodesToInbox} onCheckedChange={(checked) => onPreferenceChange({ ...preference, addNewEpisodesToInbox: checked })} label="New episodes to Inbox" /> : null}
                 {canUseSilenceShortening ? <Switch checked={preference.silenceShortening ?? false} onCheckedChange={(checked) => onPreferenceChange({ ...preference, silenceShortening: checked })} label="Skip silence" /> : null}
+                {canUseSmartSkip ? (
+                  <>
+                    <Switch checked={preference.smartSkipEnabled ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipEnabled: checked })} label="Smart Skip for this podcast" />
+                    <Switch checked={preference.smartSkipSponsors ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSponsors: checked })} label="Skip sponsors" />
+                    <Switch checked={preference.smartSkipAds ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipAds: checked })} label="Skip ads" />
+                    <Switch checked={preference.smartSkipIntro ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipIntro: checked })} label="Allow intro skips" />
+                    <Switch checked={preference.smartSkipOutro ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipOutro: checked })} label="Allow outro skips" />
+                    <Switch checked={preference.smartSkipNetworkPromos ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipNetworkPromos: checked })} label="Skip network promos" />
+                    <Switch checked={preference.smartSkipSelfPromos ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSelfPromos: checked })} label="Skip self promos" />
+                  </>
+                ) : null}
               </div>
               <div className="grid gap-2 md:col-span-2 xl:col-span-4">
                 <ConfirmActionButton

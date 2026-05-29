@@ -16,6 +16,7 @@ import { DownloadsPage } from '@/pages/DownloadsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { useAudioController } from '@/lib/audio/useAudioController';
 import { prefetchServerSilenceMaps } from '@/lib/audio/silenceMaps';
+import { requestSmartSkipProcessing } from '@/lib/smartSkip/api';
 import { nowIso } from '@/lib/dates';
 import { fetchFeedThroughServer } from '@/lib/rss';
 import { exportOpml, importOpml } from '@/lib/opml';
@@ -97,6 +98,7 @@ export default function App() {
   );
   const serverAccessToken = serverSession && !isServerSessionExpired(serverSession) ? serverSession.accessToken : null;
   const canUseServerSilence = Boolean(runtimeServerUrl && serverAccessToken);
+  const canUseServerSmartSkip = Boolean(runtimeServerUrl && serverAccessToken);
   const audio = useAudioController(runtimeSettings, podcastPreferences, episodeSilenceOverrides, serverAccessToken);
 
   function navigateTo(snapshot: ViewSnapshot) {
@@ -283,6 +285,19 @@ export default function App() {
     if (!relevant.length) return;
     void prefetchServerSilenceMaps(relevant, runtimeServerUrl, serverAccessToken);
   }, [audio.current?.id, canUseServerSilence, episodeSilenceOverrides, inboxEpisodes, podcastPreferences, queueEpisodes, runtimeServerUrl, serverAccessToken, settings]);
+
+  useEffect(() => {
+    if (!settings?.smartSkipEnabled || !canUseServerSmartSkip || !serverAccessToken) return;
+    const candidates = [
+      ...queueEpisodes.slice(0, 5).map((episode) => ({ episode, reason: 'queue' as const })),
+      ...inboxEpisodes.slice(0, 5).map((episode) => ({ episode, reason: 'inbox' as const }))
+    ];
+    for (const { episode, reason } of candidates) {
+      const preference = podcastPreferences.find((item) => item.podcastId === episode.podcastId);
+      if (preference?.smartSkipEnabled === false) continue;
+      void requestSmartSkipProcessing(episode, runtimeServerUrl, serverAccessToken, reason);
+    }
+  }, [canUseServerSmartSkip, inboxEpisodes, podcastPreferences, queueEpisodes, runtimeServerUrl, serverAccessToken, settings?.smartSkipEnabled]);
 
   const selectedPodcast = useMemo(() => selectedPodcastId ? cachedPodcasts.find((podcast) => podcast.id === selectedPodcastId) : null, [cachedPodcasts, selectedPodcastId]);
   const selectedPodcastEpisodes = useMemo(() => selectedPodcastId ? knownEpisodes.filter((episode) => episode.podcastId === selectedPodcastId) : [], [knownEpisodes, selectedPodcastId]);
@@ -773,6 +788,7 @@ export default function App() {
           onMarkAllUnplayed={() => void handleMarkSelectedPodcastPlayed(false)}
           handlers={handlers}
           canUseSilenceShortening={canUseServerSilence}
+          canUseSmartSkip={canUseServerSmartSkip}
         />
       );
     }
@@ -824,6 +840,7 @@ export default function App() {
             onSignIn={() => void handleBrowserSignIn()}
             showServerControls={!hostedWebRuntime}
             canUseSilenceShortening={canUseServerSilence}
+            canUseSmartSkip={canUseServerSmartSkip}
           />
         );
       default:
@@ -857,12 +874,14 @@ export default function App() {
               settings={settings}
               currentSkipSilence={currentSkipSilence}
               canUseSilenceShortening={canUseServerSilence}
+              smartSkipNotice={audio.smartSkipNotice}
               collapseToken={playerCollapseToken}
               onCurrentSkipSilenceChange={(enabled) => {
                 if (!audio.current) return;
                 setEpisodeSilenceOverrides((overrides) => ({ ...overrides, [audio.current!.id]: enabled }));
               }}
               onToggle={() => void audio.toggle()}
+              onUndoSmartSkip={audio.undoSmartSkip}
               onSeek={audio.seek}
               onSkipBy={audio.skipBy}
               onSettingsChange={(next) => void persistSettings(next)}
@@ -920,6 +939,16 @@ const fallbackSettings: AppSettings = {
   silenceMinMs: 350,
   silenceMinimumDurationSec: 0.35,
   silenceBoostRate: 2.15,
+  smartSkipEnabled: true,
+  smartSkipAds: true,
+  smartSkipSponsors: true,
+  smartSkipIntros: false,
+  smartSkipOutros: false,
+  smartSkipNetworkPromos: true,
+  smartSkipSelfPromos: false,
+  smartSkipSilence: false,
+  smartSkipSoftPrompt: true,
+  smartSkipUseServerMedia: true,
   theme: 'dark'
 };
 

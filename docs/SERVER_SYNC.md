@@ -71,6 +71,8 @@ Listening stats are also local-only. They are profile facts on the device and ca
 
 Silence maps are server-derived cache data. They are created through signed-in server endpoints, cached locally in IndexedDB, and not merged through Supabase/server sync.
 
+Smart Skip maps are server-owned cache data. They require signed-in server routes, are stored in Smart Skip tables, and are not merged through Supabase/server sync. Local-only Tauri playback, queueing, inbox triage, settings, and downloads must continue without them.
+
 ## Search contract
 
 - Local search is available without authentication in Tauri/native local-only mode.
@@ -83,6 +85,12 @@ Silence maps are server-derived cache data. They are created through signed-in s
 `POST /api/audio/silence-maps` and `GET /api/audio/silence-maps/:id` require `Authorization: Bearer <token>`.
 
 The server uses ffmpeg `silencedetect` and server env defaults to create map segments. Defaults are `SILENCE_THRESHOLD_DB=-42`, `SILENCE_MINIMUM_SEC=0.7`, `SILENCE_RETAINED_SEC=0.25`, and `SILENCE_ANALYZER_VERSION=v1`. Segments shorten long silences by keeping the retained portion and skipping the rest.
+
+## Smart Skip
+
+`POST /api/smart-skip/process`, `GET /api/smart-skip/jobs/:id`, `GET /api/smart-skip/episodes/:episodeId/segment-map`, and `POST /api/smart-skip/feedback` require `Authorization: Bearer <token>` by default.
+
+The server stores media versions, transcripts, segment maps, segments, jobs, and feedback in local Postgres when `DATABASE_URL` is configured. If no database is configured, the server keeps an in-memory fallback for local development only. Worker services are configured with `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`.
 
 ## Public clips
 

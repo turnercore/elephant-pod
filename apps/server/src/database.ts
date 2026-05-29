@@ -60,6 +60,13 @@ export function hasLocalDatabase() {
   return hasDatabaseUrl();
 }
 
+export async function queryDatabase<T = Record<string, unknown>>(sql: string, values: unknown[] = []): Promise<T[] | null> {
+  return withClient(async (client) => {
+    const result = await client.query(sql, values);
+    return result.rows as T[];
+  });
+}
+
 export async function selectAll<T>(table: string, userId: string): Promise<T[]> {
   if (!assertAllowedTable(table)) throw new Error(`Unsupported table: ${table}`);
   return (

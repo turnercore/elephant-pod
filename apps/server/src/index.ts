@@ -13,6 +13,9 @@ import { githubCallbackHandler, githubStartHandler, getServerAuthConfig, getAuth
 import { podcastIndexBrowseHandler, podcastIndexSearchHandler } from './podcastIndex.js';
 import { upsertPublicClip } from './database.js';
 import { syncHandler } from './sync.js';
+import { readSmartSkipConfig } from './smartSkip/config.js';
+import { registerSmartSkipRoutes } from './smartSkip/routes.js';
+import { startSmartSkipScheduler } from './smartSkip/scheduler.js';
 
 loadDotenv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 loadDotenv();
@@ -25,6 +28,7 @@ const rawMediaDataDir = process.env.MEDIA_STORE_DIR || path.join(process.cwd(), 
 const clipStoreDir = path.isAbsolute(rawClipStoreDir) ? rawClipStoreDir : path.join(process.cwd(), rawClipStoreDir);
 const mediaDataDir = path.isAbsolute(rawMediaDataDir) ? rawMediaDataDir : path.join(process.cwd(), rawMediaDataDir);
 const clipStore = new ClipStore(clipStoreDir);
+const smartSkipConfig = readSmartSkipConfig({ dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors());
@@ -32,7 +36,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(morgan('tiny'));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'elephant-pod', time: new Date().toISOString(), ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg' });
+  res.json({ ok: true, service: 'elephant-pod', time: new Date().toISOString(), ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', smartSkip: { enabled: smartSkipConfig.enabled } });
 });
 
 app.get('/api/auth/config', (_req, res) => {
@@ -196,6 +200,11 @@ app.get('/media/silence/:id.mp3', (req, res) => {
   res.sendFile(file, (error) => {
     if (error && !res.headersSent) res.status(404).json({ error: 'Silence-shortened audio not found.' });
   });
+});
+
+registerSmartSkipRoutes(app, smartSkipConfig, requireBearerAuth());
+startSmartSkipScheduler(smartSkipConfig, () => {
+  console.log('Smart Skip proactive scheduler is configured; active-user discovery is a documented V1 follow-up.');
 });
 
 app.post('/api/sync', requireBearerAuth(), syncHandler);

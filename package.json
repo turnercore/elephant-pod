@@ -14,6 +14,7 @@
     "build:web": "npm --workspace @elephant-pod/web run build",
     "build:server": "npm --workspace @elephant-pod/server run build",
     "build": "npm run build:web && npm run build:server",
+    "test": "npm --workspace @elephant-pod/server run test && npm --workspace @elephant-pod/web run test",
     "preview:web": "npm --workspace @elephant-pod/web run preview",
     "start:server": "npm --workspace @elephant-pod/server run start",
     "typecheck": "npm --workspace @elephant-pod/web run typecheck && npm --workspace @elephant-pod/server run typecheck",

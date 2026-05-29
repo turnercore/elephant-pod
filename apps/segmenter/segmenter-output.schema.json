@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["segments"],
+  "properties": {
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "startMs", "endMs", "confidence", "action", "label", "evidence"],
+        "properties": {
+          "type": { "enum": ["ad", "sponsorship", "network_promo", "self_promo", "intro", "outro"] },
+          "subtype": { "type": "string" },
+          "startMs": { "type": "integer", "minimum": 0 },
+          "endMs": { "type": "integer", "minimum": 0 },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "action": { "enum": ["auto_skip", "soft_skip", "label_only", "do_not_skip"] },
+          "label": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

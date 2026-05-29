@@ -13,7 +13,8 @@ export function SettingsPanel({
   onTestServer,
   serverTestStatus,
   showServerControls = true,
-  canUseSilenceShortening = false
+  canUseSilenceShortening = false,
+  canUseSmartSkip = false
 }: {
   settings: AppSettings;
   stats?: ListeningStats | null;
@@ -22,6 +23,7 @@ export function SettingsPanel({
   serverTestStatus?: string;
   showServerControls?: boolean;
   canUseSilenceShortening?: boolean;
+  canUseSmartSkip?: boolean;
 }) {
   const topPodcasts = Object.values(stats?.byPodcast || {}).sort((a, b) => b.listeningSec - a.listeningSec).slice(0, 3);
 
@@ -112,6 +114,22 @@ export function SettingsPanel({
       {canUseSilenceShortening ? (
         <SettingsSection title="Silence Shortening">
           <Switch label="Silence shortening" checked={settings.silenceShortening} onCheckedChange={(checked) => onChange({ ...settings, silenceShortening: checked })} description="Uses signed-in server analysis with server-managed defaults." />
+        </SettingsSection>
+      ) : null}
+
+      {canUseSmartSkip ? (
+        <SettingsSection title="Smart Skip">
+          <Switch label="Smart Skip" checked={settings.smartSkipEnabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipEnabled: checked })} description="Uses signed-in server transcript and segment processing." />
+          <div className="grid gap-2 md:grid-cols-2">
+            <Switch label="Skip ads" checked={settings.smartSkipAds} onCheckedChange={(checked) => onChange({ ...settings, smartSkipAds: checked })} />
+            <Switch label="Skip sponsors" checked={settings.smartSkipSponsors} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSponsors: checked })} />
+            <Switch label="Skip network promos" checked={settings.smartSkipNetworkPromos} onCheckedChange={(checked) => onChange({ ...settings, smartSkipNetworkPromos: checked })} />
+            <Switch label="Skip self promos" checked={settings.smartSkipSelfPromos} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSelfPromos: checked })} />
+            <Switch label="Skip intros" checked={settings.smartSkipIntros} onCheckedChange={(checked) => onChange({ ...settings, smartSkipIntros: checked })} />
+            <Switch label="Skip outros" checked={settings.smartSkipOutros} onCheckedChange={(checked) => onChange({ ...settings, smartSkipOutros: checked })} />
+            <Switch label="Skip Smart Skip silence" checked={settings.smartSkipSilence} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSilence: checked })} />
+            <Switch label="Prompt for lower confidence" checked={settings.smartSkipSoftPrompt} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSoftPrompt: checked })} />
+          </div>
         </SettingsSection>
       ) : null}
 

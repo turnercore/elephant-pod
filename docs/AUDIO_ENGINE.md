@@ -45,6 +45,7 @@ silence shortening uses signed-in server-generated silence maps.
 - rendered MP3 clip files for public sharing
 - cached silence-shortened MP3 jobs
 - signed-in silence-map analysis jobs
+- nondestructive silence-map analysis reused by Smart Skip boundary refinement
 
 Clip rendering uses `ffmpeg -ss`, `-t`, `-vn`, and MP3 output. Silence maps use ffmpeg's `silencedetect` filter and cache JSON under the media directory. A segment shortens long silence rather than deleting it: by default a silence over `0.7s` keeps `0.25s` and skips the rest. These defaults are controlled by `SILENCE_THRESHOLD_DB`, `SILENCE_MINIMUM_SEC`, `SILENCE_RETAINED_SEC`, and `SILENCE_ANALYZER_VERSION`.
 
@@ -57,6 +58,19 @@ The app exposes silence shortening as an on/off preference, not a user-selected 
 - Web playback does not run low-RMS Web Audio analysis on the primary audio element because cross-origin podcast audio can be silenced by browser CORS protections.
 
 Playback telemetry records real listening time, content time heard, estimated speed-up savings, and estimated silence-skip savings in local profile stats.
+
+## Smart Skip V1
+
+Smart Skip is a signed-in server feature. The client never runs browser-side audio analysis for remote podcast streams and does not attempt Smart Skip in local/offline mode.
+
+The server routes are:
+
+- `POST /api/smart-skip/process`
+- `GET /api/smart-skip/jobs/:id`
+- `GET /api/smart-skip/episodes/:episodeId/segment-map`
+- `POST /api/smart-skip/feedback`
+
+Processing uses optional SponsorBlock data for real YouTube IDs, a Whisper-compatible `/v1/transcribe` service, a Codex/LLM-compatible `/v1/segment` service, and ffmpeg `silencedetect` boundaries. The server refines segment boundaries deterministically before storing maps. Playback still goes through `useAudioController.seek`; Smart Skip does not create a second audio engine.
 
 ## iOS target behavior
 

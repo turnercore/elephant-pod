@@ -4,6 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { ArrowDownToLine, ArrowUpToLine, Check, FastForward, GripVertical, Inbox, ListEnd, ListMusic, ListStart, Pause, Play, Rewind, RotateCcw, Scissors, SkipForward, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSettings, EpisodeWithState } from '@/types/domain';
+import type { SmartSkipEvent } from '@/lib/smartSkip/types';
 import { formatDuration } from '@/lib/dates';
 import { cn } from '@/lib/cn';
 import { IconButton } from '../ui/IconButton';
@@ -20,8 +21,10 @@ interface PlayerBarProps {
   settings: AppSettings;
   currentSkipSilence: boolean;
   canUseSilenceShortening: boolean;
+  smartSkipNotice?: SmartSkipEvent | null;
   collapseToken?: number;
   onCurrentSkipSilenceChange: (enabled: boolean) => void;
+  onUndoSmartSkip?: () => void;
   onToggle: () => void;
   onSeek: (seconds: number) => void;
   onSkipBy: (seconds: number) => void;
@@ -49,8 +52,10 @@ export function PlayerBar({
   settings,
   currentSkipSilence,
   canUseSilenceShortening,
+  smartSkipNotice,
   collapseToken,
   onCurrentSkipSilenceChange,
+  onUndoSmartSkip,
   onToggle,
   onSeek,
   onSkipBy,
@@ -180,6 +185,14 @@ export function PlayerBar({
           </div>
         ) : null}
         <div className={cn('mt-2 grid gap-2', queueOpen ? '' : '')}>
+          {smartSkipNotice ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-eh border border-yellow/30 bg-yellow/10 px-3 py-2 text-sm font-bold text-yellow">
+              <span>Skipped {smartSkipNotice.segment.label.toLowerCase()}</span>
+              <button type="button" onClick={onUndoSmartSkip} className="rounded px-2 py-1 text-xs uppercase tracking-[0.06em] text-cream hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">
+                Undo
+              </button>
+            </div>
+          ) : null}
           {!queueOpen ? (
             <CollapsedPlayer
               current={current}

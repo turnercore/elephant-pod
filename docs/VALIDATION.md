@@ -7,6 +7,7 @@ Commands run successfully:
 ```bash
 npm install --ignore-scripts
 npm run typecheck
+npm run test
 npm run build
 npx tsc -p src-tauri/plugins/tauri-plugin-elephant-audio/guest-js/tsconfig.json
 ffmpeg -version
@@ -27,6 +28,7 @@ Results:
 - Server TypeScript build: passed.
 - Local Tauri audio plugin guest JS TypeScript build: passed.
 - Server health endpoint: passed and returned JSON.
+- Smart Skip pure server/web tests: passed.
 - ffmpeg binary: present in the sandbox (`ffmpeg version 7.1.3`).
 
 Warnings/notes:
@@ -36,3 +38,12 @@ Warnings/notes:
 - Docker and the self-hosted Supabase stack were not run in the sandbox. The Compose/YAML files were parsed successfully with PyYAML.
 - iOS/Android native audio plugin code was added as source scaffolding, but generated mobile projects and physical-device background playback were not validated here.
 - ffmpeg endpoints were added and compile, and the server detected the ffmpeg binary; actual render jobs against live podcast media were not executed in the sandbox.
+
+Smart Skip local mock check:
+
+```bash
+cd infra
+SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
+```
+
+Then sign in to the app server, queue a test episode, and confirm `POST /api/smart-skip/process` requires a bearer token. Local/offline Tauri mode should not show Smart Skip controls and should continue normal playback.

@@ -22,6 +22,7 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - Auto-download setting, Wi-Fi-only preference, auto-delete after listen, and storage-cap pruning.
 - Public clip publishing with ffmpeg-rendered MP3 files and source time-range fallback.
 - Server-side silence-shortening render jobs through ffmpeg.
+- Signed-in server-owned Smart Skip V1 metadata jobs for transcript-backed ad/sponsor/promo segment maps.
 - Optional account-based features through a server-owned auth+sync contract: magic-link auth, automatic signed-in sync for subscriptions/episodes/episode state/clips/settings/tombstones, and optional PodcastIndex discovery.
 - Screen-reader labels on icon-first controls.
 - Tauri v2 config for desktop/mobile packaging.
@@ -74,6 +75,7 @@ Set these in the app server environment (example in `.env.example`):
 - `GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI`
 - `SITE_URL` and `API_EXTERNAL_URL` for Supabase auth redirects/hosting expectations
 - `SILENCE_THRESHOLD_DB`, `SILENCE_MINIMUM_SEC`, `SILENCE_RETAINED_SEC`, and `SILENCE_ANALYZER_VERSION` for signed-in server silence-map analysis defaults
+- `SMART_SKIP_ENABLED`, `SMART_SKIP_REQUIRE_AUTH`, `SMART_SKIP_WHISPER_BASE_URL`, `SMART_SKIP_SEGMENTER_BASE_URL`, and related `SMART_SKIP_*` limits for signed-in Smart Skip processing
 
 Security assumptions:
 
@@ -81,6 +83,7 @@ Security assumptions:
 - Client runtime variables remain public and should only include `VITE_API_BASE_URL`.
 - Server should validate and forward bearer tokens for logged-in sync/discovery calls.
 - Tauri local mode works with zero server keys present; accounts and sync/discovery stay disabled until sign-in.
+- Smart Skip benefits require a configured app server and a signed-in session. Local/offline playback does not request or apply Smart Skip metadata.
 - Server boots with `dotenv` support, so a repository-root `.env` is loaded automatically during local dev.
 
 ### Server setup
@@ -155,6 +158,15 @@ Services:
 
 - App/server: `http://localhost:8787`
 - Local Postgres: `localhost:54322`
+
+Optional Smart Skip workers:
+
+```bash
+cd infra
+SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
+```
+
+The profile starts `whisper-worker` on `/v1/transcribe` and `codex-segmenter` on `/v1/segment`. The checked-in workers default to deterministic mock mode for local validation; production should point `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL` at real worker hosts.
 
 A fresh database mounts `postgres/init.sql` to create the Elephant Pod sync tables and clip registry.
 

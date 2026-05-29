@@ -178,7 +178,15 @@ export async function ensureSeedData(): Promise<void> {
   const settings = await db.settings.get('local');
   if (!settings) {
     await db.settings.put({ ...defaultSettings, deviceId: crypto.randomUUID(), updatedAt: now });
-  } else if (!settings.deviceId || !settings.updatedAt || settings.autoDownloadInbox === undefined || settings.autoDeleteAfterListen === undefined || settings.nativeAudioPreferred === undefined || !settings.inboxSortDirection) {
+  } else if (
+    !settings.deviceId ||
+    !settings.updatedAt ||
+    settings.autoDownloadInbox === undefined ||
+    settings.autoDeleteAfterListen === undefined ||
+    settings.nativeAudioPreferred === undefined ||
+    settings.smartSkipEnabled === undefined ||
+    !settings.inboxSortDirection
+  ) {
     await db.settings.put({
       ...defaultSettings,
       ...settings,
@@ -186,6 +194,16 @@ export async function ensureSeedData(): Promise<void> {
       autoDownloadInbox: settings.autoDownloadInbox ?? defaultSettings.autoDownloadInbox,
       autoDeleteAfterListen: settings.autoDeleteAfterListen ?? defaultSettings.autoDeleteAfterListen,
       nativeAudioPreferred: settings.nativeAudioPreferred ?? defaultSettings.nativeAudioPreferred,
+      smartSkipEnabled: settings.smartSkipEnabled ?? defaultSettings.smartSkipEnabled,
+      smartSkipAds: settings.smartSkipAds ?? defaultSettings.smartSkipAds,
+      smartSkipSponsors: settings.smartSkipSponsors ?? defaultSettings.smartSkipSponsors,
+      smartSkipIntros: settings.smartSkipIntros ?? defaultSettings.smartSkipIntros,
+      smartSkipOutros: settings.smartSkipOutros ?? defaultSettings.smartSkipOutros,
+      smartSkipNetworkPromos: settings.smartSkipNetworkPromos ?? defaultSettings.smartSkipNetworkPromos,
+      smartSkipSelfPromos: settings.smartSkipSelfPromos ?? defaultSettings.smartSkipSelfPromos,
+      smartSkipSilence: settings.smartSkipSilence ?? defaultSettings.smartSkipSilence,
+      smartSkipSoftPrompt: settings.smartSkipSoftPrompt ?? defaultSettings.smartSkipSoftPrompt,
+      smartSkipUseServerMedia: settings.smartSkipUseServerMedia ?? defaultSettings.smartSkipUseServerMedia,
       inboxSortDirection: settings.inboxSortDirection || defaultSettings.inboxSortDirection,
       deviceId: settings.deviceId || crypto.randomUUID(),
       updatedAt: settings.updatedAt || now
