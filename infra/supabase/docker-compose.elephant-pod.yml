@@ -1,18 +1,18 @@
 # Overlay for the official Supabase Docker distribution copied into infra/supabase/runtime.
 # Run with:
-# docker compose -f docker-compose.yml -f docker-compose.elephant-ears.yml up -d
+# docker compose -f docker-compose.yml -f docker-compose.elephant-pod.yml up -d
 
 services:
-  elephant-ears:
+  elephant-pod:
     build:
       context: ../../..
       dockerfile: apps/server/Dockerfile
-    container_name: elephant-ears
+    container_name: elephant-pod
     env_file:
       - ../../../.env
     environment:
       PORT: 8787
-      SERVER_PUBLIC_URL: ${ELEPHANT_EARS_PUBLIC_URL:-http://localhost:8787}
+      SERVER_PUBLIC_URL: ${ELEPHANT_POD_PUBLIC_URL:-http://localhost:8787}
       WEB_DIST: apps/web/dist
       CLIP_STORE_DIR: /app/.data/clips
       CLIP_RENDER_ENABLED: ${CLIP_RENDER_ENABLED:-1}
@@ -34,8 +34,8 @@ services:
     ports:
       - "8787:8787"
     volumes:
-      - elephant_ears_data:/app/.data
+      - elephant_pod_data:/app/.data
     restart: unless-stopped
 
 volumes:
-  elephant_ears_data:
+  elephant_pod_data:

@@ -1,13 +1,14 @@
 import { Download, FileDown, FileUp, Upload } from 'lucide-react';
-import type { AppSettings, Podcast } from '@/types/domain';
+import type { AppSettings, ListeningStats, Podcast } from '@/types/domain';
 import type { ServerSession } from '@/lib/sync/serverAuth';
-import { Panel } from '@/components/ui/Panel';
 import { Button } from '@/components/ui/Button';
+import { Panel } from '@/components/ui/Panel';
 import { SettingsPanel } from '@/components/Settings/SettingsPanel';
 import { SyncPanel } from '@/components/Sync/SyncPanel';
 
 export function SettingsPage({
   settings,
+  listeningStats,
   feeds,
   onSettingsChange,
   onExportJson,
@@ -19,6 +20,7 @@ export function SettingsPage({
   onSessionChange
 }: {
   settings: AppSettings;
+  listeningStats?: ListeningStats | null;
   feeds: Podcast[];
   onSettingsChange: (settings: AppSettings) => void;
   onExportJson: () => void;
@@ -30,18 +32,21 @@ export function SettingsPage({
   onSessionChange: (next: ServerSession | null) => void;
 }) {
   return (
-    <div className="grid h-full min-h-0 gap-4 overflow-hidden xl:grid-cols-[1fr_1fr]">
-      <Panel title="Playback + Automation" kicker="Make the defaults disappear" className="min-h-0 overflow-hidden">
-        <div className="scrollbar-soft overflow-auto p-4">
-          <SettingsPanel settings={settings} onChange={onSettingsChange} />
-        </div>
-      </Panel>
-      <Panel title="Sync + Portability" kicker="No lock-in. Account optional." className="min-h-0 overflow-hidden">
-        <div className="scrollbar-soft overflow-auto p-4">
-          <SyncPanel settings={settings} onChange={onSettingsChange} onRefresh={onRefresh} serverSession={serverSession} onSessionChange={onSessionChange} />
-          <div className="mt-6 grid gap-3 rounded-eh border border-bone/15 bg-canvas/30 p-4">
-            <h3 className="eh-title text-sm">Import / Export / Backup</h3>
-            <p className="text-sm text-bone">{feeds.length} subscriptions. Use OPML for subscriptions and JSON for full local backup.</p>
+    <Panel title="Settings" className="h-full">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-4 pb-6 md:px-5">
+        <div className="mx-auto grid w-full max-w-5xl gap-0">
+          <SettingsPanel settings={settings} stats={listeningStats} onChange={onSettingsChange} />
+
+          <section className="grid gap-3 border-b border-bone/15 py-5">
+            <h3 className="eh-title text-sm text-yellow">Sync</h3>
+            <SyncPanel settings={settings} onRefresh={onRefresh} serverSession={serverSession} onSessionChange={onSessionChange} />
+          </section>
+
+          <section className="grid gap-3 py-5">
+            <div>
+              <h3 className="eh-title text-sm text-yellow">Import / Export / Backup</h3>
+              <p className="mt-2 text-sm text-bone">{feeds.length} subscriptions. Use OPML for subscriptions and JSON for full local backup.</p>
+            </div>
             <div className="grid gap-2 md:grid-cols-2">
               <Button onClick={onExportOpml}><FileDown size={16} aria-hidden /> Export OPML</Button>
               <label className="inline-flex">
@@ -58,9 +63,9 @@ export function SettingsPage({
                 </span>
               </label>
             </div>
-          </div>
+          </section>
         </div>
-      </Panel>
-    </div>
+      </div>
+    </Panel>
   );
 }

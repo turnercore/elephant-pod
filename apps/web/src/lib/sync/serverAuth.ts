@@ -1,15 +1,36 @@
-const AUTH_STORAGE_KEY = 'elephant-ears-server-auth';
+const AUTH_STORAGE_KEY = 'elephant-pod-server-auth';
 
 export interface ServerSession {
   accessToken: string;
   refreshToken?: string;
   expiresAt?: number;
+  userId?: string;
+  email?: string;
+  username?: string;
   updatedAt: string;
 }
 
 type AuthStorage = Record<string, ServerSession>;
 
 const TOKEN_PARAM_KEYS = ['access_token', 'accessToken', 'token', 'session_token', 'ee_access_token'];
+const CALLBACK_NOISE_KEYS = [
+  'provider_token',
+  'provider_refresh_token',
+  'code',
+  'error',
+  'error_description',
+  'error_code',
+  'sb',
+  'state',
+  'token_type',
+  'type',
+  'refresh_token',
+  'refreshToken',
+  'expires_at',
+  'expiresAt',
+  'expires_in',
+  'expiresIn'
+];
 
 export function normalizeServerUrl(input?: string): string {
   if (!input) return '';
@@ -81,9 +102,9 @@ export function consumeAuthTokenFromCallback(): ServerSession | null {
   const hashParams = new URLSearchParams(url.hash.slice(1));
 
   const session = sessionFromParams(searchParams) || sessionFromParams(hashParams);
-  if (!session) return null;
+  if (!session && !hasCallbackNoise(searchParams, hashParams)) return null;
 
-  for (const key of [...TOKEN_PARAM_KEYS, 'refresh_token', 'refreshToken', 'expires_at', 'expiresAt', 'expires_in', 'expiresIn', 'token_type', 'type']) {
+  for (const key of [...TOKEN_PARAM_KEYS, ...CALLBACK_NOISE_KEYS]) {
     searchParams.delete(key);
     searchParams.delete(key.toLowerCase());
     hashParams.delete(key);
@@ -129,6 +150,25 @@ export async function startGithubSignIn(serverUrl: string): Promise<void> {
   window.location.assign(`${startUrl}?returnTo=${encodeURIComponent(returnTo)}`);
 }
 
+export async function fetchServerSessionProfile(serverUrl: string, accessToken: string): Promise<Pick<ServerSession, 'userId' | 'email' | 'username'> | null> {
+  const base = normalizeServerUrl(serverUrl);
+  if (!base || !accessToken) return null;
+
+  const response = await fetch(`${base}/api/auth/session`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!response.ok) return null;
+
+  const body = await response.json().catch(() => null) as { user?: Record<string, unknown> } | null;
+  const user = body?.user;
+  if (!user) return null;
+
+  const userId = stringValue(user.id);
+  const email = stringValue(user.email);
+  const username = stringValue(user.username) || usernameFromEmail(email);
+  return { userId, email, username };
+}
+
 function getTokenFromParams(params: URLSearchParams): string | null {
   for (const key of TOKEN_PARAM_KEYS) {
     const token = params.get(key);
@@ -158,8 +198,21 @@ function normalizeSession(value: unknown): ServerSession | null {
     accessToken,
     refreshToken: typeof record.refreshToken === 'string' && record.refreshToken.trim() ? record.refreshToken.trim() : undefined,
     expiresAt: typeof record.expiresAt === 'number' && Number.isFinite(record.expiresAt) ? record.expiresAt : undefined,
+    userId: typeof record.userId === 'string' && record.userId.trim() ? record.userId.trim() : undefined,
+    email: typeof record.email === 'string' && record.email.trim() ? record.email.trim() : undefined,
+    username: typeof record.username === 'string' && record.username.trim() ? record.username.trim() : undefined,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date().toISOString()
   };
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function usernameFromEmail(email?: string): string | undefined {
+  if (!email) return undefined;
+  const [name] = email.split('@');
+  return name || undefined;
 }
 
 function numberParam(params: URLSearchParams, key: string): number | undefined {
@@ -182,4 +235,8 @@ function selectAuthUrl(body: unknown): string | null {
     if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
   }
   return null;
+}
+
+function hasCallbackNoise(searchParams: URLSearchParams, hashParams: URLSearchParams): boolean {
+  return CALLBACK_NOISE_KEYS.some((key) => searchParams.has(key) || searchParams.has(key.toLowerCase()) || hashParams.has(key) || hashParams.has(key.toLowerCase()));
 }

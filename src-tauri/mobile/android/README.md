@@ -1,6 +1,6 @@
 # Android native audio plugin notes
 
-This folder contains the Kotlin side of the Elephant Ears mobile audio bridge. It should be wired as a Tauri mobile plugin after `tauri android init` generates the Android project.
+This folder contains the Kotlin side of the Elephant Pod mobile audio bridge. It should be wired as a Tauri mobile plugin after `tauri android init` generates the Android project.
 
 Production responsibilities:
 

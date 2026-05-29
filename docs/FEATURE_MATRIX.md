@@ -9,11 +9,14 @@
 | Skip controls | Implemented | Configurable 10/15/30/60s. |
 | Play/Pause | Implemented | Web fallback; native command bridge scaffolded. |
 | Mark played/unplayed | Implemented | Local state and sync schema. |
+| Playback history | Implemented | `lastPlayedAt` records starts/resumes separately from completion so History can show recently played episodes in order. |
 | Rendered clips/public links | Implemented server path | ffmpeg renders MP3 clips; fallback to source time-range links. |
-| Auto-download | Partial native-ready | Browser Cache Storage fallback plus Tauri filesystem download commands. |
+| Auto-download | Partial native-ready | Queued auto-download is on by default. Optional inbox auto-download uses the same Browser Cache Storage / Tauri filesystem path. |
 | Episode triage | Implemented | Inbox -> queue/dismiss/archive. |
-| Silence shortening | Multi-path partial | Web Audio fallback and server ffmpeg jobs; native DSP reserved. |
+| Silence shortening | Multi-path partial | User-facing toggle with automatic runtime path: native bridge where available, server ffmpeg when configured, Web Audio fallback otherwise. |
+| Listening stats | Implemented local | Tracks real listening time, per-podcast totals, speed-up savings, and silence-skip savings in local profile stats. |
 | RSS-first/no lock-in | Implemented | Add RSS URL, OPML import/export, JSON backup. |
+| Episode artwork | Implemented | RSS item-level `<itunes:image>` and `media:thumbnail` artwork is preserved; episode views fall back to show artwork when item art is absent. |
 | Search (local catalog) | Implemented | Local search over on-device titles/show/description without account. |
 | Search (PodcastIndex discovery) | Logged-in only | Server-mediated discovery for new feeds using PodcastIndex credentials. |
 | Browser/web runtime sign-in gate | Implemented | Non-Tauri browser builds require a valid server GitHub session before app use. |
@@ -21,14 +24,14 @@
 | Offline downloads/streaming | Partial native-ready | Streaming works; native filesystem commands are present but need Tauri/mobile validation. |
 | Played/unplayed tracking | Implemented | Filter and sync schema. |
 | Mark all as played in show | Implemented | Library action. |
-| Sorting newest/oldest | Implemented | Library filters. |
+| Sorting newest/oldest | Implemented | Library filters plus configurable Inbox newest/oldest triage ordering. |
 | Bidirectional server sync | Implemented prototype | Pull/merge/push Supabase flow; needs incremental cursor/mutation-log hardening. |
 | Auto refresh feeds | Implemented basic | Timer in app; server cron planned. |
 | Wi-Fi-only download | Partial | Browser Network Information API where available; native OS constraints still needed. |
-| Obvious queue | Implemented | Dedicated queue page and player next control. |
+| Player queue manager | Implemented | Bottom player opens into a full-screen queue surface with transport controls, drag reorder, play now/next/end, send to Inbox, remove, and mark played actions. |
 | Auto play next | Implemented | Plays next queued episode after end. |
-| Auto-delete after listen | Partial | State path exists; native deletion command available. Needs full automation test. |
-| Storage cap/delete oldest | Partial native-ready | Rust prune command exists; app calls it when cap changes. |
+| Auto-delete after listen | Implemented | Enabled by default. Non-favorite downloads are deleted when the episode is no longer queued or inboxed; manual downloads are retained while active. |
+| Storage cap/prioritized prune | Partial native-ready | App prunes by priority: favorites, queue top-to-bottom, then inbox top-to-bottom. |
 | Screen reader support | Implemented baseline | Labels, focus states, semantic regions. Needs audit. |
 | Tauri mobile native audio | Scaffolded | Swift/Kotlin implementation shape and command contract; not device-validated. |
 | Self-hosted Supabase bundle | Included | `infra/supabase/docker-compose.yml` plus schema and app service. |

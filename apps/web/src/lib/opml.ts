@@ -11,7 +11,7 @@ export function exportOpml(feeds: Podcast[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <opml version="2.0">
   <head>
-    <title>Elephant Ears Subscriptions</title>
+    <title>Elephant Pod Subscriptions</title>
   </head>
   <body>
 ${outlines}

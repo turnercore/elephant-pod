@@ -110,3 +110,93 @@ textarea:focus-visible,
 .range-track {
   accent-color: rgb(var(--color-yellow));
 }
+
+.player-progress {
+  background: linear-gradient(
+    to right,
+    rgb(var(--color-coral)) 0 var(--progress, 0%),
+    rgb(var(--color-canvas) / 0.8) var(--progress, 0%) 100%
+  );
+}
+
+.player-progress::-webkit-slider-runnable-track {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.player-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: -0.33rem;
+  border: 2px solid rgb(var(--color-canvas));
+  border-radius: 999px;
+  background: rgb(var(--color-coral));
+  box-shadow: 0 0 0 2px rgb(var(--color-coral) / 0.35);
+}
+
+.player-progress::-moz-range-track {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.player-progress::-moz-range-thumb {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 2px solid rgb(var(--color-canvas));
+  border-radius: 999px;
+  background: rgb(var(--color-coral));
+  box-shadow: 0 0 0 2px rgb(var(--color-coral) / 0.35);
+}
+
+.eh-tooltip {
+  position: relative;
+}
+
+.eh-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 50;
+  max-width: 16rem;
+  width: max-content;
+  transform: translateX(-50%) translateY(2px);
+  border: 1px solid rgb(var(--color-bone) / 0.22);
+  border-radius: 6px;
+  background: rgb(var(--color-canvas) / 0.96);
+  color: rgb(var(--color-cream));
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  opacity: 0;
+  padding: 0.45rem 0.55rem;
+  pointer-events: none;
+  text-transform: none;
+  transition: opacity 90ms ease, transform 90ms ease;
+  transition-delay: 120ms;
+  white-space: nowrap;
+}
+
+.eh-tooltip:hover::after,
+.eh-tooltip:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.player-queue-stage {
+  animation: player-queue-rise 180ms ease-out;
+}
+
+@keyframes player-queue-rise {
+  from {
+    transform: translateY(24%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

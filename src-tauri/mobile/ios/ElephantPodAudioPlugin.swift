@@ -6,7 +6,7 @@ import WebKit
 // Production mobile audio bridge for Tauri iOS builds.
 // Wire this Swift package as a Tauri mobile plugin, then forward the frontend commands
 // native_audio_prepare, native_audio_set_playback_state, and native_audio_clear_session here.
-public final class ElephantEarsAudioPlugin: Plugin {
+public final class ElephantPodAudioPlugin: Plugin {
     private var player: AVPlayer?
     private var currentEpisodeId: String?
     private var commandCenterConfigured = false
@@ -69,7 +69,7 @@ public final class ElephantEarsAudioPlugin: Plugin {
             NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption(_:)), name: AVAudioSession.interruptionNotification, object: session)
             NotificationCenter.default.addObserver(self, selector: #selector(handleRouteChange(_:)), name: AVAudioSession.routeChangeNotification, object: session)
         } catch {
-            print("ElephantEarsAudioPlugin audio session error: \(error)")
+            print("ElephantPodAudioPlugin audio session error: \(error)")
         }
     }
 
@@ -139,7 +139,7 @@ public final class ElephantEarsAudioPlugin: Plugin {
     private func emitFrontendCommand(command: String, seconds: Double? = nil) {
         var payload: [String: Any] = ["command": command]
         if let seconds { payload["seconds"] = seconds }
-        trigger("elephant-ears://media-command", data: payload)
+        trigger("elephant-pod://media-command", data: payload)
     }
 
     @objc private func handleInterruption(_ notification: Notification) {

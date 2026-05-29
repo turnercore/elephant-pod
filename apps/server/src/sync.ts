@@ -1,9 +1,9 @@
 import type { Response, Request } from 'express';
 import { z } from 'zod';
 import { getAuthContext } from './auth.js';
-import { getServerSupabase } from './supabase.js';
+import { hasLocalDatabase, selectAll, selectSettings, upsertRows } from './database.js';
 
-const inboxStateEnum = z.enum(['new', 'queued', 'dismissed', 'archived']);
+const inboxStateEnum = z.enum(['new', 'dismissed', 'archived']);
 const clipRenderStatusEnum = z.enum([
   'local-only',
   'pending',
@@ -56,8 +56,10 @@ const syncStateSchema = z.object({
   episodeId: z.string().min(1),
   played: z.boolean(),
   playedAt: z.string().optional(),
+  lastPlayedAt: z.string().optional(),
   progressSec: z.number().nonnegative(),
   inboxState: inboxStateEnum,
+  inboxPosition: z.number().int().positive().nullable().optional(),
   queuedAt: z.string().optional(),
   queuePosition: z.number().int().nonnegative().nullable().optional(),
   downloaded: z.boolean(),
@@ -99,6 +101,19 @@ const syncTombstoneSchema = z.object({
   pushedAt: z.string().optional()
 });
 
+const syncPodcastPreferenceSchema = z.object({
+  podcastId: z.string().min(1),
+  playbackRate: z.number().min(0.5).max(3.5).optional(),
+  skipForwardSec: z.number().int().nonnegative().optional(),
+  skipBackSec: z.number().int().nonnegative().optional(),
+  skipIntroSec: z.number().int().nonnegative().default(0),
+  skipOutroSec: z.number().int().nonnegative().default(0),
+  silenceShortening: z.boolean().optional(),
+  sortDirection: z.enum(['newest', 'oldest']).default('newest'),
+  addNewEpisodesToInbox: z.boolean().default(true),
+  updatedAt: z.string().optional()
+});
+
 const syncSettingsSchema = z.record(z.unknown()).default({});
 
 const syncRequestSchema = z.object({
@@ -107,13 +122,14 @@ const syncRequestSchema = z.object({
   feeds: z.array(syncFeedSchema).default([]),
   episodes: z.array(syncEpisodeSchema).default([]),
   states: z.array(syncStateSchema).default([]),
+  podcastPreferences: z.array(syncPodcastPreferenceSchema).default([]),
   clips: z.array(syncClipSchema).default([]),
   tombstones: z.array(syncTombstoneSchema).default([]),
   settings: syncSettingsSchema
 });
 
 const syncErrorMessages = {
-  missingServer: 'Server sync requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY.',
+  missingServer: 'Server sync requires DATABASE_URL.',
   invalidPayload: 'Invalid sync payload.',
   missingAuth: 'Authentication failed for sync.'
 };
@@ -121,6 +137,7 @@ const syncErrorMessages = {
 type SyncFeed = z.infer<typeof syncFeedSchema>;
 type SyncEpisode = z.infer<typeof syncEpisodeSchema>;
 type SyncState = z.infer<typeof syncStateSchema>;
+type SyncPodcastPreference = z.infer<typeof syncPodcastPreferenceSchema>;
 type SyncClip = z.infer<typeof syncClipSchema>;
 type SyncTombstone = z.infer<typeof syncTombstoneSchema>;
 type SyncSettings = z.infer<typeof syncSettingsSchema>;
@@ -136,6 +153,7 @@ type SyncResponse = {
     feeds: SyncFeed[];
     episodes: SyncEpisode[];
     states: RemotePulledState[];
+    podcastPreferences: SyncPodcastPreference[];
     clips: SyncClip[];
     settings: SyncSettings | null;
     tombstones: SyncTombstone[];
@@ -180,13 +198,28 @@ type RemoteState = {
   episode_local_id: string;
   played: boolean;
   played_at: string | null;
+  last_played_at: string | null;
   progress_sec: number;
-  inbox_state: 'new' | 'queued' | 'dismissed' | 'archived';
+  inbox_state: 'new' | 'dismissed' | 'archived';
+  inbox_position: number | null;
   queued_at: string | null;
   queue_position: number | null;
   favorite: boolean;
   deleted_at: string | null;
   clip_count: number;
+  updated_at: string | null;
+};
+
+type RemotePodcastPreference = {
+  podcast_local_id: string;
+  playback_rate: number | null;
+  skip_forward_sec: number | null;
+  skip_back_sec: number | null;
+  skip_intro_sec: number | null;
+  skip_outro_sec: number | null;
+  silence_shortening: boolean | null;
+  sort_direction: 'newest' | 'oldest';
+  add_new_episodes_to_inbox: boolean;
   updated_at: string | null;
 };
 
@@ -229,8 +262,6 @@ interface MutableSyncStats {
   conflicts: number;
 }
 
-type ServerSupabaseClient = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
-
 function isTableMissing(error: unknown): boolean {
   return (error as { code?: string }).code === '42P01';
 }
@@ -247,28 +278,9 @@ function isLocalNewer(localUpdatedAt: string | undefined, remoteUpdatedAt: strin
   return new Date(localUpdatedAt || 0).getTime() >= new Date(remoteUpdatedAt || 0).getTime();
 }
 
-async function selectAll<T>(client: ServerSupabaseClient, table: string, userId: string): Promise<T[]> {
-  const { data, error } = await client.from(table).select('*').eq('user_id', userId);
-  if (error) {
-    if (isTableMissing(error)) throw error;
-    throw error;
-  }
-  return ((data || []) as T[]) || [];
-}
-
-async function selectSettings(client: ServerSupabaseClient, userId: string): Promise<RemoteSettings | null> {
-  const { data, error } = await client.from('user_settings').select('settings, updated_at').eq('user_id', userId).maybeSingle();
-  if (error) {
-    if (isTableMissing(error)) return null;
-    throw error;
-  }
-  return (data as RemoteSettings | null) || null;
-}
-
-async function upsert(client: ServerSupabaseClient, table: string, rows: unknown[], onConflict: string, stats: MutableSyncStats) {
+async function upsert(table: string, rows: unknown[], _onConflict: string, stats: MutableSyncStats) {
   if (!rows.length) return;
-  const { error } = await client.from(table).upsert(rows, { onConflict });
-  if (error) throw error;
+  await upsertRows(table, rows as Record<string, unknown>[]);
   stats.pushed += rows.length;
 }
 
@@ -286,7 +298,6 @@ function sanitizeSettings(input: SyncSettings): SyncSettings {
 }
 
 async function syncFeeds(
-  client: ServerSupabaseClient,
   userId: string,
   local: SyncFeed[],
   remote: RemoteSubscription[],
@@ -311,7 +322,7 @@ async function syncFeeds(
     stats.pulled += 1;
   }
 
-  await upsert(client, 'subscriptions', toPush, 'user_id,local_id', stats);
+  await upsert('subscriptions', toPush, 'user_id,local_id', stats);
 }
 
 function stripDeviceDownloadFields(state: SyncState): SyncStatePush {
@@ -325,7 +336,6 @@ function stripDeviceDownloadFields(state: SyncState): SyncStatePush {
 }
 
 async function syncEpisodes(
-  client: ServerSupabaseClient,
   userId: string,
   local: SyncEpisode[],
   remote: RemoteEpisode[],
@@ -350,11 +360,10 @@ async function syncEpisodes(
     stats.pulled += 1;
   }
 
-  await upsert(client, 'episodes', toPush, 'user_id,local_id', stats);
+  await upsert('episodes', toPush, 'user_id,local_id', stats);
 }
 
 async function syncStates(
-  client: ServerSupabaseClient,
   userId: string,
   local: SyncStatePush[],
   remote: RemoteState[],
@@ -379,11 +388,38 @@ async function syncStates(
     stats.pulled += 1;
   }
 
-  await upsert(client, 'episode_states', toPush, 'user_id,episode_local_id', stats);
+  await upsert('episode_states', toPush, 'user_id,episode_local_id', stats);
+}
+
+async function syncPodcastPreferences(
+  userId: string,
+  local: SyncPodcastPreference[],
+  remote: RemotePodcastPreference[],
+  stats: MutableSyncStats,
+  pulledPreferences: SyncPodcastPreference[]
+) {
+  const remoteMap = new Map(remote.map((row) => [row.podcast_local_id, row]));
+  const toPush: ReturnType<typeof toRemotePodcastPreference>[] = [];
+  for (const preference of local) {
+    const row = remoteMap.get(preference.podcastId);
+    if (!row || isLocalNewer(preference.updatedAt, row.updated_at)) toPush.push(toRemotePodcastPreference(userId, preference));
+    else if (isRemoteNewer(preference.updatedAt, row.updated_at)) {
+      pulledPreferences.push(fromRemotePodcastPreference(row));
+      stats.pulled += 1;
+      stats.conflicts += 1;
+    }
+  }
+  const localIds = new Set(local.map((preference) => preference.podcastId));
+  for (const row of remote) {
+    if (localIds.has(row.podcast_local_id)) continue;
+    pulledPreferences.push(fromRemotePodcastPreference(row));
+    stats.pulled += 1;
+  }
+
+  await upsert('podcast_preferences', toPush, 'user_id,podcast_local_id', stats);
 }
 
 async function syncClips(
-  client: ServerSupabaseClient,
   userId: string,
   local: SyncClip[],
   remote: RemoteClip[],
@@ -408,11 +444,10 @@ async function syncClips(
     stats.pulled += 1;
   }
 
-  await upsert(client, 'clips', toPush, 'user_id,local_id', stats);
+  await upsert('clips', toPush, 'user_id,local_id', stats);
 }
 
 async function syncSettings(
-  client: ServerSupabaseClient,
   userId: string,
   local: SyncSettings,
   remote: RemoteSettings | null,
@@ -424,7 +459,7 @@ async function syncSettings(
   const localSanitized = sanitizeSettings(local);
 
   if (!remote || isLocalNewer(normalizedLocalUpdatedAt, remote.updated_at)) {
-    await upsert(client, 'user_settings', [{ user_id: userId, settings: localSanitized, updated_at: normalizedLocalUpdatedAt }], 'user_id', stats);
+    await upsert('user_settings', [{ user_id: userId, settings: localSanitized, updated_at: normalizedLocalUpdatedAt }], 'user_id', stats);
     return { remoteSettings: null, pulled: false };
   }
   if (isRemoteNewer(normalizedLocalUpdatedAt, remote.updated_at)) {
@@ -436,7 +471,6 @@ async function syncSettings(
 }
 
 async function syncTombstones(
-  client: ServerSupabaseClient,
   userId: string,
   local: SyncTombstone[],
   remote: RemoteTombstone[],
@@ -471,10 +505,11 @@ async function syncTombstones(
   }
 
   if (!toPush.length) return;
-  await upsert(client, 'sync_tombstones', toPush, 'id', stats);
+  await upsert('sync_tombstones', toPush, 'id', stats);
 }
 
 function toRemoteFeed(userId: string, feed: SyncFeed) {
+  const now = nowIso();
   return {
     user_id: userId,
     local_id: feed.id,
@@ -486,12 +521,13 @@ function toRemoteFeed(userId: string, feed: SyncFeed) {
     website_url: feed.websiteUrl,
     tags: feed.tags,
     last_refreshed_at: feed.lastRefreshedAt,
-    created_at: feed.createdAt,
-    updated_at: feed.updatedAt
+    created_at: feed.createdAt || now,
+    updated_at: feed.updatedAt || now
   };
 }
 
 function toRemoteEpisode(userId: string, episode: SyncEpisode) {
+  const now = nowIso();
   return {
     user_id: userId,
     local_id: episode.id,
@@ -508,29 +544,50 @@ function toRemoteEpisode(userId: string, episode: SyncEpisode) {
     chapters: episode.chapters,
     guid: episode.guid,
     enclosure_length: episode.enclosureLength,
-    created_at: episode.createdAt,
-    updated_at: episode.updatedAt
+    created_at: episode.createdAt || now,
+    updated_at: episode.updatedAt || now
   };
 }
 
 function toRemoteState(userId: string, state: SyncStatePush) {
+  const now = nowIso();
   return {
     user_id: userId,
     episode_local_id: state.episodeId,
     played: state.played,
     played_at: state.playedAt,
-    progress_sec: state.progressSec,
-    inbox_state: state.inboxState,
-    queued_at: state.queuedAt,
+    last_played_at: state.lastPlayedAt,
+	    progress_sec: state.progressSec,
+	    inbox_state: state.inboxState,
+	    inbox_position: state.inboxPosition,
+	    queued_at: state.queuedAt,
     queue_position: state.queuePosition,
     favorite: state.favorite,
     deleted_at: state.deletedAt,
     clip_count: state.clipCount,
-    updated_at: state.updatedAt
+    updated_at: state.updatedAt || now
+	  };
+	}
+
+function toRemotePodcastPreference(userId: string, preference: SyncPodcastPreference) {
+  const now = nowIso();
+  return {
+    user_id: userId,
+    podcast_local_id: preference.podcastId,
+    playback_rate: preference.playbackRate,
+    skip_forward_sec: preference.skipForwardSec,
+    skip_back_sec: preference.skipBackSec,
+    skip_intro_sec: preference.skipIntroSec,
+    skip_outro_sec: preference.skipOutroSec,
+    silence_shortening: preference.silenceShortening,
+    sort_direction: preference.sortDirection,
+    add_new_episodes_to_inbox: preference.addNewEpisodesToInbox,
+    updated_at: preference.updatedAt || now
   };
 }
 
 function toRemoteClip(userId: string, clip: SyncClip) {
+  const now = nowIso();
   return {
     user_id: userId,
     local_id: clip.id,
@@ -548,8 +605,8 @@ function toRemoteClip(userId: string, clip: SyncClip) {
     render_status: clip.renderStatus,
     render_error: clip.renderError,
     file_size_bytes: clip.fileSizeBytes,
-    created_at: clip.createdAt,
-    updated_at: clip.updatedAt
+    created_at: clip.createdAt || now,
+    updated_at: clip.updatedAt || now
   };
 }
 
@@ -595,13 +652,30 @@ function fromRemoteState(row: RemoteState): RemotePulledState {
     episodeId: row.episode_local_id,
     played: row.played,
     playedAt: row.played_at || undefined,
-    progressSec: row.progress_sec,
-    inboxState: row.inbox_state,
-    queuedAt: row.queued_at || undefined,
+    lastPlayedAt: row.last_played_at || undefined,
+	    progressSec: row.progress_sec,
+	    inboxState: row.inbox_state,
+	    inboxPosition: row.inbox_position ?? undefined,
+	    queuedAt: row.queued_at || undefined,
     queuePosition: row.queue_position ?? undefined,
     favorite: row.favorite,
     deletedAt: row.deleted_at || undefined,
     clipCount: row.clip_count,
+    updatedAt: row.updated_at || nowIso()
+	  };
+	}
+
+function fromRemotePodcastPreference(row: RemotePodcastPreference): SyncPodcastPreference {
+  return {
+    podcastId: row.podcast_local_id,
+    playbackRate: row.playback_rate ?? undefined,
+    skipForwardSec: row.skip_forward_sec ?? undefined,
+    skipBackSec: row.skip_back_sec ?? undefined,
+    skipIntroSec: row.skip_intro_sec ?? 0,
+    skipOutroSec: row.skip_outro_sec ?? 0,
+    silenceShortening: row.silence_shortening ?? undefined,
+    sortDirection: row.sort_direction || 'newest',
+    addNewEpisodesToInbox: row.add_new_episodes_to_inbox,
     updatedAt: row.updated_at || nowIso()
   };
 }
@@ -641,18 +715,18 @@ export async function syncHandler(req: Request, res: Response) {
     return;
   }
 
-    const client = getServerSupabase() as ServerSupabaseClient | null;
-  if (!client) {
+  if (!hasLocalDatabase()) {
     res.status(503).json({ error: syncErrorMessages.missingServer });
     return;
   }
 
   const payload = parsed.data;
-  const pullResult = {
-    feeds: [] as SyncFeed[],
-    episodes: [] as SyncEpisode[],
-    states: [] as RemotePulledState[],
-    clips: [] as SyncClip[],
+    const pullResult = {
+	    feeds: [] as SyncFeed[],
+	    episodes: [] as SyncEpisode[],
+	    states: [] as RemotePulledState[],
+	    podcastPreferences: [] as SyncPodcastPreference[],
+	    clips: [] as SyncClip[],
     settings: null as SyncSettings | null,
     tombstones: [] as SyncTombstone[]
   };
@@ -662,37 +736,38 @@ export async function syncHandler(req: Request, res: Response) {
   const now = nowIso();
 
   try {
-    const [remoteFeeds, remoteEpisodes, remoteStates, remoteClips, remoteTombstones, remoteSettings] = await Promise.all([
-      selectAll<RemoteSubscription>(client, 'subscriptions', context.userId),
-      selectAll<RemoteEpisode>(client, 'episodes', context.userId),
-      selectAll<RemoteState>(client, 'episode_states', context.userId),
-      selectAll<RemoteClip>(client, 'clips', context.userId),
-      selectAll<RemoteTombstone>(client, 'sync_tombstones', context.userId),
-      selectSettings(client, context.userId)
+	    const [remoteFeeds, remoteEpisodes, remoteStates, remotePodcastPreferences, remoteClips, remoteTombstones, remoteSettings] = await Promise.all([
+	      selectAll<RemoteSubscription>('subscriptions', context.userId),
+	      selectAll<RemoteEpisode>('episodes', context.userId),
+	      selectAll<RemoteState>('episode_states', context.userId),
+	      selectAll<RemotePodcastPreference>('podcast_preferences', context.userId),
+	      selectAll<RemoteClip>('clips', context.userId),
+      selectAll<RemoteTombstone>('sync_tombstones', context.userId),
+      selectSettings<RemoteSettings>(context.userId)
     ]);
 
     await Promise.all([
-      syncFeeds(client, context.userId, payload.feeds, remoteFeeds, stats, pullResult.feeds),
-      syncEpisodes(client, context.userId, payload.episodes, remoteEpisodes, stats, pullResult.episodes),
-      syncStates(
-        client,
+      syncFeeds(context.userId, payload.feeds, remoteFeeds, stats, pullResult.feeds),
+      syncEpisodes(context.userId, payload.episodes, remoteEpisodes, stats, pullResult.episodes),
+	      syncStates(
         context.userId,
         payload.states.map(stripDeviceDownloadFields),
         remoteStates,
         stats,
-        pullResult.states
-      ),
-      syncClips(client, context.userId, payload.clips, remoteClips, stats, pullResult.clips)
+	        pullResult.states
+	      ),
+	      syncPodcastPreferences(context.userId, payload.podcastPreferences, remotePodcastPreferences, stats, pullResult.podcastPreferences),
+	      syncClips(context.userId, payload.clips, remoteClips, stats, pullResult.clips)
     ]);
 
-    const settingsResult = await syncSettings(client, context.userId, payload.settings, remoteSettings, stats, now);
+    const settingsResult = await syncSettings(context.userId, payload.settings, remoteSettings, stats, now);
     if (settingsResult.remoteSettings) pullResult.settings = settingsResult.remoteSettings;
 
-    await syncTombstones(client, context.userId, payload.tombstones, remoteTombstones, stats, pullResult.tombstones);
+    await syncTombstones(context.userId, payload.tombstones, remoteTombstones, stats, pullResult.tombstones);
   } catch (error) {
     if (isTableMissing(error)) {
       res.status(503).json({
-        error: 'Sync tables are not initialized. Apply the Elephant Ears schema in your Supabase project.',
+        error: 'Sync tables are not initialized. Apply the Elephant Pod schema in your Supabase project.',
         details: error
       });
       return;

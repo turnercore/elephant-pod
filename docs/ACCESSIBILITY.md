@@ -1,6 +1,6 @@
 # Accessibility
 
-Elephant Ears uses an icon-first UI, so accessible names are mandatory.
+Elephant Pod uses an icon-first UI, so accessible names are mandatory.
 
 Current baseline:
 

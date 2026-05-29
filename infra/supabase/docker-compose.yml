@@ -1,9 +1,9 @@
-name: elephant-ears-supabase
+name: elephant-pod-supabase
 
 services:
   kong:
     image: kong:2.8.1
-    container_name: elephant-ears-kong
+    container_name: elephant-pod-kong
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -26,7 +26,7 @@ services:
 
   studio:
     image: supabase/studio:latest
-    container_name: elephant-ears-studio
+    container_name: elephant-pod-studio
     restart: unless-stopped
     environment:
       STUDIO_PG_META_URL: http://meta:8080
@@ -42,7 +42,7 @@ services:
 
   auth:
     image: supabase/gotrue:latest
-    container_name: elephant-ears-auth
+    container_name: elephant-pod-auth
     restart: unless-stopped
     environment:
       GOTRUE_API_HOST: 0.0.0.0
@@ -76,7 +76,7 @@ services:
 
   rest:
     image: postgrest/postgrest:latest
-    container_name: elephant-ears-rest
+    container_name: elephant-pod-rest
     restart: unless-stopped
     environment:
       PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
@@ -90,7 +90,7 @@ services:
 
   realtime:
     image: supabase/realtime:latest
-    container_name: elephant-ears-realtime
+    container_name: elephant-pod-realtime
     restart: unless-stopped
     environment:
       PORT: 4000
@@ -111,7 +111,7 @@ services:
 
   storage:
     image: supabase/storage-api:latest
-    container_name: elephant-ears-storage
+    container_name: elephant-pod-storage
     restart: unless-stopped
     environment:
       ANON_KEY: ${ANON_KEY}
@@ -139,7 +139,7 @@ services:
 
   imgproxy:
     image: darthsim/imgproxy:latest
-    container_name: elephant-ears-imgproxy
+    container_name: elephant-pod-imgproxy
     restart: unless-stopped
     environment:
       IMGPROXY_BIND: ":5001"
@@ -151,7 +151,7 @@ services:
 
   meta:
     image: supabase/postgres-meta:latest
-    container_name: elephant-ears-meta
+    container_name: elephant-pod-meta
     restart: unless-stopped
     environment:
       PG_META_PORT: 8080
@@ -166,7 +166,7 @@ services:
 
   db:
     image: supabase/postgres:15.8.1.060
-    container_name: elephant-ears-db
+    container_name: elephant-pod-db
     restart: unless-stopped
     ports:
       - "54322:5432"
@@ -190,16 +190,16 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
-    container_name: elephant-ears-mailpit
+    container_name: elephant-pod-mailpit
     restart: unless-stopped
     ports:
       - "8025:8025"
 
-  elephant-ears:
+  elephant-pod:
     build:
       context: ../..
       dockerfile: apps/server/Dockerfile
-    container_name: elephant-ears-app
+    container_name: elephant-pod-app
     restart: unless-stopped
     environment:
       PORT: 8787
@@ -217,11 +217,11 @@ services:
       SILENCE_RENDER_ENABLED: ${SILENCE_RENDER_ENABLED}
       FFMPEG_PATH: ffmpeg
     volumes:
-      - elephant_ears_data:/app/.data
+      - elephant_pod_data:/app/.data
     ports:
       - "8787:8787"
     depends_on:
       - kong
 
 volumes:
-  elephant_ears_data:
+  elephant_pod_data:

@@ -9,7 +9,7 @@ interface SilenceJobResponse {
 
 export async function maybePrepareServerSilenceShortenedUrl(episode: EpisodeWithState, settings: AppSettings): Promise<string | null> {
   const serverUrl = settings.serverUrl?.replace(/\/$/, '');
-  if (!serverUrl || !settings.silenceShortening || settings.silenceShorteningMode !== 'server-ffmpeg') return null;
+  if (!serverUrl || !settings.silenceShortening) return null;
 
   const response = await fetch(`${serverUrl}/api/audio/silence-shortening-jobs`, {
     method: 'POST',

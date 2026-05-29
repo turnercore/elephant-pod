@@ -1,10 +1,11 @@
-export type SectionKey = 'inbox' | 'queue' | 'library' | 'search' | 'downloads' | 'settings';
+export type SectionKey = 'inbox' | 'queue' | 'library' | 'search' | 'history' | 'downloads' | 'settings';
 
-export type InboxState = 'new' | 'queued' | 'dismissed' | 'archived';
+export type InboxState = 'new' | 'dismissed' | 'archived';
 export type EpisodeFilter = 'all' | 'played' | 'unplayed';
 export type SortDirection = 'newest' | 'oldest';
 export type ClipRenderStatus = 'local-only' | 'queued' | 'pending' | 'rendering' | 'ready' | 'rendered' | 'failed' | 'range-link' | 'time-range-only';
 export type DownloadBackend = 'browser-cache' | 'tauri-filesystem';
+export type DownloadSource = 'manual' | 'queue' | 'inbox';
 export type SilenceShorteningMode = 'off' | 'web-audio' | 'server-ffmpeg' | 'native';
 
 export interface Podcast {
@@ -18,6 +19,26 @@ export interface Podcast {
   tags: string[];
   lastRefreshedAt?: string;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface CachedPodcast extends Podcast {
+  cachedAt: string;
+  cacheExpiresAt?: string;
+  podcastIndexId?: string;
+  categories: string[];
+}
+
+export interface PodcastPreference {
+  podcastId: string;
+  playbackRate?: number;
+  skipForwardSec?: number;
+  skipBackSec?: number;
+  skipIntroSec?: number;
+  skipOutroSec?: number;
+  silenceShortening?: boolean;
+  sortDirection: SortDirection;
+  addNewEpisodesToInbox: boolean;
   updatedAt: string;
 }
 
@@ -39,6 +60,8 @@ export interface Episode {
   imageUrl?: string;
   publishedAt: string;
   durationSec?: number;
+  seasonNumber?: number;
+  episodeNumber?: number;
   explicit?: boolean;
   chapters: Chapter[];
   guid: string;
@@ -51,8 +74,10 @@ export interface EpisodeState {
   episodeId: string;
   played: boolean;
   playedAt?: string;
+  lastPlayedAt?: string;
   progressSec: number;
   inboxState: InboxState;
+  inboxPosition?: number;
   queuedAt?: string;
   queuePosition?: number;
   downloaded: boolean;
@@ -62,6 +87,8 @@ export interface EpisodeState {
   /** Size written by the native downloader or browser cache estimate when known. */
   downloadBytes?: number;
   downloadBackend?: DownloadBackend;
+  /** Device-local reason this file was cached. Not synced; used for retention cleanup. */
+  downloadSource?: DownloadSource;
   favorite: boolean;
   deletedAt?: string;
   clipCount: number;
@@ -98,9 +125,11 @@ export interface AppSettings {
   playbackRate: number;
   autoPlayNext: boolean;
   autoDownload: boolean;
+  autoDownloadInbox: boolean;
   autoDeleteAfterListen: boolean;
   downloadOnlyWifi: boolean;
   storageCapMb: number;
+  inboxSortDirection: SortDirection;
   refreshIntervalMinutes: number;
   silenceShortening: boolean;
   silenceShorteningMode: SilenceShorteningMode;
@@ -123,6 +152,26 @@ export interface AppSettings {
   deviceId?: string;
   updatedAt?: string;
   theme: 'dark' | 'light';
+}
+
+export interface PodcastListeningStats {
+  podcastId: string;
+  podcastTitle: string;
+  listeningSec: number;
+  contentSec: number;
+  speedSavedSec: number;
+  silenceSavedSec: number;
+  updatedAt: string;
+}
+
+export interface ListeningStats {
+  id: 'local';
+  listeningSec: number;
+  contentSec: number;
+  speedSavedSec: number;
+  silenceSavedSec: number;
+  byPodcast: Record<string, PodcastListeningStats>;
+  updatedAt: string;
 }
 
 export interface SyncMeta {
@@ -158,6 +207,10 @@ export interface BackupFile {
   settings: AppSettings;
   syncMeta?: SyncMeta[];
   tombstones?: SyncTombstone[];
+  podcastPreferences?: PodcastPreference[];
+  podcastCache?: CachedPodcast[];
+  cachedEpisodes?: Episode[];
+  listeningStats?: ListeningStats;
 }
 
 export interface ParsedFeedResult {

@@ -1,4 +1,4 @@
-import type { AppSettings, Clip, Episode, EpisodeState, Podcast, SyncTombstone, TombstoneTable } from '@/types/domain';
+import type { AppSettings, Clip, Episode, EpisodeState, Podcast, PodcastPreference, SyncTombstone, TombstoneTable } from '@/types/domain';
 import { db } from '../storage/db';
 import { getSettings, saveSettings } from '../storage/repository';
 import { nowIso } from '../dates';
@@ -15,6 +15,7 @@ interface SyncRequestPayload {
   feeds: Podcast[];
   episodes: Episode[];
   states: EpisodeState[];
+  podcastPreferences: PodcastPreference[];
   clips: Clip[];
   tombstones: SyncTombstone[];
   settings: AppSettings;
@@ -36,6 +37,8 @@ interface SyncResponsePayload {
   episodeStates?: unknown;
   episode_state?: unknown;
   episodeState?: unknown;
+  podcastPreferences?: unknown;
+  podcast_preferences?: unknown;
   clips?: unknown;
   sync_tombstones?: unknown;
   tombstones?: unknown;
@@ -47,6 +50,7 @@ interface PulledRemote {
   subscriptions: unknown[];
   episodes: unknown[];
   episodeStates: unknown[];
+  podcastPreferences: unknown[];
   clips: unknown[];
   tombstones: unknown[];
   settings: unknown;
@@ -62,12 +66,13 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
   const base = normalizeServerUrl(serverUrl || settings.serverUrl);
   if (!base) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Server URL is not configured.' };
   if (!accessToken) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Sign in before syncing.' };
-  if (!settings.syncEnabled) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Enable sync before syncing.' };
+  if (!settings.syncEnabled) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Enable sync in Settings before syncing.' };
 
-  const [localFeeds, localEpisodes, localStates, localClips, localTombstones] = await Promise.all([
+  const [localFeeds, localEpisodes, localStates, localPodcastPreferences, localClips, localTombstones] = await Promise.all([
     db.feeds.toArray(),
     db.episodes.toArray(),
     db.states.toArray(),
+    db.podcastPreferences.toArray(),
     db.clips.toArray(),
     db.tombstones.toArray()
   ]);
@@ -76,6 +81,7 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
     feeds: localFeeds,
     episodes: localEpisodes,
     states: localStates,
+    podcastPreferences: localPodcastPreferences,
     clips: localClips,
     tombstones: localTombstones,
     settings,
@@ -103,6 +109,7 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
   const remoteFeeds = normalizeRemoteFeeds(pulled.subscriptions);
   const remoteEpisodes = normalizeRemoteEpisodes(pulled.episodes);
   const remoteStates = normalizeRemoteStates(pulled.episodeStates);
+  const remotePodcastPreferences = normalizeRemotePodcastPreferences(pulled.podcastPreferences);
   const remoteClips = normalizeRemoteClips(pulled.clips);
   const remoteTombstones = normalizeRemoteTombstones(pulled.tombstones);
   const remoteSettings = pickedRemoteSettings(pulled.settings);
@@ -110,6 +117,7 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
   await syncFeeds(localFeeds, remoteFeeds, stats);
   await syncEpisodes(localEpisodes, remoteEpisodes, stats);
   await syncStates(localStates, remoteStates, stats);
+  await syncPodcastPreferences(localPodcastPreferences, remotePodcastPreferences, stats);
   await syncClips(localClips, remoteClips, stats);
   await syncSettings(settings, remoteSettings, stats);
   await syncTombstones(localTombstones, remoteTombstones, stats);
@@ -131,7 +139,7 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
     updatedAt: timestamp
   });
   const nextSettings = await getSettings();
-  await saveSettings({ ...nextSettings, syncEnabled: true, lastSyncAt: timestamp });
+  await saveSettings({ ...nextSettings, lastSyncAt: timestamp });
 
   return {
     ...nextStats,
@@ -143,7 +151,7 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
 
 function extractPulled(body: SyncResponsePayload | null): PulledRemote {
   if (!body) {
-    return { subscriptions: [], episodes: [], episodeStates: [], clips: [], tombstones: [], settings: null };
+    return { subscriptions: [], episodes: [], episodeStates: [], podcastPreferences: [], clips: [], tombstones: [], settings: null };
   }
 
   const pulled = toRecord(body.pulledData ?? body.pulled ?? body.pulls);
@@ -151,6 +159,7 @@ function extractPulled(body: SyncResponsePayload | null): PulledRemote {
     subscriptions: toArray(pulled.subscriptions || pulled.feeds || body.subscriptions || body.feeds),
     episodes: toArray(pulled.episodes || body.episodes),
     episodeStates: toArray(pulled.states || pulled.episode_states || pulled.episodeStates || body.episode_states || body.episodeStates || body.episode_state),
+    podcastPreferences: toArray(pulled.podcastPreferences || pulled.podcast_preferences || body.podcastPreferences || body.podcast_preferences),
     clips: toArray(pulled.clips || body.clips),
     tombstones: toArray(pulled.sync_tombstones || pulled.tombstones || body.sync_tombstones || body.tombstones),
     settings: pulled.settings || pulled.user_settings || pulled.userSettings || body.user_settings || body.userSettings
@@ -167,6 +176,10 @@ function normalizeRemoteEpisodes(rows: unknown[]): Episode[] {
 
 function normalizeRemoteStates(rows: unknown[]): RemoteEpisodeState[] {
   return rows.map(normalizeRemoteState).filter((state): state is RemoteEpisodeState => state !== null);
+}
+
+function normalizeRemotePodcastPreferences(rows: unknown[]): PodcastPreference[] {
+  return rows.map(normalizeRemotePodcastPreference).filter((preference): preference is PodcastPreference => preference !== null);
 }
 
 function normalizeRemoteClips(rows: unknown[]): Clip[] {
@@ -238,16 +251,37 @@ function normalizeRemoteState(row: unknown): RemoteEpisodeState | null {
   return {
     episodeId,
     played: asBoolean(record.played),
-    playedAt: asOptionalString(record.played_at ?? record.playedAt),
-    progressSec: asNumber(record.progress_sec ?? record.progressSec) || 0,
-    inboxState: asInboxState(record.inbox_state ?? record.inboxState),
-    queuedAt: asOptionalString(record.queued_at ?? record.queuedAt),
+	    playedAt: asOptionalString(record.played_at ?? record.playedAt),
+    lastPlayedAt: asOptionalString(record.last_played_at ?? record.lastPlayedAt),
+	    progressSec: asNumber(record.progress_sec ?? record.progressSec) || 0,
+	    inboxState: asInboxState(record.inbox_state ?? record.inboxState),
+	    inboxPosition: asNumber(record.inbox_position ?? record.inboxPosition),
+	    queuedAt: asOptionalString(record.queued_at ?? record.queuedAt),
     queuePosition: asNumber(record.queue_position ?? record.queuePosition),
     downloaded: asBoolean(record.downloaded),
     downloadedAt: asOptionalString(record.downloaded_at ?? record.downloadedAt),
     favorite: asBoolean(record.favorite),
     deletedAt: asOptionalString(record.deleted_at ?? record.deletedAt),
     clipCount: asNumber(record.clip_count ?? record.clipCount) || 0,
+    updatedAt: asOptionalString(record.updated_at ?? record.updatedAt) || nowIso()
+	  };
+	}
+
+function normalizeRemotePodcastPreference(row: unknown): PodcastPreference | null {
+  const record = toRecord(row);
+  const podcastId = asString(record.podcast_local_id ?? record.podcastId);
+  if (!podcastId) return null;
+  const sortDirection = record.sort_direction ?? record.sortDirection;
+  return {
+    podcastId,
+    playbackRate: asNumber(record.playback_rate ?? record.playbackRate),
+    skipForwardSec: asNumber(record.skip_forward_sec ?? record.skipForwardSec),
+    skipBackSec: asNumber(record.skip_back_sec ?? record.skipBackSec),
+    skipIntroSec: asNumber(record.skip_intro_sec ?? record.skipIntroSec) ?? 0,
+    skipOutroSec: asNumber(record.skip_outro_sec ?? record.skipOutroSec) ?? 0,
+    silenceShortening: typeof (record.silence_shortening ?? record.silenceShortening) === 'boolean' ? Boolean(record.silence_shortening ?? record.silenceShortening) : undefined,
+    sortDirection: sortDirection === 'oldest' ? 'oldest' : 'newest',
+    addNewEpisodesToInbox: typeof (record.add_new_episodes_to_inbox ?? record.addNewEpisodesToInbox) === 'boolean' ? Boolean(record.add_new_episodes_to_inbox ?? record.addNewEpisodesToInbox) : true,
     updatedAt: asOptionalString(record.updated_at ?? record.updatedAt) || nowIso()
   };
 }
@@ -403,7 +437,8 @@ function mergeRemoteEpisodeState(local: EpisodeState, remote: EpisodeState): Epi
     downloadedAt: local.downloadedAt,
     downloadPath: local.downloadPath,
     downloadBytes: local.downloadBytes,
-    downloadBackend: local.downloadBackend
+    downloadBackend: local.downloadBackend,
+    downloadSource: local.downloadSource
   };
 }
 
@@ -412,20 +447,51 @@ function hydrateRemoteEpisodeState(remote: RemoteEpisodeState): EpisodeState {
     episodeId: remote.episodeId,
     played: remote.played,
     playedAt: remote.playedAt,
-    progressSec: remote.progressSec,
-    inboxState: remote.inboxState,
-    queuedAt: remote.queuedAt,
+    lastPlayedAt: remote.lastPlayedAt,
+	    progressSec: remote.progressSec,
+	    inboxState: remote.inboxState,
+	    inboxPosition: remote.inboxPosition,
+	    queuedAt: remote.queuedAt,
     queuePosition: remote.queuePosition,
     downloaded: remote.downloaded ?? false,
     downloadedAt: remote.downloadedAt,
     downloadPath: undefined,
     downloadBytes: undefined,
     downloadBackend: undefined,
+    downloadSource: undefined,
     favorite: remote.favorite,
     deletedAt: remote.deletedAt,
     clipCount: remote.clipCount,
     updatedAt: remote.updatedAt
-  };
+	  };
+	}
+
+async function syncPodcastPreferences(local: PodcastPreference[], remote: PodcastPreference[], stats: MutableSyncStats) {
+  const remoteMap = new Map(remote.map((row) => [row.podcastId, row]));
+  const toPull: PodcastPreference[] = [];
+
+  for (const preference of local) {
+    const row = remoteMap.get(preference.podcastId);
+    if (row && isRemoteNewer(preference.updatedAt, row.updatedAt)) {
+      toPull.push(row);
+      stats.conflicts += 1;
+    } else if (!row) {
+      stats.pushed += 1;
+    }
+  }
+
+  const localIds = new Set(local.map((preference) => preference.podcastId));
+  for (const row of remote) {
+    if (!localIds.has(row.podcastId)) {
+      toPull.push(row);
+      stats.conflicts += 1;
+    }
+  }
+
+  if (toPull.length) {
+    await db.podcastPreferences.bulkPut(toPull);
+    stats.pulled += toPull.length;
+  }
 }
 
 async function syncClips(local: Clip[], remote: Clip[], stats: MutableSyncStats) {
@@ -559,7 +625,8 @@ function asBoolean(value: unknown): boolean {
 }
 
 function asInboxState(value: unknown): EpisodeState['inboxState'] {
-  if (value === 'new' || value === 'queued' || value === 'dismissed' || value === 'archived') return value;
+  if (value === 'new' || value === 'dismissed' || value === 'archived') return value;
+  if (value === 'queued') return 'archived';
   return 'archived';
 }
 

@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.elephanthand.elephantears.audio"
+    namespace = "com.elephanthand.elephantpod.audio"
     compileSdk = 35
 
     defaultConfig {

@@ -1,4 +1,4 @@
-package com.elephanthand.elephantears.audio
+package com.elephanthand.elephantpod.audio
 
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession

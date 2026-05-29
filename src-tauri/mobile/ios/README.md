@@ -1,6 +1,6 @@
 # iOS native audio plugin notes
 
-This folder contains the Swift side of the Elephant Ears mobile audio plugin. It is intentionally kept separate from the generated Tauri iOS project so future agents can wire it into the mobile build without losing code when `tauri ios init` regenerates files.
+This folder contains the Swift side of the Elephant Pod mobile audio plugin. It is intentionally kept separate from the generated Tauri iOS project so future agents can wire it into the mobile build without losing code when `tauri ios init` regenerates files.
 
 Production responsibilities:
 

@@ -1,6 +1,6 @@
 # Agents.md
 
-Repo-specific entry point for agents working on Elephant Ears.
+Repo-specific entry point for agents working on Elephant Pod.
 
 ## Operating principles
 

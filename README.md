@@ -1,6 +1,6 @@
-# Elephant Ears
+# Elephant Pod
 
-Elephant Ears is a local-first podcast app for web, desktop, iOS, and Android via Tauri. It combines an AntennaPod-style inbox/queue workflow, Overcast-style listening polish, optional self-hosted Supabase sync, server-rendered clips, and Elephant Hand Games branding.
+Elephant Pod is a local-first podcast app for web, desktop, iOS, and Android via Tauri. It combines an AntennaPod-style inbox/queue workflow, Overcast-style listening polish, optional self-hosted Supabase sync, server-rendered clips, and Elephant Hand Games branding.
 
 This repository is a **v2 production-oriented scaffold**. The web/server app builds and runs. The Tauri shell now has native filesystem download commands and a stable command boundary for native audio. A local Tauri audio plugin package is included and registered for desktop-safe fallback; the iOS/Android implementations are still scaffolds that need generated-project wiring and physical-device validation.
 
@@ -22,7 +22,7 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - Auto-download setting, Wi-Fi-only preference, auto-delete after listen, and storage-cap pruning.
 - Public clip publishing with ffmpeg-rendered MP3 files and source time-range fallback.
 - Server-side silence-shortening render jobs through ffmpeg.
-- Optional account-based features through a server-owned auth+sync contract: magic-link auth, authenticated sync for subscriptions/episodes/episode state/clips/settings/tombstones, and optional PodcastIndex discovery.
+- Optional account-based features through a server-owned auth+sync contract: magic-link auth, automatic signed-in sync for subscriptions/episodes/episode state/clips/settings/tombstones, and optional PodcastIndex discovery.
 - Screen-reader labels on icon-first controls.
 - Tauri v2 config for desktop/mobile packaging.
 - Full local Supabase-style Docker bundle under `infra/supabase`.
@@ -32,12 +32,14 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - `src-tauri/src/downloads.rs`: native app-data episode downloads, manifest tracking, storage stats, deletion, and oldest-first pruning.
 - `src-tauri/src/native_audio.rs`: desktop-safe Rust command surface for native audio session state.
 - `src-tauri/plugins/tauri-plugin-elephant-audio`: local Tauri audio plugin scaffold registered in the app shell.
-- `src-tauri/mobile/ios/ElephantEarsAudioPlugin.swift`: AVAudioSession / AVPlayer / MPRemoteCommandCenter implementation reference.
-- `src-tauri/mobile/android/.../ElephantEarsAudioPlugin.kt` and `ElephantEarsPlaybackService.kt`: Android Media3 / ExoPlayer / MediaSessionService reference.
+- `src-tauri/mobile/ios/ElephantPodAudioPlugin.swift`: AVAudioSession / AVPlayer / MPRemoteCommandCenter implementation reference.
+- `src-tauri/mobile/android/.../ElephantPodAudioPlugin.kt` and `ElephantPodPlaybackService.kt`: Android Media3 / ExoPlayer / MediaSessionService reference.
 - `apps/server/src/mediaJobs.ts`: ffmpeg clip rendering and silence-shortening jobs.
 - `apps/web/src/lib/audio/serverSilence.ts`: frontend handoff to server-rendered silence-shortened audio.
 - `apps/web/src/lib/sync/syncEngine.ts`: bidirectional Supabase sync with merge conflict accounting.
-- `infra/supabase/docker-compose.yml`: self-hosted Supabase-style stack plus Elephant Ears server.
+- `infra/docker-compose.yml`: local Postgres plus Elephant Pod server for local development.
+- `.github/workflows/publish-container.yml`: GitHub-hosted build-and-push flow for the server image.
+- `.github/workflows/deploy-superzima.yml`: SSH deploy flow that pulls the GHCR image on `superzima`.
 
 ## Run locally
 
@@ -58,9 +60,10 @@ The shared UI is IndexedDB-first and never receives Supabase or PodcastIndex sec
 Set these in the app server environment (example in `.env.example`):
 
 - `SERVER_PUBLIC_URL` (public URL for clip links/redirects)
+- `DATABASE_URL` (local Postgres for sync data, public clip registry, and server-owned metadata)
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (if used by server-side auth and admin operations)
+- `SUPABASE_SERVICE_ROLE_KEY` when you are using a self-hosted Supabase stack or need privileged server-side Supabase calls
 - `PODCASTINDEX_API_KEY`
 - `PODCASTINDEX_API_SECRET`
 - `PODCASTINDEX_USER_AGENT`
@@ -72,11 +75,43 @@ Set these in the app server environment (example in `.env.example`):
 
 Security assumptions:
 
-- `SUPABASE_*` and `PODCASTINDEX_*` stay server-only.
+- `DATABASE_URL`, `SUPABASE_*`, and `PODCASTINDEX_*` stay server-only.
 - Client runtime variables remain public and should only include `VITE_API_BASE_URL`.
 - Server should validate and forward bearer tokens for logged-in sync/discovery calls.
 - Tauri local mode works with zero server keys present; accounts and sync/discovery stay disabled until sign-in.
 - Server boots with `dotenv` support, so a repository-root `.env` is loaded automatically during local dev.
+
+### Server setup
+
+There are two supported server layouts:
+
+1. Bare local Postgres plus an auth provider you control. Use this when you want the smallest server footprint.
+2. Full self-hosted Supabase for auth and Postgres. Use this when you want the auth stack and database bundled together.
+
+Default bare-Postgres setup:
+
+```bash
+cp .env.example .env
+docker compose -f infra/docker-compose.yml up -d postgres
+npm install
+npm run dev:server
+```
+
+That starts the app server against the local Postgres container in `infra/docker-compose.yml`. Point `SUPABASE_URL` and `SUPABASE_ANON_KEY` at the auth provider you control. If you also need privileged Supabase calls, add `SUPABASE_SERVICE_ROLE_KEY` to the root `.env`.
+
+Self-hosted Supabase setup:
+
+```bash
+cd infra/supabase
+cp .env.example .env
+docker compose up -d
+cd ../..
+cp .env.example .env
+npm install
+npm run dev:server
+```
+
+The Supabase bundle gives you auth, Postgres, Kong, Studio, and Mailpit in one stack. Use `SUPABASE_URL=http://localhost:8000`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` from that bundle in the app server env. If you use the Supabase Postgres for sync/data instead of the bare local `postgres` container, set `DATABASE_URL` to the Supabase Postgres connection string from that stack.
 
 ## Build web + server
 
@@ -93,35 +128,56 @@ The server serves the web build when `WEB_DIST=apps/web/dist`.
 
 ```bash
 cp .env.example .env
-docker build -f apps/server/Dockerfile -t elephant-ears:local .
-docker run --env-file .env -p 8787:8787 elephant-ears:local
+docker build -f apps/server/Dockerfile -t elephant-pod:local .
+docker run --env-file .env -p 8787:8787 elephant-pod:local
 ```
 
-Or from the `infra` folder:
+That is the smallest direct server path. If you prefer Compose, use the `infra` folder:
 
 ```bash
 cd infra
 docker compose up --build
 ```
 
-## Self-hosted Supabase + Elephant Ears
+## Compose examples
+
+Default app-server + local Postgres:
 
 ```bash
-cd infra/supabase
+cd infra
 cp .env.example .env
-# Replace JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY, POSTGRES_PASSWORD, and dashboard credentials.
-docker compose pull
 docker compose up -d
 ```
 
 Services:
 
 - App/server: `http://localhost:8787`
-- Supabase gateway: `http://localhost:8000`
-- Mailpit: `http://localhost:8025`
-- Direct dev Postgres: `localhost:54322`
+- Local Postgres: `localhost:54322`
 
-A fresh database mounts `volumes/db/init/01-elephant-ears-schema.sql` to create the Elephant Ears sync tables and RLS policies.
+A fresh database mounts `postgres/init.sql` to create the Elephant Pod sync tables and clip registry.
+
+If you want to use Supabase only for auth, set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and optionally `SUPABASE_SERVICE_ROLE_KEY` to the auth provider you control, then point `DATABASE_URL` at the local Postgres container.
+
+If you want the full self-hosted Supabase stack instead of the bare Postgres container, use `infra/supabase/docker-compose.yml` and `infra/supabase/.env.example`:
+
+```bash
+cd infra/supabase
+cp .env.example .env
+docker compose up -d
+```
+
+That bundle provides auth and Postgres together and is the recommended example to follow when you want a single local stack with Supabase-managed auth.
+
+## GHCR deployment
+
+The production container image is built by GitHub Actions on GitHub-hosted runners and pushed to GHCR as `ghcr.io/<owner>/elephant-pod-server`.
+
+`superzima` then pulls that image through its Compose file instead of building from a copied checkout.
+
+Required deployment secrets:
+
+- `SUPERZIMA_SSH_PRIVATE_KEY`
+- `GHCR_TOKEN`
 
 ## Tauri desktop/mobile
 

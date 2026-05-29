@@ -7,9 +7,9 @@ Tauri v2 can package iOS and Android apps, but a serious podcast app needs nativ
 - `src-tauri/src/downloads.rs`: app-local file downloads, manifests, delete, storage stats, oldest-first pruning.
 - `src-tauri/src/native_audio.rs`: app-level audio command shim used by desktop/web fallback.
 - `src-tauri/plugins/tauri-plugin-elephant-audio`: local Tauri plugin scaffold registered by the app shell.
-- `src-tauri/mobile/ios/ElephantEarsAudioPlugin.swift`: AVAudioSession/AVPlayer/lock-screen command reference.
-- `src-tauri/mobile/android/.../ElephantEarsAudioPlugin.kt`: Media3 MediaController/MediaSession implementation reference.
-- `src-tauri/mobile/android/.../ElephantEarsPlaybackService.kt`: MediaSessionService reference.
+- `src-tauri/mobile/ios/ElephantPodAudioPlugin.swift`: AVAudioSession/AVPlayer/lock-screen command reference.
+- `src-tauri/mobile/android/.../ElephantPodAudioPlugin.kt`: Media3 MediaController/MediaSession implementation reference.
+- `src-tauri/mobile/android/.../ElephantPodPlaybackService.kt`: MediaSessionService reference.
 
 ## Frontend command surface
 

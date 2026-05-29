@@ -1,4 +1,4 @@
--- Elephant Ears Supabase schema.
+-- Elephant Pod Supabase schema.
 -- Run this in your self-hosted Supabase project after Auth is configured.
 
 create extension if not exists pgcrypto;
@@ -49,8 +49,10 @@ create table if not exists public.episode_states (
   episode_local_id text not null,
   played boolean not null default false,
   played_at timestamptz,
+  last_played_at timestamptz,
   progress_sec integer not null default 0,
   inbox_state text not null default 'new',
+  inbox_position integer,
   queued_at timestamptz,
   queue_position integer,
   downloaded boolean not null default false,
@@ -60,8 +62,41 @@ create table if not exists public.episode_states (
   clip_count integer not null default 0,
   updated_at timestamptz not null default now(),
   unique(user_id, episode_local_id),
-  check (inbox_state in ('new', 'queued', 'dismissed', 'archived'))
+  check (inbox_state in ('new', 'dismissed', 'archived')),
+  check (inbox_position is null or queue_position is null)
 );
+
+alter table public.episode_states add column if not exists inbox_position integer;
+alter table public.episode_states add column if not exists last_played_at timestamptz;
+alter table public.episode_states drop constraint if exists episode_states_inbox_state_check;
+alter table public.episode_states add constraint episode_states_inbox_state_check check (inbox_state in ('new', 'dismissed', 'archived'));
+alter table public.episode_states drop constraint if exists episode_states_inbox_queue_exclusive_check;
+alter table public.episode_states add constraint episode_states_inbox_queue_exclusive_check check (inbox_position is null or queue_position is null);
+
+create table if not exists public.podcast_preferences (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  podcast_local_id text not null,
+  playback_rate numeric,
+  skip_forward_sec integer,
+  skip_back_sec integer,
+  skip_intro_sec integer not null default 0,
+  skip_outro_sec integer not null default 0,
+  silence_shortening boolean,
+  sort_direction text not null default 'newest',
+  add_new_episodes_to_inbox boolean not null default true,
+  updated_at timestamptz not null default now(),
+  unique(user_id, podcast_local_id),
+  check (playback_rate is null or (playback_rate >= 0.5 and playback_rate <= 3.5)),
+  check (skip_forward_sec is null or skip_forward_sec >= 0),
+  check (skip_back_sec is null or skip_back_sec >= 0),
+  check (skip_intro_sec >= 0),
+  check (skip_outro_sec >= 0),
+  check (sort_direction in ('newest', 'oldest'))
+);
+
+alter table public.podcast_preferences add column if not exists skip_intro_sec integer not null default 0;
+alter table public.podcast_preferences add column if not exists skip_outro_sec integer not null default 0;
 
 create table if not exists public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -130,6 +165,7 @@ create table if not exists public.public_clips (
 alter table public.subscriptions enable row level security;
 alter table public.episodes enable row level security;
 alter table public.episode_states enable row level security;
+alter table public.podcast_preferences enable row level security;
 alter table public.user_settings enable row level security;
 alter table public.clips enable row level security;
 alter table public.sync_tombstones enable row level security;
@@ -138,6 +174,7 @@ alter table public.public_clips enable row level security;
 drop policy if exists "subscriptions are owned by user" on public.subscriptions;
 drop policy if exists "episodes are owned by user" on public.episodes;
 drop policy if exists "states are owned by user" on public.episode_states;
+drop policy if exists "podcast preferences are owned by user" on public.podcast_preferences;
 drop policy if exists "settings are owned by user" on public.user_settings;
 drop policy if exists "clips are owned by user" on public.clips;
 drop policy if exists "tombstones are owned by user" on public.sync_tombstones;
@@ -146,6 +183,7 @@ drop policy if exists "public clips are readable" on public.public_clips;
 create policy "subscriptions are owned by user" on public.subscriptions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "episodes are owned by user" on public.episodes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "states are owned by user" on public.episode_states for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "podcast preferences are owned by user" on public.podcast_preferences for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "settings are owned by user" on public.user_settings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "clips are owned by user" on public.clips for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "tombstones are owned by user" on public.sync_tombstones for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -154,5 +192,7 @@ create policy "public clips are readable" on public.public_clips for select usin
 create index if not exists idx_subscriptions_user_updated on public.subscriptions(user_id, updated_at desc);
 create index if not exists idx_episodes_user_podcast on public.episodes(user_id, podcast_local_id, published_at desc);
 create index if not exists idx_episode_states_queue on public.episode_states(user_id, queue_position) where queue_position is not null;
+create index if not exists idx_episode_states_inbox on public.episode_states(user_id, inbox_position) where inbox_position is not null;
+create index if not exists idx_podcast_preferences_user_updated on public.podcast_preferences(user_id, updated_at desc);
 create index if not exists idx_clips_user_episode on public.clips(user_id, episode_local_id);
 create index if not exists idx_tombstones_user_deleted on public.sync_tombstones(user_id, deleted_at desc);

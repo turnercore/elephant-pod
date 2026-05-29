@@ -13,6 +13,7 @@ const authErrorMap = {
 export type ServerAuthContext = {
   userId: string;
   email?: string | null;
+  username?: string | null;
   accessToken: string;
 };
 
@@ -70,6 +71,7 @@ export function requireBearerAuth() {
     res.locals.serverAuthContext = {
       userId: data.user.id,
       email: data.user.email,
+      username: deriveUsername(data.user),
       accessToken: token
     };
     next();
@@ -92,7 +94,7 @@ export async function getAuthSession(req: Request, res: Response) {
   if (context) {
     res.json({
       authenticated: true,
-      user: { id: context.userId, email: context.email ?? null, accessToken: context.accessToken }
+      user: { id: context.userId, email: context.email ?? null, username: context.username ?? null, accessToken: context.accessToken }
     });
     return;
   }
@@ -106,8 +108,17 @@ export async function getAuthSession(req: Request, res: Response) {
 
   res.json({
     authenticated: true,
-    user: { id: data.user.id, email: data.user.email, accessToken: token }
+    user: { id: data.user.id, email: data.user.email, username: deriveUsername(data.user), accessToken: token }
   });
+}
+
+function deriveUsername(user: { email?: string | null; user_metadata?: Record<string, unknown> | null }): string | null {
+  const metadata = user.user_metadata ?? {};
+  const candidates = [metadata.user_name, metadata.preferred_username, metadata.name, metadata.full_name, user.email];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return null;
 }
 
 function deriveCallbackUrl(serverPublicUrl: string) {
@@ -220,7 +231,7 @@ export async function githubCallbackHandler(req: Request, res: Response) {
 
       res.json({
         provider: 'github',
-        user: { id: data.user.id, email: data.user.email },
+        user: { id: data.user.id, email: data.user.email, username: deriveUsername(data.user) },
         session: {
           access_token: token,
           refresh_token: firstQueryParam(refreshToken),
@@ -261,7 +272,8 @@ export async function githubCallbackHandler(req: Request, res: Response) {
     flow: 'pkce-server',
     user: {
       id: data.session.user.id,
-      email: data.session.user.email
+      email: data.session.user.email,
+      username: deriveUsername(data.session.user)
     },
     session: {
       access_token: data.session.access_token,

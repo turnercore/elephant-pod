@@ -1,4 +1,4 @@
-package com.elephanthand.elephantears.audio
+package com.elephanthand.elephantpod.audio
 
 import android.app.Activity
 import android.content.ComponentName

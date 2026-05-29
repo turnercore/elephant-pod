@@ -9,7 +9,7 @@ import {
   safeEpisodeFileName
 } from '../native/tauriBridge';
 
-const CACHE_NAME = 'elephant-ears-episode-cache-v2';
+const CACHE_NAME = 'elephant-pod-episode-cache-v2';
 
 export interface DownloadOutcome {
   backend: DownloadBackend;

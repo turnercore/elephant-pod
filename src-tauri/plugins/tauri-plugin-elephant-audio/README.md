@@ -1,6 +1,6 @@
 # tauri-plugin-elephant-audio
 
-Native audio plugin scaffold for Elephant Ears.
+Native audio plugin scaffold for Elephant Pod.
 
 The Rust side is registered in `src-tauri/src/lib.rs`. On desktop it reports unavailable native audio so the app falls back to HTML audio. On mobile, the Swift/Kotlin sources in this package are the starting point for real AVPlayer/Media3 playback.
 
