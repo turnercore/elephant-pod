@@ -163,8 +163,7 @@ export function NavigationRail({
                       setProfileOpen(false);
                       onSignIn();
                     }}
-                    disabled={!hasServer}
-                    aria-label={hasServer ? 'Sign in with GitHub' : 'Set a server URL before signing in'}
+                    aria-label={hasServer ? 'Sign in with GitHub' : 'Open server setup before signing in'}
                   >
                     <Github size={16} aria-hidden />
                     Sign in with GitHub
@@ -219,8 +218,7 @@ export function NavigationRail({
                       setProfileOpen(false);
                       onSignIn();
                     }}
-                    disabled={!hasServer}
-                    aria-label={hasServer ? 'Sign in with GitHub' : 'Set a server URL before signing in'}
+                    aria-label={hasServer ? 'Sign in with GitHub' : 'Open server setup before signing in'}
                   >
                     <Github size={16} aria-hidden />
                     Sign in with GitHub
@@ -291,7 +289,13 @@ export function MobileNavigationRail({
         aria-expanded={profileOpen}
         aria-controls={profileMenuId}
         aria-haspopup="menu"
-        onClick={() => setProfileOpen((open) => !open)}
+        onClick={() => {
+          if (!hasSession && !hasServer) {
+            onSignIn();
+            return;
+          }
+          setProfileOpen((open) => !open);
+        }}
         className={cn(
           'eh-tooltip ml-auto grid h-11 w-11 shrink-0 place-items-center rounded-eh border border-bone/15 bg-surface/70 text-cream transition hover:border-yellow/40 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow',
           profileOpen && 'border-yellow bg-yellow text-canvas hover:text-canvas'
@@ -327,8 +331,7 @@ export function MobileNavigationRail({
                   setProfileOpen(false);
                   onSignIn();
                 }}
-                disabled={!hasServer}
-                aria-label={hasServer ? 'Sign in with GitHub' : 'Set a server URL before signing in'}
+                aria-label={hasServer ? 'Sign in with GitHub' : 'Open server setup before signing in'}
               >
                 <Github size={16} aria-hidden />
                 Sign in

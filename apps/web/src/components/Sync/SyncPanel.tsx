@@ -2,7 +2,7 @@ import { Github, LogOut, RefreshCw, Server } from 'lucide-react';
 import { useState } from 'react';
 import type { AppSettings } from '@/types/domain';
 import { syncNow } from '@/lib/sync/syncEngine';
-import { startGithubSignIn, clearServerSession, isServerSessionExpired, resolveBrowserServerUrl, type ServerSession } from '@/lib/sync/serverAuth';
+import { clearServerSession, isServerSessionExpired, resolveBrowserServerUrl, type ServerSession } from '@/lib/sync/serverAuth';
 import { isHostedWebRuntime } from '@/lib/runtime';
 import { Button } from '../ui/Button';
 
@@ -10,12 +10,16 @@ export function SyncPanel({
   settings,
   onRefresh,
   serverSession,
-  onSessionChange
+  onSessionChange,
+  onSignIn,
+  serverConnectionOk = false
 }: {
   settings: AppSettings;
   onRefresh: () => void;
   serverSession: ServerSession | null;
   onSessionChange: (next: ServerSession | null) => void;
+  onSignIn: () => void;
+  serverConnectionOk?: boolean;
 }) {
   const [status, setStatus] = useState('');
   const serverUrl = resolveBrowserServerUrl(settings.serverUrl);
@@ -26,16 +30,7 @@ export function SyncPanel({
   const derivedStatus = hasSession ? 'Sync is active while signed in.' : hostedWebRuntime ? 'Sign in to use this hosted web app.' : 'Local-only mode is ready.';
 
   async function login() {
-    if (!serverUrl) {
-      setStatus('Add a server URL in Playback + Automation settings.');
-      return;
-    }
-    try {
-      setStatus('Opening GitHub sign-in flow...');
-      await startGithubSignIn(serverUrl);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Could not start GitHub sign-in.');
-    }
+    onSignIn();
   }
 
   async function logout() {
@@ -72,11 +67,11 @@ export function SyncPanel({
         <div className="text-sm">
           <span className="font-bold">Server auth</span>
           <span className="ml-2 text-bone">
-            {hasServer ? (hasSession ? 'Signed in with GitHub. Sync is active.' : sessionExpired ? 'Session expired. Sign in again to unlock sync/search.' : 'No active session. Sign in to unlock sync/search.') : 'Set the server URL first.'}
+            {hasServer ? (hasSession ? 'Signed in with GitHub. Sync is active.' : sessionExpired ? 'Session expired. Sign in again to unlock sync/search.' : serverConnectionOk ? 'Server found. Sign in to unlock sync/search.' : 'Test the server before signing in.') : 'Set the server URL first.'}
           </span>
         </div>
         <div className="grid gap-2 md:grid-cols-[auto_auto_auto]">
-          <Button onClick={login} variant="primary" disabled={!hasServer || hasSession} aria-label={hasSession ? 'Sign in with GitHub (already signed in)' : 'Sign in with GitHub'}>
+          <Button onClick={login} variant="primary" disabled={!hasServer || hasSession || (!hostedWebRuntime && !serverConnectionOk)} aria-label={hasSession ? 'Sign in with GitHub (already signed in)' : 'Sign in with GitHub'}>
             <Github size={16} aria-hidden />
             Sign in with GitHub
           </Button>

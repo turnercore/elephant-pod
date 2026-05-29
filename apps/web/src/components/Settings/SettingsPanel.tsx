@@ -1,18 +1,24 @@
+import { Server } from 'lucide-react';
 import type { AppSettings, ListeningStats, SortDirection } from '@/types/domain';
 import type { PropsWithChildren } from 'react';
 import { Select, Input } from '../ui/Input';
 import { Slider } from '../ui/Slider';
 import { Switch } from '../ui/Switch';
+import { Button } from '../ui/Button';
 
 export function SettingsPanel({
   settings,
   stats,
   onChange,
+  onTestServer,
+  serverTestStatus,
   showServerControls = true
 }: {
   settings: AppSettings;
   stats?: ListeningStats | null;
   onChange: (settings: AppSettings) => void;
+  onTestServer?: () => void;
+  serverTestStatus?: string;
   showServerControls?: boolean;
 }) {
   const thresholdDb = settings.silenceThresholdDb ?? -42;
@@ -75,7 +81,7 @@ export function SettingsPanel({
           value={settings.storageCapMb}
           onChange={(event) => onChange({ ...settings, storageCapMb: Number(event.currentTarget.value) })}
         />
-        <Switch label="Auto-download queued episodes" checked={settings.autoDownload} onCheckedChange={(checked) => onChange({ ...settings, autoDownload: checked })} description="Uses Tauri filesystem downloads in native builds and Cache Storage on web." />
+        <Switch label="Auto-download queued episodes" checked={settings.autoDownload} onCheckedChange={(checked) => onChange({ ...settings, autoDownload: checked })} description="Uses Tauri filesystem downloads in native builds. Browser auto-download only attempts same-origin media." />
         <Switch label="Auto-download inbox episodes" checked={Boolean(settings.autoDownloadInbox)} onCheckedChange={(checked) => onChange({ ...settings, autoDownloadInbox: checked })} description="Downloads inbox triage items after queued items. Dismissed inbox downloads are removed unless favorited." />
         <Switch label="Download only over Wi-Fi" checked={settings.downloadOnlyWifi} onCheckedChange={(checked) => onChange({ ...settings, downloadOnlyWifi: checked })} description="Manual downloads can still be attempted." />
         <Switch label="Delete after listen" checked={settings.autoDeleteAfterListen} onCheckedChange={(checked) => onChange({ ...settings, autoDeleteAfterListen: checked })} description="Deletes non-favorite downloads once they are no longer in Inbox or Queue." />
@@ -139,8 +145,25 @@ export function SettingsPanel({
         <SettingsSection title="Server">
           <label className="grid gap-2 rounded-eh border border-bone/15 bg-canvas/30 p-3">
             <span className="text-sm font-bold">App server URL</span>
-            <Input value={settings.serverUrl || ''} onChange={(event) => onChange({ ...settings, serverUrl: event.target.value })} placeholder="https://ears.example.com" />
+            <Input
+              type="url"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={settings.serverUrl || ''}
+              onChange={(event) => onChange({ ...settings, serverUrl: event.target.value })}
+              placeholder="https://ears.example.com"
+              aria-label="App server URL"
+            />
           </label>
+          <div className="flex flex-wrap items-center gap-3 rounded-eh border border-bone/15 bg-canvas/30 p-3">
+            <Button onClick={onTestServer} disabled={!settings.serverUrl?.trim()} aria-label="Test app server connection">
+              <Server size={16} aria-hidden />
+              Test server
+            </Button>
+            <p className="min-w-0 flex-1 text-sm text-bone" role="status">{serverTestStatus || 'No server connection tested.'}</p>
+          </div>
         </SettingsSection>
       ) : null}
     </div>

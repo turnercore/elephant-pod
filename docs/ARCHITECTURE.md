@@ -57,7 +57,7 @@ Per-podcast preferences are keyed by podcast/feed id. They can override speed, s
 
 Listening stats are local profile facts stored in `listeningStats`: real time spent listening, podcast content time heard, per-podcast listening totals, estimated time saved by speed, and estimated time saved by silence skipping. They are exported in JSON backups but are not part of server sync.
 
-Downloaded episode storage is device-local. Automatic queued downloads are enabled by default; optional inbox downloads are lower priority. Delete-after-listen is enabled by default and treats an episode as inactive once it is no longer in Queue or Inbox; inactive non-favorite downloads are removed. Manual downloads are tagged locally so they can remain while active, then follow the same delete-after-listen/favorite retention rule once played, dismissed, or removed from the triage stack. Storage pruning preserves downloads in this order:
+Downloaded episode storage is device-local. Automatic queued downloads are enabled by default in Tauri/native builds; browser builds only auto-download same-origin media because most podcast CDNs block cross-origin `fetch()` even when an `<audio>` element can play the stream. Optional inbox downloads are lower priority. Delete-after-listen is enabled by default and treats an episode as inactive once it is no longer in Queue or Inbox; inactive non-favorite downloads are removed. Manual downloads are tagged locally so they can remain while active, then follow the same delete-after-listen/favorite retention rule once played, dismissed, or removed from the triage stack. Storage pruning preserves downloads in this order:
 
 1. Favorited episodes.
 2. Queued episodes from top to bottom.
@@ -65,7 +65,7 @@ Downloaded episode storage is device-local. Automatic queued downloads are enabl
 
 ## Native model
 
-Browser/web mode uses an HTML audio element. Tauri builds can use the bridge in `apps/web/src/lib/native/tauriBridge.ts`.
+Browser/web mode uses an HTML audio element without routing remote podcast media through Web Audio. Tauri builds can use the bridge in `apps/web/src/lib/native/tauriBridge.ts`.
 
 Implemented native-facing pieces:
 

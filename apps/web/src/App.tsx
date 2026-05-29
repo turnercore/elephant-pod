@@ -5,6 +5,7 @@ import { AppShell } from '@/components/Layout/AppShell';
 import { PlayerBar } from '@/components/Player/PlayerBar';
 import { ClipComposer } from '@/components/Clips/ClipComposer';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { InboxPage } from '@/pages/InboxPage';
 import { QueuePage } from '@/pages/QueuePage';
 import { LibraryPage } from '@/pages/LibraryPage';
@@ -20,7 +21,7 @@ import { fetchFeedThroughServer } from '@/lib/rss';
 import { exportOpml, importOpml } from '@/lib/opml';
 import { downloadEpisodeToCache } from '@/lib/storage/cache';
 import { ensureSeedData } from '@/lib/storage/db';
-import { clearServerSession, consumeAuthTokenFromCallback, fetchServerSessionProfile, isServerSessionExpired, loadServerSession, resolveBrowserServerUrl, saveServerSession, startGithubSignIn, type ServerSession } from '@/lib/sync/serverAuth';
+import { clearServerSession, consumeAuthTokenFromCallback, fetchServerSessionProfile, isServerSessionExpired, loadServerSession, resolveBrowserServerUrl, saveServerSession, startGithubSignIn, testServerConnection, type ServerSession } from '@/lib/sync/serverAuth';
 import {
   exportBackup,
   addEpisodeToQueueEnd,
@@ -55,7 +56,7 @@ import {
 } from '@/lib/storage/repository';
 import { deleteInactiveDownloadIfNeeded, deleteInactiveDownloadsIfNeeded, maybeAutoDownload, pruneDownloadsOverCap } from '@/lib/features/automation';
 import { isTauriRuntime } from '@/lib/native/tauriBridge';
-import { isHostedWebRuntime } from '@/lib/runtime';
+import { isHostedWebRuntime, isLoopbackUrl } from '@/lib/runtime';
 import { syncNow } from '@/lib/sync/syncEngine';
 
 type ViewSnapshot = {
@@ -79,6 +80,8 @@ export default function App() {
   const [episodeSilenceOverrides, setEpisodeSilenceOverrides] = useState<Record<string, boolean>>({});
   const [playerCollapseToken, setPlayerCollapseToken] = useState(0);
   const [status, setStatus] = useState('');
+  const [serverTestStatus, setServerTestStatus] = useState('');
+  const [serverConnectionOk, setServerConnectionOk] = useState(false);
   const [clipEpisode, setClipEpisode] = useState<EpisodeWithState | null>(null);
   const [serverSession, setServerSession] = useState<ServerSession | null>(null);
   const telemetryRef = useRef<{ episodeId: string; mediaAt: number; wallAt: number } | null>(null);
@@ -143,7 +146,9 @@ export default function App() {
       listPodcastPreferences(),
       getListeningStats()
     ]);
-    setSettings(nextSettings);
+    const normalizedSettings = isTauriRuntime() && isLoopbackUrl(nextSettings.serverUrl || '') ? { ...nextSettings, serverUrl: '' } : nextSettings;
+    if (normalizedSettings !== nextSettings) void saveSettings(normalizedSettings);
+    setSettings(normalizedSettings);
     setFeeds(nextFeeds);
     setEpisodes(nextEpisodes);
     setCachedPodcasts(nextCachedPodcasts);
@@ -287,8 +292,30 @@ export default function App() {
   }, [audio.current, podcastPreferences, runtimeSettings]);
 
   async function persistSettings(next: AppSettings) {
+    if (next.serverUrl !== settings?.serverUrl) {
+      setServerConnectionOk(false);
+      setServerTestStatus('');
+    }
     setSettings(next);
     await saveSettings(next);
+  }
+
+  async function handleTestServer() {
+    if (!settings?.serverUrl?.trim()) {
+      setServerConnectionOk(false);
+      setServerTestStatus('Enter a server URL first.');
+      return;
+    }
+    try {
+      setServerConnectionOk(false);
+      setServerTestStatus('Testing server connection...');
+      const message = await testServerConnection(settings.serverUrl);
+      setServerConnectionOk(true);
+      setServerTestStatus(message);
+    } catch (error) {
+      setServerConnectionOk(false);
+      setServerTestStatus(error instanceof Error ? error.message : 'Server connection failed.');
+    }
   }
 
   const handleCacheFeedUrl = useCallback(async (url: string) => {
@@ -337,7 +364,15 @@ export default function App() {
 
   async function handleBrowserSignIn() {
     if (!runtimeServerUrl) {
-      setStatus('Add a server URL in Playback + Automation settings first.');
+      setActive('settings');
+      setStatus('Add and test a server URL before signing in.');
+      setServerTestStatus('Enter a server URL, test it, then sign in with GitHub.');
+      return;
+    }
+    if (!serverConnectionOk && !hostedWebRuntime) {
+      setActive('settings');
+      setStatus('Test the server connection before signing in.');
+      setServerTestStatus('Test the server connection before signing in with GitHub.');
       return;
     }
     try {
@@ -699,7 +734,34 @@ export default function App() {
             <p className="mt-2 text-sm leading-6 text-bone">
               This web/runtime build requires a signed-in server session before playback and library actions are available.
             </p>
-            <Button onClick={() => void handleBrowserSignIn()} className="mt-5" aria-label="Start GitHub sign-in">
+            {!hostedWebRuntime ? (
+              <div className="mt-5 grid gap-3 text-left">
+                <label className="grid gap-2">
+                  <span className="text-sm font-bold text-cream">App server URL</span>
+                  <Input
+                    type="url"
+                    inputMode="url"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    value={settings.serverUrl || ''}
+                    onChange={(event) => void persistSettings({ ...settings, serverUrl: event.target.value })}
+                    placeholder="https://ears.example.com"
+                    aria-label="App server URL"
+                  />
+                </label>
+                <Button onClick={() => void handleTestServer()} disabled={!settings.serverUrl?.trim()} aria-label="Test app server connection">
+                  Test server
+                </Button>
+                <p className="text-sm text-yellow" role="status">{serverTestStatus || 'Enter a server URL and test it before signing in.'}</p>
+              </div>
+            ) : null}
+            <Button
+              onClick={() => void handleBrowserSignIn()}
+              className="mt-5"
+              disabled={!runtimeServerUrl || (!hostedWebRuntime && !serverConnectionOk)}
+              aria-label="Start GitHub sign-in"
+            >
               <Github size={16} aria-hidden />
               Sign in with GitHub
             </Button>
@@ -785,6 +847,10 @@ export default function App() {
             onRefresh={refreshLocalState}
             serverSession={serverSession}
             onSessionChange={handleSessionChange}
+            onTestServer={() => void handleTestServer()}
+            serverTestStatus={serverTestStatus}
+            serverConnectionOk={serverConnectionOk}
+            onSignIn={() => void handleBrowserSignIn()}
             showServerControls={!hostedWebRuntime}
           />
         );
@@ -884,7 +950,7 @@ const fallbackSettings: AppSettings = {
   refreshIntervalMinutes: 720,
   nativeAudioPreferred: true,
   silenceShortening: false,
-  silenceShorteningMode: 'web-audio',
+  silenceShorteningMode: 'server-ffmpeg',
   silenceThreshold: 0.018,
   silenceThresholdDb: -42,
   silenceMinMs: 350,

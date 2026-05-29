@@ -19,13 +19,13 @@ export const defaultSettings: AppSettings = {
   inboxSortDirection: 'newest',
   refreshIntervalMinutes: 720,
   silenceShortening: false,
-  silenceShorteningMode: 'web-audio',
+  silenceShorteningMode: 'server-ffmpeg',
   silenceThreshold: 0.018,
   silenceThresholdDb: -42,
   silenceMinMs: 350,
   silenceBoostRate: 2.15,
   nativeAudioPreferred: true,
-  serverUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787',
+  serverUrl: import.meta.env.VITE_API_BASE_URL || '',
   theme: 'dark',
   updatedAt: nowIso()
 };

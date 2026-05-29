@@ -1,5 +1,6 @@
 import type { AppSettings, EpisodeWithState } from '@/types/domain';
 import { deleteEpisodeFromCache, downloadEpisodeToCache, isProbablyWifi, pruneOfflineDownloads } from '../storage/cache';
+import { isTauriRuntime } from '../native/tauriBridge';
 import { getEpisodeWithState, listCachedEpisodes, listEpisodes, updateEpisodeState } from '../storage/repository';
 import { nowIso } from '../dates';
 
@@ -24,6 +25,7 @@ export async function maybeAutoDownload(episodes: EpisodeWithState[], settings: 
   const candidates = [...queued, ...inbox].slice(0, 8);
   let count = 0;
   for (const { episode, source } of candidates) {
+    if (!shouldAttemptAutomaticDownload(episode)) continue;
     try {
       const download = await downloadEpisodeToCache(episode);
       await updateEpisodeState(episode.id, {
@@ -40,6 +42,17 @@ export async function maybeAutoDownload(episodes: EpisodeWithState[], settings: 
     }
   }
   return count;
+}
+
+function shouldAttemptAutomaticDownload(episode: EpisodeWithState): boolean {
+  if (isTauriRuntime()) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    const url = new URL(episode.audioUrl, window.location.href);
+    return url.protocol === 'blob:' || url.protocol === 'data:' || url.origin === window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteDismissedInboxDownload(episode: EpisodeWithState): Promise<void> {

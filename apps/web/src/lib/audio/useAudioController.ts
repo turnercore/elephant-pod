@@ -4,7 +4,6 @@ import { getCachedEpisodeUrl } from '../storage/cache';
 import { isTauriRuntime, listenNativeMediaCommands, nativeClearAudioSession, nativePlaybackState, nativeSetSilenceShortening } from '../native/tauriBridge';
 import { getNativeAudioStatus, pauseNativeAudio, playNativeAudio, prepareNativeAudio, seekNativeAudio, setNativeAudioRate, stopNativeAudio } from '../native/nativeAudio';
 import { maybePrepareServerSilenceShortenedUrl } from './serverSilence';
-import { attachSilenceShortener, type SilenceShortenerHandle } from './silenceShortener';
 import { shouldUseNativeAudio } from '../runtime';
 
 const RESUME_REWIND_AFTER_MS = 30_000;
@@ -27,7 +26,6 @@ export interface AudioController {
 
 export function useAudioController(settings: AppSettings, podcastPreferences: PodcastPreference[] = [], episodeSilenceOverrides: Record<string, boolean> = {}): AudioController {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const shortenerRef = useRef<SilenceShortenerHandle | null>(null);
   const nativeActiveRef = useRef(false);
   const [nativeActive, setNativeActive] = useState(false);
   const [current, setCurrent] = useState<EpisodeWithState | null>(null);
@@ -74,20 +72,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     const audio = audioRef.current;
     if (audio) audio.playbackRate = resolved.playbackRate;
 
-    shortenerRef.current?.stop();
-    shortenerRef.current = null;
-
-    if (audio && !nativeActiveRef.current && resolved.silenceShortening) {
-      const handle = attachSilenceShortener(audio, {
-        normalRate: resolved.playbackRate,
-        silenceThreshold: resolved.silenceThreshold,
-        boostRate: resolved.silenceBoostRate
-      });
-      shortenerRef.current = handle;
-      setSilenceSupported(handle.supported);
-    } else {
-      setSilenceSupported(Boolean(resolved.silenceShortening && nativeActiveRef.current));
-    }
+    setSilenceSupported(Boolean(resolved.silenceShortening && nativeActiveRef.current));
 
     if (nativeActiveRef.current) void setNativeAudioRate(resolved.playbackRate);
 
@@ -103,7 +88,6 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
 
   useEffect(() => {
     applyPlaybackSettings();
-    return () => shortenerRef.current?.stop();
   }, [applyPlaybackSettings]);
 
   const resolveEpisodeUrl = useCallback(
@@ -152,8 +136,6 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         const prepared = await prepareNativeAudio(episode, sourceUrl, startSec, resolved.playbackRate);
         if (prepared) {
           if (audio && !audio.paused) audio.pause();
-          shortenerRef.current?.stop();
-          shortenerRef.current = null;
           setNativeActiveFlag(true);
           setCurrentTime(startSec);
           setDuration(episode.durationSec || 0);

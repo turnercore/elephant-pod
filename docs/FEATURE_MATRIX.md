@@ -11,9 +11,9 @@
 | Mark played/unplayed | Implemented | Local state and sync schema. |
 | Playback history | Implemented | `lastPlayedAt` records starts/resumes separately from completion so History can show recently played episodes in order. |
 | Rendered clips/public links | Implemented server path | ffmpeg renders MP3 clips; fallback to source time-range links. |
-| Auto-download | Partial native-ready | Queued auto-download is on by default. Optional inbox auto-download uses the same Browser Cache Storage / Tauri filesystem path. |
+| Auto-download | Partial native-ready | Queued auto-download is on by default in Tauri/native builds. Browser auto-download only attempts same-origin media; manual browser downloads can still try Cache Storage where hosts allow CORS. |
 | Episode triage | Implemented | Inbox -> queue/dismiss/archive. |
-| Silence shortening | Multi-path partial | User-facing toggle with automatic runtime path: native bridge where available, server ffmpeg when configured, Web Audio fallback otherwise. |
+| Silence shortening | Multi-path partial | User-facing toggle with automatic runtime path: native bridge where available or server ffmpeg when configured. Browser Web Audio analysis is disabled for remote podcast streams to preserve playback. |
 | Listening stats | Implemented local | Tracks real listening time, per-podcast totals, speed-up savings, and silence-skip savings in local profile stats. |
 | RSS-first/no lock-in | Implemented | Add RSS URL, OPML import/export, JSON backup. |
 | Episode artwork | Implemented | RSS item-level `<itunes:image>` and `media:thumbnail` artwork is preserved; episode views fall back to show artwork when item art is absent. |

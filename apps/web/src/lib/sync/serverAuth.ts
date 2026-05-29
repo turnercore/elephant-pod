@@ -183,6 +183,28 @@ export async function fetchServerSessionProfile(serverUrl: string, accessToken: 
   return { userId, email, username };
 }
 
+export async function testServerConnection(serverUrl: string): Promise<string> {
+  const base = normalizeServerUrl(serverUrl);
+  if (!base) throw new Error('Server URL is required.');
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${base}/api/health`, {
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`Server responded with ${response.status}.`);
+    return 'Server connection found.';
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Server connection timed out.');
+    if (error instanceof Error) throw error;
+    throw new Error('Server connection failed.');
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function getTokenFromParams(params: URLSearchParams): string | null {
   for (const key of TOKEN_PARAM_KEYS) {
     const token = params.get(key);

@@ -18,6 +18,10 @@ export function SettingsPage({
   onRefresh,
   serverSession,
   onSessionChange,
+  onTestServer,
+  serverTestStatus,
+  serverConnectionOk,
+  onSignIn,
   showServerControls = true
 }: {
   settings: AppSettings;
@@ -31,17 +35,35 @@ export function SettingsPage({
   onRefresh: () => void;
   serverSession: ServerSession | null;
   onSessionChange: (next: ServerSession | null) => void;
+  onTestServer?: () => void;
+  serverTestStatus?: string;
+  serverConnectionOk?: boolean;
+  onSignIn: () => void;
   showServerControls?: boolean;
 }) {
   return (
     <Panel title="Settings" className="h-full">
       <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-4 pb-6 md:px-5">
         <div className="mx-auto grid w-full max-w-5xl gap-0">
-          <SettingsPanel settings={settings} stats={listeningStats} onChange={onSettingsChange} showServerControls={showServerControls} />
+          <SettingsPanel
+            settings={settings}
+            stats={listeningStats}
+            onChange={onSettingsChange}
+            onTestServer={onTestServer}
+            serverTestStatus={serverTestStatus}
+            showServerControls={showServerControls}
+          />
 
           <section className="grid gap-3 border-b border-bone/15 py-5">
             <h3 className="eh-title text-sm text-yellow">Sync</h3>
-            <SyncPanel settings={settings} onRefresh={onRefresh} serverSession={serverSession} onSessionChange={onSessionChange} />
+            <SyncPanel
+              settings={settings}
+              onRefresh={onRefresh}
+              serverSession={serverSession}
+              onSessionChange={onSessionChange}
+              onSignIn={onSignIn}
+              serverConnectionOk={serverConnectionOk}
+            />
           </section>
 
           <section className="grid gap-3 py-5">

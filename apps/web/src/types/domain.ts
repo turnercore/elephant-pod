@@ -6,6 +6,7 @@ export type SortDirection = 'newest' | 'oldest';
 export type ClipRenderStatus = 'local-only' | 'queued' | 'pending' | 'rendering' | 'ready' | 'rendered' | 'failed' | 'range-link' | 'time-range-only';
 export type DownloadBackend = 'browser-cache' | 'tauri-filesystem';
 export type DownloadSource = 'manual' | 'queue' | 'inbox';
+// `web-audio` is retained for older backups; browser playback no longer routes remote podcast media through Web Audio.
 export type SilenceShorteningMode = 'off' | 'web-audio' | 'server-ffmpeg' | 'native';
 
 export interface Podcast {
@@ -133,7 +134,7 @@ export interface AppSettings {
   refreshIntervalMinutes: number;
   silenceShortening: boolean;
   silenceShorteningMode: SilenceShorteningMode;
-  /** Web Audio fallback threshold. Lower values skip only very quiet spans. */
+  /** Low-RMS threshold used by native/server silence processors. Lower values skip only very quiet spans. */
   silenceThreshold: number;
   /** Server/native ffmpeg threshold, typically -45 to -35 dB. */
   silenceThresholdDb: number;

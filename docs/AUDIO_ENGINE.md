@@ -15,7 +15,12 @@ The shared React app uses one hidden HTML `<audio>` element. This path supports:
 - progress persistence
 - autoplay next
 - ended handling
-- Web Audio silence-shortening fallback
+
+The browser path intentionally does not attach a Web Audio analyser to the primary
+audio element for remote podcast media. Many podcast CDNs either omit CORS headers
+or return invalid duplicated CORS headers after redirects; routing those streams
+through `MediaElementAudioSourceNode` can make playback output silence. Browser
+silence shortening should use the server-rendered ffmpeg path when available.
 
 ## 2. Tauri/native bridge
 
@@ -48,7 +53,7 @@ The app exposes silence shortening as an on/off preference, not a user-selected 
 
 - Native builds use the native audio bridge when available and pass silence-shortening options through that path.
 - If a server is configured, the app can request a cached ffmpeg `silenceremove` render and use it when ready.
-- Web playback attaches the Web Audio low-RMS rate booster as a fallback; this can fail when CORS prevents audio analysis.
+- Web playback does not run low-RMS Web Audio analysis on the primary audio element because cross-origin podcast audio can be silenced by browser CORS protections.
 
 Playback telemetry records real listening time, content time heard, estimated speed-up savings, and estimated silence-skip savings in local profile stats.
 

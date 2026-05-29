@@ -12,7 +12,7 @@ This pass targeted the major production-facing gaps from the first scaffold.
 - ffmpeg clip rendering on the Express server.
 - Public clip pages that prefer rendered MP3 files and fall back to source time-range links.
 - Server ffmpeg endpoint for silence-shortened audio files.
-- Adaptive Web Audio silence-shortening fallback with configurable threshold/boost settings.
+- Server/native silence-shortening settings. Browser Web Audio analysis is not used for remote podcast playback because CDN CORS behavior can make media output silence.
 - Bidirectional Supabase sync cycle: pull, merge, push, settings sync, and tombstones.
 - Self-hosted Supabase-style Docker bundle under `infra/supabase`, plus an official-distribution bootstrap helper.
 - Updated docs, env file, validation notes, and agent guidance.
