@@ -1,12 +1,12 @@
 [package]
-name = "elephant-ears"
+name = "elephant-pod"
 version = "0.2.0"
-description = "Elephant Ears podcast player"
+description = "Elephant Pod podcast player"
 authors = ["Elephant Hand Games"]
 edition = "2021"
 
 [lib]
-name = "elephant_ears_lib"
+name = "elephant_pod_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

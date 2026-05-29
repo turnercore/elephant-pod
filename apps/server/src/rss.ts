@@ -29,6 +29,22 @@ function text(value: unknown): string {
   return '';
 }
 
+function imageFrom(value: unknown): string {
+  if (!value) return '';
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const resolved = imageFrom(entry);
+      if (resolved) return resolved;
+    }
+    return '';
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return text(record['@_href'] || record['@_url'] || record.url || record.link);
+  }
+  return text(value);
+}
+
 function parseDuration(raw: unknown): number | undefined {
   const value = text(raw);
   if (!value) return undefined;
@@ -40,10 +56,17 @@ function parseDuration(raw: unknown): number | undefined {
   return undefined;
 }
 
+function parsePositiveNumber(raw: unknown): number | undefined {
+  const value = text(raw);
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export async function parseRemoteFeed(feedUrl: string) {
   const response = await fetch(feedUrl, {
     headers: {
-      'user-agent': 'ElephantEars/0.1 (+https://elephanthand.com)'
+      'user-agent': 'ElephantPod/0.1 (+https://elephanthand.com)'
     },
     redirect: 'follow'
   });
@@ -57,7 +80,7 @@ export async function parseRemoteFeed(feedUrl: string) {
 
   const title = text(channel.title) || feedUrl;
   const image = channel.image as Record<string, unknown> | undefined;
-  const imageUrl = text(image?.url) || text(channel['itunes:image']);
+  const imageUrl = text(image?.url) || imageFrom(channel['itunes:image']) || imageFrom(channel['media:thumbnail']) || imageFrom(channel['media:content']);
   const podcastId = stableId(feedUrl, 'feed');
   const timestamp = new Date().toISOString();
   const podcast = {
@@ -86,13 +109,15 @@ export async function parseRemoteFeed(feedUrl: string) {
       id: stableId(`${feedUrl}:${guid}`, 'ep'),
       podcastId,
       podcastTitle: title,
-      title: text(item.title) || `Episode ${index + 1}`,
+      title: text(item.title || item['itunes:title']) || `Episode ${index + 1}`,
       description: text(item.description || item['content:encoded'] || item.summary),
       audioUrl,
       websiteUrl: text(item.link),
-      imageUrl: text(item['itunes:image']) || imageUrl,
+      imageUrl: imageFrom(item['itunes:image']) || imageFrom(item['media:thumbnail']) || imageFrom(item['media:content']),
       publishedAt: text(item.pubDate || item.published || item.updated) || timestamp,
       durationSec: parseDuration(item['itunes:duration']),
+      seasonNumber: parsePositiveNumber(item['itunes:season']),
+      episodeNumber: parsePositiveNumber(item['itunes:episode']),
       explicit: text(item['itunes:explicit']).toLowerCase() === 'yes',
       chapters: [],
       guid,

@@ -1,4 +1,4 @@
-package com.elephanthand.elephantears.audio
+package com.elephanthand.elephantpod.audio
 
 import android.app.Activity
 import android.content.ComponentName
@@ -33,7 +33,7 @@ class PositionArgs {
 }
 
 @TauriPlugin
-class ElephantEarsAudioPlugin(private val activity: Activity) : Plugin(activity) {
+class ElephantPodAudioPlugin(private val activity: Activity) : Plugin(activity) {
     private var controller: MediaController? = null
 
     @Command
@@ -95,13 +95,13 @@ class ElephantEarsAudioPlugin(private val activity: Activity) : Plugin(activity)
 
     private fun getController(callback: (MediaController) -> Unit) {
         controller?.let(callback) ?: run {
-            val token = SessionToken(activity, ComponentName(activity, ElephantEarsPlaybackService::class.java))
+            val token = SessionToken(activity, ComponentName(activity, ElephantPodPlaybackService::class.java))
             val future = MediaController.Builder(activity, token).buildAsync()
             future.addListener({
                 controller = future.get()
                 callback(future.get())
             }, MoreExecutors.directExecutor())
-            activity.startService(Intent(activity, ElephantEarsPlaybackService::class.java))
+            activity.startService(Intent(activity, ElephantPodPlaybackService::class.java))
         }
     }
 
@@ -109,6 +109,6 @@ class ElephantEarsAudioPlugin(private val activity: Activity) : Plugin(activity)
         val payload = JSObject()
         payload.put("command", command)
         seconds?.let { payload.put("seconds", it) }
-        trigger("elephant-ears://media-command", payload)
+        trigger("elephant-pod://media-command", payload)
     }
 }

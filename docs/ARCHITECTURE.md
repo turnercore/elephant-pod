@@ -1,6 +1,6 @@
 # Architecture
 
-Elephant Ears is split into four layers.
+Elephant Pod is split into four layers.
 
 ```text
 React/Vite UI
@@ -32,7 +32,7 @@ Self-hosted Supabase
 
 ## Local-first model
 
-The app always writes to local IndexedDB first. Supabase sync is a second layer that can pull, merge, and push state for signed-in accounts.
+The app always writes to local IndexedDB first. Supabase sync is a second layer that can pull, merge, and push state for signed-in accounts. Sign-in is the sync opt-in; signing out is the opt-out.
 
 Runtime policy:
 
@@ -49,8 +49,19 @@ Local tables:
 - `settings`
 - `syncMeta`
 - `tombstones`
+- `listeningStats`
 
-The queue is represented by `EpisodeState.queuePosition`, which keeps queue state easy to sync and backup.
+The queue is represented by `EpisodeState.queuePosition`, which keeps queue state easy to sync and backup. Starting playback with a row-level Play action inserts that episode at queue position 1 so playback state survives refresh; the previously current unfinished episode is displaced to Play Next. Playback history is tracked separately with `EpisodeState.lastPlayedAt`, while `playedAt` remains the completion/mark-played timestamp.
+
+Per-podcast preferences are keyed by podcast/feed id. They can override speed, skip forward/back, skip intro, skip outro, silence shortening, episode sort direction, and whether new subscribed episodes enter Inbox. Skip intro/outro default to `0` seconds.
+
+Listening stats are local profile facts stored in `listeningStats`: real time spent listening, podcast content time heard, per-podcast listening totals, estimated time saved by speed, and estimated time saved by silence skipping. They are exported in JSON backups but are not part of server sync.
+
+Downloaded episode storage is device-local. Automatic queued downloads are enabled by default; optional inbox downloads are lower priority. Delete-after-listen is enabled by default and treats an episode as inactive once it is no longer in Queue or Inbox; inactive non-favorite downloads are removed. Manual downloads are tagged locally so they can remain while active, then follow the same delete-after-listen/favorite retention rule once played, dismissed, or removed from the triage stack. Storage pruning preserves downloads in this order:
+
+1. Favorited episodes.
+2. Queued episodes from top to bottom.
+3. Inbox episodes from the current triage top to bottom.
 
 ## Native model
 

@@ -33,5 +33,5 @@ pub fn run() {
             native_audio::audio_status
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Elephant Ears");
+        .expect("error while running Elephant Pod");
 }

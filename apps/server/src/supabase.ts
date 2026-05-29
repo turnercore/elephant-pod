@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import type { ServerClip } from './types.js';
 
 const placeholderPattern = /^(CHANGE_ME|REPLACE_ME|TODO|PLACEHOLDER)/i;
 
@@ -67,28 +66,5 @@ function createServerSupabaseClient(mode: 'service' | 'anon') {
       detectSessionInUrl: false,
       flowType: mode === 'anon' ? 'implicit' : 'pkce'
     }
-  });
-}
-
-export async function publishClipToSupabase(clip: ServerClip): Promise<void> {
-  const client = getServerSupabase();
-  if (!client) return;
-  await client.from('public_clips').upsert({
-    id: clip.id,
-    title: clip.title,
-    note: clip.note,
-    podcast_title: clip.podcastTitle,
-    episode_title: clip.episodeTitle,
-    source_audio_url: clip.sourceAudioUrl,
-    start_sec: clip.startSec,
-    end_sec: clip.endSec,
-    public_url: clip.publicUrl,
-    rendered_audio_url: clip.renderedAudioUrl,
-    rendered_video_url: clip.renderedVideoUrl,
-    render_status: clip.renderStatus,
-    render_error: clip.renderError,
-    file_size_bytes: clip.fileSizeBytes,
-    created_at: clip.createdAt,
-    updated_at: clip.updatedAt
   });
 }

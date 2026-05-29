@@ -6,7 +6,15 @@ import { Panel } from '@/components/ui/Panel';
 import { Badge } from '@/components/ui/Badge';
 import { estimateStorageMb } from '@/lib/storage/cache';
 
-export function DownloadsPage({ episodes, handlers }: { episodes: EpisodeWithState[]; handlers: Omit<React.ComponentProps<typeof EpisodeList>, 'episodes'> }) {
+export function DownloadsPage({
+  episodes,
+  getPodcastImageUrl,
+  handlers
+}: {
+  episodes: EpisodeWithState[];
+  getPodcastImageUrl?: (podcastId: string) => string | undefined;
+  handlers: Omit<React.ComponentProps<typeof EpisodeList>, 'episodes' | 'getPodcastImageUrl'>;
+}) {
   const [usage, setUsage] = useState(0);
   const downloaded = episodes.filter((episode) => episode.state.downloaded);
   const nativeCount = useMemo(() => downloaded.filter((episode) => episode.state.downloadBackend === 'tauri-filesystem').length, [downloaded]);
@@ -18,17 +26,18 @@ export function DownloadsPage({ episodes, handlers }: { episodes: EpisodeWithSta
   return (
     <Panel
       title="Downloads"
-      kicker="Offline, with limits"
       action={<Badge tone="teal"><HardDrive size={13} aria-hidden /> {usage} MB</Badge>}
       className="h-full"
     >
-      <div className="grid gap-3 border-b border-bone/15 p-4 md:grid-cols-3">
-        <Stat icon={<Download size={18} aria-hidden />} label="Downloaded" value={String(downloaded.length)} />
-        <Stat icon={<HardDrive size={18} aria-hidden />} label="Native files" value={String(nativeCount)} />
-        <Stat icon={<Trash2 size={18} aria-hidden />} label="Storage estimate" value={`${usage} MB`} />
-      </div>
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">
-        <EpisodeList episodes={downloaded} {...handlers} />
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 md:px-5">
+        <div className="grid gap-3 border-b border-bone/15 pb-4 md:grid-cols-3">
+          <Stat icon={<Download size={18} aria-hidden />} label="Downloaded" value={String(downloaded.length)} />
+          <Stat icon={<HardDrive size={18} aria-hidden />} label="Native files" value={String(nativeCount)} />
+          <Stat icon={<Trash2 size={18} aria-hidden />} label="Storage estimate" value={`${usage} MB`} />
+        </div>
+        <div className="pt-4">
+          <EpisodeList episodes={downloaded} getPodcastImageUrl={getPodcastImageUrl} {...handlers} />
+        </div>
       </div>
     </Panel>
   );

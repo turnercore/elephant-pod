@@ -1,3 +1,3 @@
 fn main() {
-    elephant_ears_lib::run()
+    elephant_pod_lib::run()
 }

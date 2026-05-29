@@ -4,25 +4,23 @@ import type { AppSettings } from '@/types/domain';
 import { syncNow } from '@/lib/sync/syncEngine';
 import { startGithubSignIn, clearServerSession, isServerSessionExpired, normalizeServerUrl, type ServerSession } from '@/lib/sync/serverAuth';
 import { Button } from '../ui/Button';
-import { Switch } from '../ui/Switch';
 
 export function SyncPanel({
   settings,
-  onChange,
   onRefresh,
   serverSession,
   onSessionChange
 }: {
   settings: AppSettings;
-  onChange: (settings: AppSettings) => void;
   onRefresh: () => void;
   serverSession: ServerSession | null;
   onSessionChange: (next: ServerSession | null) => void;
 }) {
-  const [status, setStatus] = useState('Local-only mode is ready.');
+  const [status, setStatus] = useState('');
   const hasServer = Boolean(normalizeServerUrl(settings.serverUrl));
   const sessionExpired = isServerSessionExpired(serverSession);
   const hasSession = Boolean(serverSession && !sessionExpired);
+  const derivedStatus = hasSession ? 'Sync is active while signed in.' : 'Local-only mode is ready.';
 
   async function login() {
     if (!settings.serverUrl) {
@@ -62,15 +60,14 @@ export function SyncPanel({
           <h3 className="eh-title text-sm">Optional Sync Server</h3>
         </div>
         <p className="text-sm leading-6 text-bone">
-          Sign-in is optional. Without it, the app uses only local IndexedDB. With a configured server URL and GitHub session, subscriptions, queue, settings, progress, played state, and clips sync through the app server.
+          Sign-in is optional. Without it, the app uses only local IndexedDB. With a configured server URL and GitHub session, subscriptions, queue, settings, progress, played state, and clips sync automatically through the app server.
         </p>
       </div>
-      <Switch label="Enable sync" checked={settings.syncEnabled} onCheckedChange={(checked) => onChange({ ...settings, syncEnabled: checked })} />
       <div className="grid gap-2 rounded-eh border border-bone/15 bg-canvas/30 p-4">
         <div className="text-sm">
           <span className="font-bold">Server auth</span>
           <span className="ml-2 text-bone">
-            {hasServer ? (hasSession ? 'Signed in with GitHub.' : sessionExpired ? 'Session expired. Sign in again to unlock sync/search.' : 'No active session. Sign in to unlock sync/search.') : 'Set the server URL first.'}
+            {hasServer ? (hasSession ? 'Signed in with GitHub. Sync is active.' : sessionExpired ? 'Session expired. Sign in again to unlock sync/search.' : 'No active session. Sign in to unlock sync/search.') : 'Set the server URL first.'}
           </span>
         </div>
         <div className="grid gap-2 md:grid-cols-[auto_auto_auto]">
@@ -90,7 +87,7 @@ export function SyncPanel({
           </Button>
         </div>
       </div>
-      <p className="text-sm text-yellow" role="status">{status}</p>
+      <p className="text-sm text-yellow" role="status">{status || derivedStatus}</p>
     </div>
   );
 }

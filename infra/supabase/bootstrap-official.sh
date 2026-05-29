@@ -19,9 +19,9 @@ if [ ! -f "${RUNTIME_DIR}/.env" ]; then
   cp "${RUNTIME_DIR}/.env.example" "${RUNTIME_DIR}/.env"
 fi
 
-mkdir -p "${RUNTIME_DIR}/volumes/db/elephant-ears"
-cp "${SCHEMA_FILE}" "${RUNTIME_DIR}/volumes/db/elephant-ears/100-elephant-ears-schema.sql"
-cp "${ROOT_DIR}/infra/supabase/docker-compose.elephant-ears.yml" "${RUNTIME_DIR}/docker-compose.elephant-ears.yml"
+mkdir -p "${RUNTIME_DIR}/volumes/db/elephant-pod"
+cp "${SCHEMA_FILE}" "${RUNTIME_DIR}/volumes/db/elephant-pod/100-elephant-pod-schema.sql"
+cp "${ROOT_DIR}/infra/supabase/docker-compose.elephant-pod.yml" "${RUNTIME_DIR}/docker-compose.elephant-pod.yml"
 
 cat <<MSG
 Supabase Docker bundle copied to:
@@ -32,6 +32,6 @@ Next:
   2. sh utils/generate-keys.sh
   3. sh utils/add-new-auth-keys.sh
   4. Edit .env URLs and SMTP settings.
-  5. docker compose -f docker-compose.yml -f docker-compose.elephant-ears.yml up -d
-  6. Apply volumes/db/elephant-ears/100-elephant-ears-schema.sql in Studio SQL editor or psql after Auth is ready.
+  5. docker compose -f docker-compose.yml -f docker-compose.elephant-pod.yml up -d
+  6. Apply volumes/db/elephant-pod/100-elephant-pod-schema.sql in Studio SQL editor or psql after Auth is ready.
 MSG

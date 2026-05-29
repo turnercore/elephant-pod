@@ -1,6 +1,6 @@
 # Audio Engine
 
-Elephant Ears has three audio paths.
+Elephant Pod has three audio paths.
 
 ## 1. Web fallback
 
@@ -42,12 +42,15 @@ The shared React app uses one hidden HTML `<audio>` element. This path supports:
 
 Clip rendering uses `ffmpeg -ss`, `-t`, `-vn`, and MP3 output. Silence shortening uses ffmpeg's `silenceremove` filter and writes a cached MP3 file under the media directory.
 
-## Silence shortening modes
+## Silence shortening
 
-- `off`: no shortening.
-- `web-audio`: adaptive playback-rate boost during low-RMS sections. This can fail when CORS prevents audio analysis.
-- `server-ffmpeg`: server renders a processed MP3 and the app uses it on a later play once ready.
-- `native`: command boundary exists; production DSP still needs AVAudioEngine/Media3 integration.
+The app exposes silence shortening as an on/off preference, not a user-selected engine mode. Runtime resolution is automatic:
+
+- Native builds use the native audio bridge when available and pass silence-shortening options through that path.
+- If a server is configured, the app can request a cached ffmpeg `silenceremove` render and use it when ready.
+- Web playback attaches the Web Audio low-RMS rate booster as a fallback; this can fail when CORS prevents audio analysis.
+
+Playback telemetry records real listening time, content time heard, estimated speed-up savings, and estimated silence-skip savings in local profile stats.
 
 ## iOS target behavior
 

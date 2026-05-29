@@ -36,7 +36,7 @@ pub async fn download_episode(app: AppHandle, request: DownloadRequest) -> Resul
     let path = dir.join(format!("{}__{}", safe_file_name(&request.episode_id), file_name));
 
     let client = reqwest::Client::builder()
-        .user_agent("ElephantEars/0.2 (+https://elephanthand.com)")
+        .user_agent("ElephantPod/0.2 (+https://elephanthand.com)")
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|error| error.to_string())?;

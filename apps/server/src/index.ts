@@ -11,8 +11,8 @@ import { createOrGetSilenceJob, getSilenceJob, renderClipFile } from './mediaJob
 import { parseRemoteFeed } from './rss.js';
 import { githubCallbackHandler, githubStartHandler, getServerAuthConfig, getAuthSession, requireBearerAuth } from './auth.js';
 import { podcastIndexBrowseHandler, podcastIndexSearchHandler } from './podcastIndex.js';
+import { upsertPublicClip } from './database.js';
 import { syncHandler } from './sync.js';
-import { publishClipToSupabase } from './supabase.js';
 
 loadDotenv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 loadDotenv();
@@ -32,7 +32,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(morgan('tiny'));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'elephant-ears', time: new Date().toISOString(), ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg' });
+  res.json({ ok: true, service: 'elephant-pod', time: new Date().toISOString(), ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg' });
 });
 
 app.get('/api/auth/config', (_req, res) => {
@@ -86,18 +86,18 @@ app.post('/api/clips', async (req, res) => {
       })
         .then(async (patch) => {
           const updated = await clipStore.patch(publicClip.id, patch);
-          if (updated) await publishClipToSupabase(updated);
+          if (updated) await upsertPublicClip(updated);
         })
         .catch(async (error: unknown) => {
           const updated = await clipStore.patch(publicClip.id, {
             renderStatus: 'failed',
             renderError: error instanceof Error ? error.message : 'Clip render failed.'
           });
-          if (updated) await publishClipToSupabase(updated);
+          if (updated) await upsertPublicClip(updated);
         });
     }
 
-    await publishClipToSupabase(publicClip);
+    await upsertPublicClip(publicClip);
     res.status(201).json({
       id: publicClip.id,
       publicUrl: publicClip.publicUrl,
@@ -189,5 +189,5 @@ if (webDist) {
 }
 
 app.listen(port, () => {
-  console.log(`Elephant Ears server listening on ${publicUrl}`);
+  console.log(`Elephant Pod server listening on ${publicUrl}`);
 });

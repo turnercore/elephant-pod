@@ -8,8 +8,7 @@ export function QueuePage({ episodes, onPlay, onMove, onRemove }: { episodes: Ep
   return (
     <Panel
       title="Queue"
-      kicker="The next things you meant to hear"
-      action={<Badge tone="yellow"><ListMusic size={13} aria-hidden /> {episodes.length} queued</Badge>}
+      action={<Badge tone="yellow" aria-label={`${episodes.length} queued episodes`}><ListMusic size={13} aria-hidden /> {episodes.length}</Badge>}
       className="h-full"
     >
       <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">

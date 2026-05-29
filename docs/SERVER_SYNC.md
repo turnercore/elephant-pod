@@ -5,12 +5,14 @@
 - Accounts are required in the browser/web runtime because the hosted app runs through the server auth boundary.
 - Accounts are optional in Tauri/native runtime.
 - The native app is useful on a single device without any backend.
-- A self-hosted server unlocks cross-device sync and public clip sharing.
+- A self-hosted server plus local Postgres unlocks cross-device sync and public clip sharing.
+- Production deployment can pull a prebuilt GHCR image from GitHub Actions instead of building from a copied source tree on the server.
+- Sign-in is the sync opt-in. There is no separate sync opt-out toggle; signing out returns the app to local-only behavior.
 - Core playback, RSS/OPML, and local backup remain first-class in Tauri local-only mode.
 
 ## Runtime sync contract
 
-The web/Tauri client keeps a local IndexedDB-first model and stores only `serverUrl` in settings. Browser/web runtime blocks on a valid server session before exposing app actions. Tauri/native runtime can skip sign-in and use the same local store without server connectivity.
+The web/Tauri client keeps a local IndexedDB-first model and stores only `serverUrl` in settings. Browser/web runtime blocks on a valid server session before exposing app actions. Tauri/native runtime can skip sign-in and use the same local store without server connectivity. Once a valid session exists, sync is considered active automatically.
 
 Client responsibilities:
 
@@ -21,7 +23,7 @@ Client responsibilities:
 Server responsibilities:
 
 - Validate bearer tokens from the app session.
-- Proxy all Supabase reads/writes through server env secrets.
+- Use local Postgres for sync tables, public clip registry, and server-owned metadata.
 - Serve optional PodcastIndex discovery for logged-in users.
 - Expose auth/sync endpoints (`/api/auth/*`, `/api/sync`) for client-mediated sign-in and merge.
 
@@ -36,7 +38,7 @@ Auth/sync contract endpoints:
 The v2 sync flow is:
 
 ```text
-client local rows -> POST sync request + bearer token -> server validates token -> server reads/writes Supabase -> server resolves conflicts -> server returns merged rows + tombstones -> client applies IndexedDB updates -> local sync metadata updates
+client local rows -> POST sync request + bearer token -> server validates token -> server reads/writes local Postgres -> server resolves conflicts -> server returns merged rows + tombstones -> client applies IndexedDB updates -> local sync metadata updates
 ```
 
 Current tables and entities:
@@ -47,6 +49,7 @@ Current tables and entities:
 - `clips`
 - `user_settings`
 - `sync_tombstones`
+- `public_clips`
 
 ## Conflict rules implemented
 
@@ -57,9 +60,14 @@ Current tables and entities:
 | Episode state | Newer `updated_at` row wins. |
 | Queue | Queue fields are part of episode state, so newer state wins. |
 | Settings | Newer settings blob wins. |
+| Podcast preferences | Newer per-podcast row wins, including speed, skip forward/back, skip intro/outro, silence, sort, and new-episode Inbox behavior. |
 | Clips | Newer clip row wins. |
 | Tombstones | Pulled tombstones delete matching local rows. |
 | Downloads | Not synced; every device owns its own downloaded files. |
+
+Download-related settings such as queued auto-download, inbox auto-download, delete-after-listen, Inbox sort direction, Wi-Fi-only downloads, and storage cap are part of the synced settings blob. Actual downloaded files, file paths, and local download-source tags remain local-only.
+
+Listening stats are also local-only. They are profile facts on the device and can be exported in JSON backup, but they are not currently merged through Supabase/server sync.
 
 ## Search contract
 
@@ -78,8 +86,9 @@ Security rules:
 
 - Do not expose private-feed credentials through public clips.
 - Do not render/share paid/private audio unless the user has rights to share it.
-- Service-role Supabase keys belong only in server env; UI code must not persist them.
+- Supabase auth keys belong only in server env; UI code must not persist them.
 - Supabase and PodcastIndex credentials are server-only.
+- `DATABASE_URL` belongs only in server env and points at the local Postgres instance.
 - Browsers should only be configured with `VITE_API_BASE_URL` in build-time env.
 
 ## Remaining sync hardening
@@ -99,3 +108,4 @@ Security rules:
   - `GET /api/health` should return `{ "ok": true }`.
   - A valid bearer token should return authenticated sync responses.
   - A missing or invalid token should keep sync/search disabled and return auth-related errors.
+- Local Postgres should contain the sync tables listed above and the server should refuse sync with a clear 503 if `DATABASE_URL` is unset.

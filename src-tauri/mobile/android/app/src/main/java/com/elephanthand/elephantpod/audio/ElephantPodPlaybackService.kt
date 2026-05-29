@@ -1,10 +1,10 @@
-package com.elephanthand.elephantears.audio
+package com.elephanthand.elephantpod.audio
 
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
-class ElephantEarsPlaybackService : MediaSessionService() {
+class ElephantPodPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
 

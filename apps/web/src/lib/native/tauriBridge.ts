@@ -135,7 +135,7 @@ export async function nativeSetSilenceShortening(options: NativeSilenceOptions):
 export async function listenNativeMediaCommands(handler: (command: NativeMediaCommand) => void): Promise<() => void> {
   if (!isTauriRuntime()) return () => undefined;
   const events = await import('@tauri-apps/api/event');
-  const unlisten = await events.listen<NativeMediaCommand>('elephant-ears://media-command', (event) => handler(event.payload));
+  const unlisten = await events.listen<NativeMediaCommand>('elephant-pod://media-command', (event) => handler(event.payload));
   return unlisten;
 }
 

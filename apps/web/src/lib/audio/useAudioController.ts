@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import type { AppSettings, EpisodeWithState } from '@/types/domain';
+import type { AppSettings, EpisodeWithState, PodcastPreference } from '@/types/domain';
 import { getCachedEpisodeUrl } from '../storage/cache';
 import { isTauriRuntime, listenNativeMediaCommands, nativeClearAudioSession, nativePlaybackState, nativeSetSilenceShortening } from '../native/tauriBridge';
 import { getNativeAudioStatus, pauseNativeAudio, playNativeAudio, prepareNativeAudio, seekNativeAudio, setNativeAudioRate, stopNativeAudio } from '../native/nativeAudio';
 import { maybePrepareServerSilenceShortenedUrl } from './serverSilence';
 import { attachSilenceShortener, type SilenceShortenerHandle } from './silenceShortener';
+
+const RESUME_REWIND_AFTER_MS = 30_000;
 
 export interface AudioController {
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -22,13 +24,15 @@ export interface AudioController {
   silenceSupported: boolean;
 }
 
-export function useAudioController(settings: AppSettings): AudioController {
+export function useAudioController(settings: AppSettings, podcastPreferences: PodcastPreference[] = [], episodeSilenceOverrides: Record<string, boolean> = {}): AudioController {
   const audioRef = useRef<HTMLAudioElement>(null);
   const shortenerRef = useRef<SilenceShortenerHandle | null>(null);
   const nativeActiveRef = useRef(false);
   const [nativeActive, setNativeActive] = useState(false);
   const [current, setCurrent] = useState<EpisodeWithState | null>(null);
   const currentRef = useRef<EpisodeWithState | null>(null);
+  const outroCompletedEpisodeRef = useRef<string | null>(null);
+  const pausedAtRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -36,6 +40,21 @@ export function useAudioController(settings: AppSettings): AudioController {
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
   const [silenceSupported, setSilenceSupported] = useState(false);
+
+  const effectiveSettings = useCallback(() => {
+    const preference = podcastPreferences.find((item) => item.podcastId === currentRef.current?.podcastId);
+    return {
+      ...settings,
+      playbackRate: preference?.playbackRate ?? settings.playbackRate,
+      skipForwardSec: preference?.skipForwardSec ?? settings.skipForwardSec,
+      skipBackSec: preference?.skipBackSec ?? settings.skipBackSec,
+      skipIntroSec: preference?.skipIntroSec ?? 0,
+      skipOutroSec: preference?.skipOutroSec ?? 0,
+      silenceShortening: currentRef.current?.id && episodeSilenceOverrides[currentRef.current.id] !== undefined
+        ? episodeSilenceOverrides[currentRef.current.id]
+        : preference?.silenceShortening ?? settings.silenceShortening
+    };
+  }, [episodeSilenceOverrides, podcastPreferences, settings]);
 
   useEffect(() => {
     currentRef.current = current;
@@ -50,36 +69,36 @@ export function useAudioController(settings: AppSettings): AudioController {
   }, [currentTime]);
 
   const applyPlaybackSettings = useCallback(() => {
+    const resolved = effectiveSettings();
     const audio = audioRef.current;
-    if (audio) audio.playbackRate = settings.playbackRate;
+    if (audio) audio.playbackRate = resolved.playbackRate;
 
     shortenerRef.current?.stop();
     shortenerRef.current = null;
 
-    const silenceMode = settings.silenceShorteningMode || 'web-audio';
-    if (audio && !nativeActiveRef.current && settings.silenceShortening && silenceMode === 'web-audio') {
+    if (audio && !nativeActiveRef.current && resolved.silenceShortening) {
       const handle = attachSilenceShortener(audio, {
-        normalRate: settings.playbackRate,
-        silenceThreshold: settings.silenceThreshold,
-        boostRate: settings.silenceBoostRate
+        normalRate: resolved.playbackRate,
+        silenceThreshold: resolved.silenceThreshold,
+        boostRate: resolved.silenceBoostRate
       });
       shortenerRef.current = handle;
       setSilenceSupported(handle.supported);
     } else {
-      setSilenceSupported(settings.silenceShortening && (silenceMode === 'server-ffmpeg' || silenceMode === 'native'));
+      setSilenceSupported(Boolean(resolved.silenceShortening && nativeActiveRef.current));
     }
 
-    if (nativeActiveRef.current) void setNativeAudioRate(settings.playbackRate);
+    if (nativeActiveRef.current) void setNativeAudioRate(resolved.playbackRate);
 
     if (isTauriRuntime()) {
       void nativeSetSilenceShortening({
-        enabled: Boolean(settings.silenceShortening && silenceMode === 'native'),
-        thresholdDb: settings.silenceThresholdDb ?? -42,
-        minimumDurationSec: settings.silenceMinimumDurationSec ?? (settings.silenceMinMs / 1000),
-        boostRate: settings.silenceBoostRate ?? 2.15
+        enabled: Boolean(resolved.silenceShortening),
+        thresholdDb: resolved.silenceThresholdDb ?? -42,
+        minimumDurationSec: resolved.silenceMinimumDurationSec ?? (resolved.silenceMinMs / 1000),
+        boostRate: resolved.silenceBoostRate ?? 2.15
       });
     }
-  }, [settings.playbackRate, settings.silenceBoostRate, settings.silenceMinMs, settings.silenceMinimumDurationSec, settings.silenceShortening, settings.silenceShorteningMode, settings.silenceThreshold, settings.silenceThresholdDb]);
+  }, [effectiveSettings]);
 
   useEffect(() => {
     applyPlaybackSettings();
@@ -88,11 +107,11 @@ export function useAudioController(settings: AppSettings): AudioController {
 
   const resolveEpisodeUrl = useCallback(
     async (episode: EpisodeWithState) => {
-      const shortened = await maybePrepareServerSilenceShortenedUrl(episode, settings).catch(() => null);
+      const shortened = await maybePrepareServerSilenceShortenedUrl(episode, effectiveSettings()).catch(() => null);
       if (shortened) return shortened;
       return getCachedEpisodeUrl(episode);
     },
-    [settings]
+    [effectiveSettings]
   );
 
   const setNativeActiveFlag = useCallback((active: boolean) => {
@@ -103,15 +122,23 @@ export function useAudioController(settings: AppSettings): AudioController {
   const playEpisode = useCallback(
     async (episode: EpisodeWithState) => {
       const audio = audioRef.current;
+      const resolved = effectiveSettings();
       const previous = currentRef.current;
       const wasSameEpisode = previous?.id === episode.id;
+      if (!wasSameEpisode) outroCompletedEpisodeRef.current = null;
+      const introOffset = Math.max(0, resolved.skipIntroSec ?? 0);
+      const progressSec = episode.state.progressSec || 0;
+      const shouldRewindSameEpisode = !isPlayingRef.current && shouldResumeRewind(pausedAtRef.current);
       const startSec = wasSameEpisode
-        ? Math.max(0, currentTimeRef.current - settings.resumeRewindSec)
-        : episode.state.progressSec || 0;
+        ? shouldRewindSameEpisode
+          ? Math.max(0, currentTimeRef.current - resolved.resumeRewindSec)
+          : currentTimeRef.current
+        : Math.max(progressSec > 0 ? Math.max(0, progressSec - resolved.resumeRewindSec) : 0, introOffset);
 
       setCurrent(episode);
+      pausedAtRef.current = null;
 
-      if (settings.nativeAudioPreferred && isTauriRuntime()) {
+      if (isTauriRuntime()) {
         if (wasSameEpisode && nativeActiveRef.current) {
           await seekNativeAudio(startSec);
           const nativePlaying = await playNativeAudio();
@@ -121,7 +148,7 @@ export function useAudioController(settings: AppSettings): AudioController {
         }
 
         const sourceUrl = await resolveEpisodeUrl(episode);
-        const prepared = await prepareNativeAudio(episode, sourceUrl, startSec, settings.playbackRate);
+        const prepared = await prepareNativeAudio(episode, sourceUrl, startSec, resolved.playbackRate);
         if (prepared) {
           if (audio && !audio.paused) audio.pause();
           shortenerRef.current?.stop();
@@ -140,14 +167,14 @@ export function useAudioController(settings: AppSettings): AudioController {
       if (!wasSameEpisode || !audio.src) {
         audio.src = await resolveEpisodeUrl(episode);
         audio.currentTime = startSec;
-      } else if (audio.currentTime > settings.resumeRewindSec) {
+      } else if (audio.currentTime > resolved.resumeRewindSec) {
         audio.currentTime = startSec;
       }
       applyPlaybackSettings();
       await audio.play();
       setIsPlaying(true);
     },
-    [applyPlaybackSettings, resolveEpisodeUrl, setNativeActiveFlag, settings.nativeAudioPreferred, settings.playbackRate, settings.resumeRewindSec]
+    [applyPlaybackSettings, effectiveSettings, resolveEpisodeUrl, setNativeActiveFlag]
   );
 
   const toggle = useCallback(async () => {
@@ -155,14 +182,16 @@ export function useAudioController(settings: AppSettings): AudioController {
       if (isPlayingRef.current) {
         await pauseNativeAudio();
         setIsPlaying(false);
+        pausedAtRef.current = Date.now();
       } else {
-        const target = currentTimeRef.current > settings.resumeRewindSec ? Math.max(0, currentTimeRef.current - settings.resumeRewindSec) : currentTimeRef.current;
+        const target = shouldResumeRewind(pausedAtRef.current) && currentTimeRef.current > settings.resumeRewindSec ? Math.max(0, currentTimeRef.current - settings.resumeRewindSec) : currentTimeRef.current;
         if (target !== currentTimeRef.current) {
           await seekNativeAudio(target);
           setCurrentTime(target);
         }
         const nativePlaying = await playNativeAudio();
         setIsPlaying(nativePlaying);
+        pausedAtRef.current = null;
       }
       return;
     }
@@ -170,14 +199,16 @@ export function useAudioController(settings: AppSettings): AudioController {
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
-      if (audio.currentTime > settings.resumeRewindSec) {
+      if (shouldResumeRewind(pausedAtRef.current) && audio.currentTime > settings.resumeRewindSec) {
         audio.currentTime = Math.max(0, audio.currentTime - settings.resumeRewindSec);
       }
       await audio.play();
       setIsPlaying(true);
+      pausedAtRef.current = null;
     } else {
       audio.pause();
       setIsPlaying(false);
+      pausedAtRef.current = Date.now();
     }
   }, [settings.resumeRewindSec]);
 
@@ -215,6 +246,7 @@ export function useAudioController(settings: AppSettings): AudioController {
       void stopNativeAudio();
       setNativeActiveFlag(false);
       setIsPlaying(false);
+      pausedAtRef.current = Date.now();
       void nativeClearAudioSession();
       return;
     }
@@ -223,6 +255,7 @@ export function useAudioController(settings: AppSettings): AudioController {
     if (!audio) return;
     audio.pause();
     setIsPlaying(false);
+    pausedAtRef.current = Date.now();
     void nativeClearAudioSession();
   }, [setNativeActiveFlag]);
 
@@ -238,14 +271,32 @@ export function useAudioController(settings: AppSettings): AudioController {
     const timer = window.setInterval(() => {
       void getNativeAudioStatus().then((status) => {
         if (!status) return;
-        setCurrentTime(status.positionSec || 0);
-        currentTimeRef.current = status.positionSec || 0;
-        setDuration(status.durationSec || currentRef.current?.durationSec || 0);
+        const positionSec = status.positionSec || 0;
+        const durationSec = status.durationSec || currentRef.current?.durationSec || 0;
+        setCurrentTime(positionSec);
+        currentTimeRef.current = positionSec;
+        setDuration(durationSec);
         setIsPlaying(status.playing);
+        const skipOutroSec = Math.max(0, effectiveSettings().skipOutroSec ?? 0);
+        const currentEpisodeId = currentRef.current?.id;
+        if (
+          currentEpisodeId &&
+          skipOutroSec > 0 &&
+          durationSec > skipOutroSec + 1 &&
+          positionSec >= durationSec - skipOutroSec &&
+          outroCompletedEpisodeRef.current !== currentEpisodeId
+        ) {
+          outroCompletedEpisodeRef.current = currentEpisodeId;
+          setCurrentTime(durationSec);
+          currentTimeRef.current = durationSec;
+          setIsPlaying(false);
+          void stopNativeAudio();
+          audioRef.current?.dispatchEvent(new Event('ended'));
+        }
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [nativeActive]);
+  }, [effectiveSettings, nativeActive]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -253,11 +304,29 @@ export function useAudioController(settings: AppSettings): AudioController {
     const onTime = () => {
       if (nativeActiveRef.current) return;
       setCurrentTime(audio.currentTime);
+      const resolved = effectiveSettings();
+      const currentEpisodeId = currentRef.current?.id;
+      const durationSec = Number.isFinite(audio.duration) ? audio.duration : currentRef.current?.durationSec || 0;
+      const skipOutroSec = Math.max(0, resolved.skipOutroSec ?? 0);
+      if (
+        currentEpisodeId &&
+        skipOutroSec > 0 &&
+        durationSec > skipOutroSec + 1 &&
+        audio.currentTime >= durationSec - skipOutroSec &&
+        outroCompletedEpisodeRef.current !== currentEpisodeId
+      ) {
+        outroCompletedEpisodeRef.current = currentEpisodeId;
+        audio.currentTime = durationSec;
+        audio.pause();
+        setCurrentTime(durationSec);
+        audio.dispatchEvent(new Event('ended'));
+        return;
+      }
       void nativePlaybackState({
         episodeId: currentRef.current?.id,
         playing: !audio.paused,
         positionSec: audio.currentTime,
-        durationSec: Number.isFinite(audio.duration) ? audio.duration : currentRef.current?.durationSec,
+        durationSec,
         playbackRate: audio.playbackRate
       });
     };
@@ -267,11 +336,13 @@ export function useAudioController(settings: AppSettings): AudioController {
     const onPause = () => {
       if (nativeActiveRef.current) return;
       setIsPlaying(false);
+      pausedAtRef.current = Date.now();
       onTime();
     };
     const onPlay = () => {
       if (nativeActiveRef.current) return;
       setIsPlaying(true);
+      pausedAtRef.current = null;
       onTime();
     };
     audio.addEventListener('timeupdate', onTime);
@@ -286,7 +357,7 @@ export function useAudioController(settings: AppSettings): AudioController {
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('play', onPlay);
     };
-  }, []);
+  }, [effectiveSettings]);
 
   useEffect(() => {
     void listenNativeMediaCommands((command) => {
@@ -305,4 +376,8 @@ export function useAudioController(settings: AppSettings): AudioController {
   }, [seek, settings.skipBackSec, settings.skipForwardSec, skipBy, toggle]);
 
   return { audioRef, current, isPlaying, currentTime, duration, volume, setVolume, playEpisode, toggle, seek, skipBy, stop, silenceSupported };
+}
+
+function shouldResumeRewind(pausedAt: number | null): boolean {
+  return !pausedAt || Date.now() - pausedAt >= RESUME_REWIND_AFTER_MS;
 }

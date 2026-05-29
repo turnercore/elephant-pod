@@ -8,13 +8,14 @@ export interface PodcastDiscoveryResult {
   description?: string;
   imageUrl?: string;
   feedUrl: string;
+  categories?: string[];
 }
 
 export async function searchPodcastIndex(serverUrl: string, accessToken: string, query: string): Promise<PodcastDiscoveryResult[]> {
   const base = normalizeServerUrl(serverUrl);
   if (!base) throw new Error('Server URL is not configured.');
   const trimmed = query.trim();
-  if (!trimmed) return [];
+  if (trimmed.length < 2) return [];
 
   const response = await fetch(`${base}/api/podcast-index/search?q=${encodeURIComponent(trimmed)}`, {
     headers: {
@@ -39,7 +40,7 @@ export async function searchPodcastIndex(serverUrl: string, accessToken: string,
 }
 
 function normalizeDiscoveryRow(row: Record<string, unknown>): PodcastDiscoveryResult | null {
-  const feedUrl = firstString(row.feedUrl, row.feed_url, row.feed);
+  const feedUrl = firstString(row.feedUrl, row.feed_url, row.url, row.originalUrl, row.feed);
   if (!feedUrl) return null;
 
   const title = firstString(row.title, row.name) || feedUrl;
@@ -54,8 +55,20 @@ function normalizeDiscoveryRow(row: Record<string, unknown>): PodcastDiscoveryRe
     author,
     description,
     imageUrl,
-    feedUrl
+    feedUrl,
+    categories: categoriesFrom(row.categories)
   };
+}
+
+function categoriesFrom(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => typeof entry === 'string' ? entry : isRecord(entry) ? firstString(entry.name, entry.title, entry.category) : undefined)
+      .filter((entry): entry is string => Boolean(entry));
+  }
+  if (typeof value === 'string') return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+  if (isRecord(value)) return Object.values(value).map((entry) => String(entry)).filter(Boolean);
+  return [];
 }
 
 function firstString(...values: unknown[]): string | undefined {

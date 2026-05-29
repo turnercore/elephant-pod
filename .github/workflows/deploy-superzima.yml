@@ -1,0 +1,110 @@
+name: Deploy Superzima
+
+on:
+  workflow_run:
+    workflows:
+      - Publish Container
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-superzima
+  cancel-in-progress: false
+
+env:
+  DEPLOY_ROOT: /mnt/nvme/apps/elephant-pod
+  SUPERZIMA_SSH_HOST: 192.168.0.147
+  SUPERZIMA_SSH_USER: turnercore
+
+jobs:
+  deploy:
+    name: Refresh Superzima stack
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main'
+        )
+      }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Prepare SSH credentials
+        env:
+          SUPERZIMA_SSH_PRIVATE_KEY: ${{ secrets.SUPERZIMA_SSH_PRIVATE_KEY }}
+        run: |
+          set -Eeuo pipefail
+
+          install -d -m 700 "$RUNNER_TEMP/superzima-ssh"
+          printf '%s\n' "$SUPERZIMA_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/superzima-ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/superzima-ssh/id_ed25519"
+          ssh-keyscan -H "$SUPERZIMA_SSH_HOST" > "$RUNNER_TEMP/superzima-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/superzima-ssh/known_hosts"
+
+      - name: Sync deployment files
+        run: |
+          set -Eeuo pipefail
+
+          ssh_opts=(
+            -i "$RUNNER_TEMP/superzima-ssh/id_ed25519"
+            -o UserKnownHostsFile="$RUNNER_TEMP/superzima-ssh/known_hosts"
+            -o StrictHostKeyChecking=yes
+            -o BatchMode=yes
+          )
+
+          ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
+            "mkdir -p '$DEPLOY_ROOT/postgres'"
+
+          rsync -a \
+            -e "ssh ${ssh_opts[*]}" \
+            deploy/superzima/docker-compose.yml \
+            "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}:$DEPLOY_ROOT/docker-compose.yml"
+
+          rsync -a \
+            -e "ssh ${ssh_opts[*]}" \
+            deploy/superzima/postgres/init.sql \
+            "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}:$DEPLOY_ROOT/postgres/init.sql"
+
+      - name: Log in to GHCR on the host
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          ssh_opts=(
+            -i "$RUNNER_TEMP/superzima-ssh/id_ed25519"
+            -o UserKnownHostsFile="$RUNNER_TEMP/superzima-ssh/known_hosts"
+            -o StrictHostKeyChecking=yes
+            -o BatchMode=yes
+          )
+
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
+            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+
+      - name: Pull image and restart the stack
+        run: |
+          set -Eeuo pipefail
+
+          ssh_opts=(
+            -i "$RUNNER_TEMP/superzima-ssh/id_ed25519"
+            -o UserKnownHostsFile="$RUNNER_TEMP/superzima-ssh/known_hosts"
+            -o StrictHostKeyChecking=yes
+            -o BatchMode=yes
+          )
+
+          ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
+            "cd '$DEPLOY_ROOT' && \
+             docker compose config --quiet && \
+             docker compose pull && \
+             docker compose up -d --force-recreate"

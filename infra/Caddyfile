@@ -1,5 +1,5 @@
 ears.example.com {
-  reverse_proxy elephant-ears:8787
+  reverse_proxy elephant-pod:8787
 }
 
 supabase.example.com {

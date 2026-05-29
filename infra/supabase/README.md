@@ -1,6 +1,8 @@
 # Self-hosted Supabase bundle
 
-This directory contains a full local Supabase-style Docker bundle for Elephant Ears development and small private deployments.
+This directory contains a full local Supabase-style Docker bundle for Elephant Pod development and small private deployments.
+
+Use this bundle when you want Supabase auth and Supabase Postgres together in one local stack. The root `infra/docker-compose.yml` example keeps a bare Postgres service by default, but this bundle is the self-hosted alternative for auth-heavy testing or a single local deployment.
 
 ## Start
 
@@ -15,11 +17,13 @@ docker compose up -d
 Services:
 
 - Supabase API gateway: `http://localhost:8000`
-- Elephant Ears app/server: `http://localhost:8787`
+- Elephant Pod app/server: `http://localhost:8787`
 - Mailpit magic-link inbox: `http://localhost:8025`
 - Postgres direct dev port: `localhost:54322`
 
-`volumes/db/init/01-elephant-ears-schema.sql` is mounted into the database container so a fresh stack creates the Elephant Ears sync schema automatically.
+If you run the app server from the repository root instead of inside this compose network, point `DATABASE_URL` at `postgresql://postgres:<password>@localhost:54322/postgres` and set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` from this bundle in your root `.env`.
+
+`volumes/db/init/01-elephant-pod-schema.sql` is mounted into the database container so a fresh stack creates the Elephant Pod sync schema automatically.
 
 ## Environment contract
 
@@ -49,10 +53,10 @@ Auth callback/site expectations:
 
 ## Production notes
 
-Use real JWTs signed with the same `JWT_SECRET`, put Caddy/Nginx/TLS in front of Kong and Elephant Ears, replace `latest` tags with a tested Supabase release set, and do not expose Postgres directly unless restricted by a firewall.
+Use real JWTs signed with the same `JWT_SECRET`, put Caddy/Nginx/TLS in front of Kong and Elephant Pod, replace `latest` tags with a tested Supabase release set, and do not expose Postgres directly unless restricted by a firewall.
 
 Validation notes:
 
 - Clip sync/search endpoints should remain unavailable without a valid session token.
 - Secret variables in this stack must be mounted from local environment files or a secret manager, never committed.
-- If you use `docker-compose` with a direct `elephant-ears` run, pass `PODCASTINDEX_*` and `SUPABASE_*` environment values explicitly to that service.
+- If you use `docker-compose` with a direct `elephant-pod` run, pass `PODCASTINDEX_*` and `SUPABASE_*` environment values explicitly to that service.

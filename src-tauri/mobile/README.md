@@ -1,6 +1,6 @@
 # Mobile native audio reference sources
 
-This folder contains reference native code for the Elephant Ears mobile audio bridge. The canonical plugin scaffold lives in `src-tauri/plugins/tauri-plugin-elephant-audio`; these files are preserved as easy-to-read platform references for the generated iOS/Android projects.
+This folder contains reference native code for the Elephant Pod mobile audio bridge. The canonical plugin scaffold lives in `src-tauri/plugins/tauri-plugin-elephant-audio`; these files are preserved as easy-to-read platform references for the generated iOS/Android projects.
 
 Tauri v2 mobile plugins can expose Kotlin/Java on Android and Swift on iOS through plugin commands. The desktop Rust commands in `src-tauri/src/lib.rs` keep the app buildable and provide native filesystem downloads.
 

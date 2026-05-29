@@ -5,6 +5,7 @@ import { z } from 'zod';
 type PodcastIndexAuthDate = string;
 
 const podcastIndexBaseUrl = 'https://api.podcastindex.org/api/1.0';
+const podcastIndexPublicBaseUrl = 'https://api.podcastindex.org';
 const maxSearchResults = 25;
 const maxBrowseResults = 50;
 
@@ -64,12 +65,19 @@ function readStringEnv(name: string): string | undefined {
 function getPodcastIndexConfig() {
   const apiKey = readStringEnv('PODCASTINDEX_API_KEY');
   const apiSecret = readStringEnv('PODCASTINDEX_API_SECRET');
-  const userAgent = readStringEnv('PODCASTINDEX_USER_AGENT') || 'elephant-ears/0.2.0';
-  if (!apiKey || !apiSecret) {
+  const userAgent = readStringEnv('PODCASTINDEX_USER_AGENT') || 'elephant-pod/0.2.0';
+  if (!hasRealValue(apiKey) || !hasRealValue(apiSecret)) {
     return null;
   }
 
-  return { apiKey, apiSecret, userAgent };
+  return { apiKey: apiKey!, apiSecret: apiSecret!, userAgent };
+}
+
+function hasRealValue(value?: string): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return !/^(CHANGE_ME|REPLACE_ME|TODO|PLACEHOLDER)/i.test(trimmed);
 }
 
 function computeAuthHeader(apiKey: string, apiSecret: string, date: PodcastIndexAuthDate) {
@@ -149,7 +157,7 @@ function normalizeLastUpdateTime(value: unknown): number | undefined {
 }
 
 function normalizeFeed(row: Record<string, unknown>): PodcastIndexFeedShape | null {
-  const feedUrl = toString(row.feedUrl) || toString(row.feedUrlRaw) || toString(row.feed) || toString(row.feed_url);
+  const feedUrl = toString(row.feedUrl) || toString(row.feedUrlRaw) || toString(row.url) || toString(row.originalUrl) || toString(row.feed) || toString(row.feed_url);
   if (!feedUrl) return null;
   const title = toString(row.title) || toString(row.name) || feedUrl;
   const id = toString(row.id) || toString(row.feedId) || toString(row.feed_id) || `${crypto.createHash('sha1').update(feedUrl).digest('hex')}`;
@@ -204,6 +212,23 @@ async function callPodcastIndex<T>(path: string, params: Record<string, string |
   return payload;
 }
 
+async function callPodcastIndexPublicSearch<T>(term: string): Promise<T> {
+  const query = new URLSearchParams({ term });
+  const endpoint = `${podcastIndexPublicBaseUrl}/search?${query}`;
+  const response = await fetch(endpoint, {
+    headers: {
+      'User-Agent': readStringEnv('PODCASTINDEX_USER_AGENT') || 'elephant-pod/0.2.0'
+    }
+  });
+
+  if (!response.ok) {
+    const statusText = response.statusText || 'Unknown';
+    throw new Error(`UPSTREAM_${response.status}: ${toSafeErrorMessage('PodcastIndex', response.status, statusText)}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 async function handlePodcastIndexSearch(req: Request, res: Response) {
   const parsed = podcastIndexSearchSchema.safeParse(req.query);
   if (!parsed.success) {
@@ -212,12 +237,14 @@ async function handlePodcastIndexSearch(req: Request, res: Response) {
   }
 
   try {
-    const data = await callPodcastIndex<{ [key: string]: unknown }>(`/search/byterm`, {
-      q: parsed.data.q,
-      max: parsed.data.max
-    });
+    const data = getPodcastIndexConfig()
+      ? await callPodcastIndex<{ [key: string]: unknown }>(`/search/byterm`, {
+          q: parsed.data.q,
+          max: parsed.data.max
+        })
+      : await callPodcastIndexPublicSearch<{ [key: string]: unknown }>(parsed.data.q);
     const raw = toRecordArray(data.feeds) || toRecordArray(data.results) || toRecordArray(data.items) || toRecordArray(data.data);
-    const feeds = raw.map(normalizeFeed).filter((podcast): podcast is PodcastIndexFeedShape => podcast !== null);
+    const feeds = raw.map(normalizeFeed).filter((podcast): podcast is PodcastIndexFeedShape => podcast !== null).slice(0, parsed.data.max);
 
     res.json({
       items: feeds,

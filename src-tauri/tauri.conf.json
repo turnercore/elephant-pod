@@ -1,18 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Elephant Ears",
+  "productName": "Elephant Pod",
   "version": "0.2.0",
-  "identifier": "com.elephanthand.elephantears",
+  "identifier": "com.elephanthand.elephantpod",
   "build": {
-    "beforeDevCommand": "npm --workspace @elephant-ears/web run dev",
+    "beforeDevCommand": "npm --workspace @elephant-pod/web run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm --workspace @elephant-ears/web run build",
+    "beforeBuildCommand": "npm --workspace @elephant-pod/web run build",
     "frontendDist": "../apps/web/dist"
   },
   "app": {
     "windows": [
       {
-        "title": "Elephant Ears",
+        "title": "Elephant Pod",
         "width": 1240,
         "height": 820,
         "minWidth": 390,

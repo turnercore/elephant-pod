@@ -1,5 +1,5 @@
 {
-  "name": "@elephant-ears/tauri-plugin-elephant-audio",
+  "name": "@elephant-pod/tauri-plugin-elephant-audio",
   "version": "0.1.0",
   "private": true,
   "type": "module",

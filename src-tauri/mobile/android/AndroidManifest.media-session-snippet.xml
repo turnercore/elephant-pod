@@ -5,7 +5,7 @@
 
 <application>
   <service
-      android:name="com.elephanthand.elephantears.audio.ElephantEarsPlaybackService"
+      android:name="com.elephanthand.elephantpod.audio.ElephantPodPlaybackService"
       android:foregroundServiceType="mediaPlayback"
       android:exported="true">
     <intent-filter>
