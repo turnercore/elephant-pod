@@ -149,7 +149,8 @@ function normalizeOAuthReturnTo(requestedReturnTo: string, serverPublicUrl: stri
     const publicBase = new URL(serverPublicUrl);
     if (isLoopbackHostname(requested.hostname) && !isLoopbackHostname(publicBase.hostname)) {
       requested.protocol = publicBase.protocol;
-      requested.host = publicBase.host;
+      requested.hostname = publicBase.hostname;
+      requested.port = publicBase.port;
       return requested.toString();
     }
 

@@ -2,7 +2,7 @@ import { Github, LogOut, RefreshCw, Server } from 'lucide-react';
 import { useState } from 'react';
 import type { AppSettings } from '@/types/domain';
 import { syncNow } from '@/lib/sync/syncEngine';
-import { startGithubSignIn, clearServerSession, isServerSessionExpired, normalizeServerUrl, type ServerSession } from '@/lib/sync/serverAuth';
+import { startGithubSignIn, clearServerSession, isServerSessionExpired, resolveBrowserServerUrl, type ServerSession } from '@/lib/sync/serverAuth';
 import { Button } from '../ui/Button';
 
 export function SyncPanel({
@@ -17,27 +17,28 @@ export function SyncPanel({
   onSessionChange: (next: ServerSession | null) => void;
 }) {
   const [status, setStatus] = useState('');
-  const hasServer = Boolean(normalizeServerUrl(settings.serverUrl));
+  const serverUrl = resolveBrowserServerUrl(settings.serverUrl);
+  const hasServer = Boolean(serverUrl);
   const sessionExpired = isServerSessionExpired(serverSession);
   const hasSession = Boolean(serverSession && !sessionExpired);
   const derivedStatus = hasSession ? 'Sync is active while signed in.' : 'Local-only mode is ready.';
 
   async function login() {
-    if (!settings.serverUrl) {
+    if (!serverUrl) {
       setStatus('Add a server URL in Playback + Automation settings.');
       return;
     }
     try {
       setStatus('Opening GitHub sign-in flow...');
-      await startGithubSignIn(settings.serverUrl);
+      await startGithubSignIn(serverUrl);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not start GitHub sign-in.');
     }
   }
 
   async function logout() {
-    if (!settings.serverUrl) return;
-    clearServerSession(settings.serverUrl);
+    if (!serverUrl) return;
+    clearServerSession(serverUrl);
     onSessionChange(null);
     setStatus('Signed out. Local data remains on this device.');
   }
@@ -47,7 +48,7 @@ export function SyncPanel({
       setStatus(sessionExpired ? 'Your GitHub session expired. Sign in again before syncing.' : 'Sign in with GitHub before syncing.');
       return;
     }
-    const result = await syncNow(settings.serverUrl, serverSession?.accessToken);
+    const result = await syncNow(serverUrl, serverSession?.accessToken);
     setStatus(result.message);
     onRefresh();
   }

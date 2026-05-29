@@ -20,7 +20,7 @@ import { fetchFeedThroughServer } from '@/lib/rss';
 import { exportOpml, importOpml } from '@/lib/opml';
 import { downloadEpisodeToCache } from '@/lib/storage/cache';
 import { ensureSeedData } from '@/lib/storage/db';
-import { clearServerSession, consumeAuthTokenFromCallback, fetchServerSessionProfile, isServerSessionExpired, loadServerSession, saveServerSession, startGithubSignIn, type ServerSession } from '@/lib/sync/serverAuth';
+import { clearServerSession, consumeAuthTokenFromCallback, fetchServerSessionProfile, isServerSessionExpired, loadServerSession, resolveBrowserServerUrl, saveServerSession, startGithubSignIn, type ServerSession } from '@/lib/sync/serverAuth';
 import {
   exportBackup,
   addEpisodeToQueueEnd,
@@ -83,7 +83,7 @@ export default function App() {
   const profileHydrationRef = useRef<string | null>(null);
 
   const audio = useAudioController(settings || fallbackSettings, podcastPreferences, episodeSilenceOverrides);
-  const runtimeServerUrl = settings?.serverUrl || getBrowserRuntimeServerUrl();
+  const runtimeServerUrl = resolveBrowserServerUrl(settings?.serverUrl || getBrowserRuntimeServerUrl());
 
   function navigateTo(snapshot: ViewSnapshot) {
     setPlayerCollapseToken((token) => token + 1);

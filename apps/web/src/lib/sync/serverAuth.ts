@@ -37,6 +37,30 @@ export function normalizeServerUrl(input?: string): string {
   return input.replace(/\/$/, '');
 }
 
+function isLoopbackUrl(input: string): boolean {
+  try {
+    const url = new URL(input);
+    return url.hostname === 'localhost' || url.hostname === '0.0.0.0' || url.hostname.startsWith('127.');
+  } catch {
+    return false;
+  }
+}
+
+export function resolveBrowserServerUrl(configuredUrl?: string): string {
+  const configured = normalizeServerUrl(configuredUrl);
+  if (typeof window === 'undefined') return configured;
+
+  const currentOrigin = window.location.origin;
+  const isHostedHttp = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+  const currentIsLoopback = isLoopbackUrl(currentOrigin);
+
+  if (isHostedHttp && !currentIsLoopback && (!configured || isLoopbackUrl(configured))) {
+    return currentOrigin;
+  }
+
+  return configured;
+}
+
 export function isServerSessionExpired(session: ServerSession | null, skewSeconds = 60): boolean {
   if (!session?.expiresAt) return false;
   return session.expiresAt <= Math.floor(Date.now() / 1000) + skewSeconds;
