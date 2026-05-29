@@ -26,6 +26,7 @@ services:
     environment:
       PORT: 8787
       WEB_DIST: apps/web/dist
+      SERVER_PUBLIC_URL: ${SERVER_PUBLIC_URL:-https://pod.elephanthand.com}
       CLIP_STORE_DIR: /app/.data/clips
       MEDIA_STORE_DIR: /app/.data/media
       DATABASE_URL: postgresql://postgres:elephantpod@postgres:5432/elephant_pod
@@ -42,7 +43,8 @@ services:
       SILENCE_RENDER_ENABLED: "true"
       FFMPEG_PATH: ffmpeg
     ports:
-      - '8787:8787'
+      # Racknerd reaches Superzima over Tailscale on the 20,000 port range.
+      - '20001:8787'
     volumes:
       - elephant_pod_data:/app/.data
     depends_on:

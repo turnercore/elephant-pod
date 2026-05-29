@@ -129,9 +129,34 @@ function deriveCallbackUrl(serverPublicUrl: string) {
 function getServerCallbackBase(req: Request) {
   if (process.env.SERVER_PUBLIC_URL) return process.env.SERVER_PUBLIC_URL;
   const forwardedProtocol = req.get('x-forwarded-proto');
-  const host = req.get('host');
+  const host = req.get('x-forwarded-host') || req.get('host');
   const scheme = forwardedProtocol || req.protocol || 'http';
   return host ? `${scheme}://${host}` : 'http://localhost:8787';
+}
+
+function isLoopbackHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return normalized === 'localhost' || normalized === '[::1]' || normalized === '::1' || normalized === '0.0.0.0' || normalized.startsWith('127.');
+}
+
+function normalizeOAuthReturnTo(requestedReturnTo: string, serverPublicUrl: string) {
+  if (!requestedReturnTo) return '';
+
+  try {
+    const requested = new URL(requestedReturnTo);
+    if (!['http:', 'https:'].includes(requested.protocol)) return '';
+
+    const publicBase = new URL(serverPublicUrl);
+    if (isLoopbackHostname(requested.hostname) && !isLoopbackHostname(publicBase.hostname)) {
+      requested.protocol = publicBase.protocol;
+      requested.host = publicBase.host;
+      return requested.toString();
+    }
+
+    return requested.toString();
+  } catch {
+    return '';
+  }
 }
 
 export async function githubStartHandler(req: Request, res: Response) {
@@ -158,8 +183,9 @@ export async function githubStartHandler(req: Request, res: Response) {
     return;
   }
 
+  const serverPublicUrl = getServerCallbackBase(req);
   const requestedReturnTo = firstQueryParam(req.query.returnTo || req.body?.returnTo).trim();
-  const callbackUrl = requestedReturnTo || deriveCallbackUrl(getServerCallbackBase(req));
+  const callbackUrl = normalizeOAuthReturnTo(requestedReturnTo, serverPublicUrl) || deriveCallbackUrl(serverPublicUrl);
 
   const { data, error: startError } = await client.auth.signInWithOAuth({
     provider: 'github',

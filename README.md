@@ -59,7 +59,7 @@ The shared UI is IndexedDB-first and never receives Supabase or PodcastIndex sec
 
 Set these in the app server environment (example in `.env.example`):
 
-- `SERVER_PUBLIC_URL` (public URL for clip links/redirects)
+- `SERVER_PUBLIC_URL` (browser-facing base URL for clip links and OAuth redirect targets, for example `https://pod.elephanthand.com` in production)
 - `DATABASE_URL` (local Postgres for sync data, public clip registry, and server-owned metadata)
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
@@ -173,6 +173,8 @@ That bundle provides auth and Postgres together and is the recommended example t
 The production container image is built by GitHub Actions on GitHub-hosted runners and pushed to GHCR as `ghcr.io/<owner>/elephant-pod-server`.
 
 `superzima` then pulls that image through its Compose file instead of building from a copied checkout.
+
+The Superzima deployment publishes the app server as `100.92.133.126:20001` on Tailscale. Racknerd's public Caddy proxy should route `pod.elephanthand.com` to that address.
 
 Required deployment secrets:
 
