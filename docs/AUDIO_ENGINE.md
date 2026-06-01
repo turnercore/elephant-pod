@@ -69,7 +69,7 @@ The server routes are:
 - `GET /api/smart-skip/jobs/:id`
 - `GET /api/smart-skip/episodes/:episodeId/segment-map`
 
-Processing always follows the same V1 path: ffmpeg silence boundaries, a Whisper-compatible `/v1/transcribe` service, an OpenAI-backed `/v1/segment` service, deterministic boundary refinement, and SegmentMap storage. The local compose workers are integration mocks unless `MOCK_SEGMENTER=false` and `OPENAI_API_KEY` are set; production needs real Whisper and segmenter endpoints. Playback still goes through `useAudioController.seek`; Smart Skip does not create a second audio engine.
+Processing always follows the same V1 path: ffmpeg silence boundaries, a Whisper-compatible `/v1/transcribe` service, an OpenAI-backed segmenter service, deterministic boundary refinement, and SegmentMap storage. Real segmenting uses the segmenter service's OpenAI Batch path by default: the server records the external batch ID, releases the job with `next_attempt_at`, and later resumes refinement/storage after `/v1/segment-batches/:id` reports completion. The local compose workers are integration mocks unless `MOCK_SEGMENTER=false` and `OPENAI_API_KEY` are set; production needs real Whisper and segmenter endpoints. Playback still goes through `useAudioController.seek`; Smart Skip does not create a second audio engine.
 
 ## iOS target behavior
 

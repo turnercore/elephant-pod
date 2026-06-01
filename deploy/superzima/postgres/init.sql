@@ -248,6 +248,29 @@ create table if not exists public.smart_skip_jobs (
   check (status in ('queued', 'leased', 'processing', 'ready', 'failed', 'cancelled'))
 );
 
+create table if not exists public.smart_skip_external_tasks (
+  id text primary key,
+  job_id text not null references public.smart_skip_jobs(id) on delete cascade,
+  kind text not null,
+  provider text not null,
+  external_id text not null,
+  status text not null,
+  input_file_id text,
+  output_file_id text,
+  error_file_id text,
+  result_json jsonb,
+  error text,
+  submitted_at timestamptz,
+  last_checked_at timestamptz,
+  next_check_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(job_id, kind),
+  unique(provider, external_id),
+  check (kind in ('segmenter_batch')),
+  check (status in ('submitted', 'validating', 'in_progress', 'finalizing', 'completed', 'failed', 'expired', 'cancelled'))
+);
+
 alter table public.smart_skip_jobs add column if not exists locked_at timestamptz;
 alter table public.smart_skip_jobs add column if not exists locked_until timestamptz;
 alter table public.smart_skip_jobs add column if not exists worker_id text;
@@ -260,4 +283,5 @@ drop table if exists public.smart_skip_feedback;
 create index if not exists idx_smart_skip_maps_episode on public.smart_skip_segment_maps(episode_local_id, updated_at desc);
 create index if not exists idx_smart_skip_jobs_status_priority on public.smart_skip_jobs(status, priority desc, created_at asc);
 create index if not exists idx_smart_skip_jobs_locked_until on public.smart_skip_jobs(locked_until) where status in ('leased', 'processing');
+create index if not exists idx_smart_skip_external_tasks_next_check on public.smart_skip_external_tasks(next_check_at) where status in ('submitted', 'validating', 'in_progress', 'finalizing');
 create index if not exists idx_smart_skip_segments_map_start on public.smart_skip_segments(segment_map_id, start_ms);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createOrGetSmartSkipJob, priorityByReason } from '../jobs.js';
-import { claimNextJob, getJob, recoverStaleJobs, upsertJob } from '../storage.js';
+import { claimNextJob, getExternalTaskForJob, getJob, recoverStaleJobs, upsertExternalTask, upsertJob } from '../storage.js';
 import type { SmartSkipConfig } from '../config.js';
 import type { SmartSkipJob, SmartSkipProcessRequest } from '../types.js';
 
@@ -41,6 +41,26 @@ describe('Smart Skip jobs', () => {
     const stale = await getJob(`ssk_job_stale_${suffix}`);
     assert.equal(stale?.status, 'failed');
   });
+
+  it('stores external batch task metadata by job and kind', async () => {
+    const now = new Date().toISOString();
+    await upsertExternalTask({
+      id: `ssk_ext_${Date.now()}`,
+      jobId: 'ssk_job_external_test',
+      kind: 'segmenter_batch',
+      provider: 'openai',
+      externalId: 'batch_test',
+      status: 'in_progress',
+      inputFileId: 'file_input',
+      nextCheckAt: new Date(Date.now() + 12 * 60 * 60_000).toISOString(),
+      createdAt: now,
+      updatedAt: now
+    });
+
+    const task = await getExternalTaskForJob('ssk_job_external_test', 'segmenter_batch');
+    assert.equal(task?.externalId, 'batch_test');
+    assert.equal(task?.status, 'in_progress');
+  });
 });
 
 function requestFixture(episodeId: string): SmartSkipProcessRequest {
@@ -75,6 +95,8 @@ function configFixture(): SmartSkipConfig {
     requireAuth: true,
     whisperModel: 'mock',
     segmenterModel: 'mock',
+    segmenterBatchEnabled: true,
+    segmenterBatchCheckIntervalHours: 12,
     proactiveEnabled: false,
     activeUserDays: 30,
     proactiveRunsPerDay: 2,

@@ -5,6 +5,8 @@ export interface SmartSkipConfig {
   whisperModel: string;
   segmenterBaseUrl?: string;
   segmenterModel: string;
+  segmenterBatchEnabled: boolean;
+  segmenterBatchCheckIntervalHours: number;
   proactiveEnabled: boolean;
   activeUserDays: number;
   proactiveRunsPerDay: number;
@@ -24,6 +26,8 @@ export function readSmartSkipConfig(options: { dataDir: string; publicUrl: strin
     whisperModel: envString('SMART_SKIP_WHISPER_MODEL') || 'large-v3-turbo',
     segmenterBaseUrl: envString('SMART_SKIP_SEGMENTER_BASE_URL'),
     segmenterModel: envString('SMART_SKIP_SEGMENTER_MODEL') || 'gpt-5.4-mini',
+    segmenterBatchEnabled: envBool('SMART_SKIP_SEGMENTER_BATCH_ENABLED', true),
+    segmenterBatchCheckIntervalHours: Math.max(1, envNumber('SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS', 12)),
     proactiveEnabled: envBool('SMART_SKIP_PROACTIVE_ENABLED', false),
     activeUserDays: envNumber('SMART_SKIP_ACTIVE_USER_DAYS', 30),
     proactiveRunsPerDay: envNumber('SMART_SKIP_PROACTIVE_RUNS_PER_DAY', 2),

@@ -166,7 +166,7 @@ cd infra
 SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
 ```
 
-The profile starts `whisper-worker` on `/v1/transcribe` and `codex-segmenter` on `/v1/segment`. The checked-in Whisper worker defaults to deterministic mock mode for local validation only. The segmenter can run in real mode with `MOCK_SEGMENTER=false` and `OPENAI_API_KEY`; it uses `gpt-5.4-mini` by default. Real Smart Skip processing requires a live `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; the likely Superzima layout is app server plus segmenter on Superzima, with Whisper running on an Aero X16, Mac, or other GPU-capable host.
+The profile starts `whisper-worker` on `/v1/transcribe` and `codex-segmenter` on `/v1/segment` plus `/v1/segment-batches`. The checked-in Whisper worker defaults to deterministic mock mode for local validation only. The segmenter can run in real mode with `MOCK_SEGMENTER=false` and `OPENAI_API_KEY`; it uses `gpt-5.4-mini` by default. The app server submits real segmenting work through OpenAI Batch by default (`SMART_SKIP_SEGMENTER_BATCH_ENABLED=true`) and rechecks pending batches every 12 hours (`SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS=12`). Real Smart Skip processing requires a live `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; the likely Superzima layout is app server plus segmenter on Superzima, with Whisper running on an Aero X16, Mac, or other GPU-capable host.
 
 For an existing database, apply the Smart Skip V1 migration before enabling real workers:
 

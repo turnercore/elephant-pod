@@ -20,6 +20,30 @@ http.createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: true, service: 'smart-skip-segmenter', mock, model: defaultModel }));
     return;
   }
+  if (req.method === 'GET' && req.url?.startsWith('/v1/segment-batches/')) {
+    try {
+      const externalId = decodeURIComponent(req.url.split('/').pop() || '');
+      const output = await checkSegmentBatch(externalId);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(output));
+    } catch (error) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'segmenter batch check failed' }));
+    }
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/v1/segment-batches') {
+    const body = await readJson(req);
+    try {
+      const output = await submitSegmentBatch(body);
+      res.writeHead(202, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(output));
+    } catch (error) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'segmenter batch submission failed' }));
+    }
+    return;
+  }
   if (req.method !== 'POST' || req.url !== '/v1/segment') {
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));
@@ -27,21 +51,8 @@ http.createServer(async (req, res) => {
   }
   const body = await readJson(req);
   if (mock) {
-    const transcript = JSON.stringify(body?.transcript || {}).toLowerCase();
-    const hasSponsor = transcript.includes('brought to you by') || transcript.includes('use code');
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({
-      segments: hasSponsor ? [{
-        type: 'sponsorship',
-        subtype: 'mock',
-        startMs: 10_000,
-        endMs: 30_000,
-        confidence: 0.96,
-        action: 'auto_skip',
-        label: 'Sponsor',
-        evidence: ['mock sponsor phrase']
-      }] : []
-    }));
+    res.end(JSON.stringify(mockSegmenterOutput(body)));
     return;
   }
   try {
@@ -75,8 +86,7 @@ function readJson(req) {
 }
 
 async function segmentWithOpenAI(payload) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is required when MOCK_SEGMENTER=false.');
+  const apiKey = requireOpenAiKey();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs).unref();
   try {
@@ -88,16 +98,7 @@ async function segmentWithOpenAI(payload) {
         authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: payload?.model || defaultModel,
-        instructions: buildInstructions(payload),
-        input: JSON.stringify(compactPayload(payload)),
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'smart_skip_segments',
-            schema
-          }
-        }
+        ...buildResponsesBody(payload)
       })
     });
     const raw = await response.text();
@@ -106,6 +107,118 @@ async function segmentWithOpenAI(payload) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function submitSegmentBatch(payload) {
+  const customId = typeof payload?.customId === 'string' && payload.customId.trim()
+    ? payload.customId.trim()
+    : `smart-skip-${Date.now()}`;
+  const request = payload?.request || payload;
+  if (mock) {
+    return {
+      provider: 'mock',
+      externalId: `mock_batch_${customId}`,
+      status: 'completed',
+      result: mockSegmenterOutput(request)
+    };
+  }
+  const apiKey = requireOpenAiKey();
+  const jsonl = JSON.stringify({
+    custom_id: customId,
+    method: 'POST',
+    url: '/v1/responses',
+    body: buildResponsesBody(request)
+  }) + '\n';
+  const form = new FormData();
+  form.append('purpose', 'batch');
+  form.append('file', new Blob([jsonl], { type: 'application/jsonl' }), `${customId}.jsonl`);
+  const file = await openAiJson('/files', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${apiKey}` },
+    body: form
+  });
+  const batch = await openAiJson('/batches', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      input_file_id: file.id,
+      endpoint: '/v1/responses',
+      completion_window: '24h',
+      metadata: {
+        custom_id: customId,
+        feature: 'smart-skip'
+      }
+    })
+  });
+  return batchToResponse(batch);
+}
+
+async function checkSegmentBatch(externalId) {
+  if (!externalId) throw new Error('Segmenter batch id is required.');
+  if (mock || externalId.startsWith('mock_batch_')) {
+    return { provider: 'mock', externalId, status: 'completed', result: { segments: [] } };
+  }
+  const apiKey = requireOpenAiKey();
+  const batch = await openAiJson(`/batches/${encodeURIComponent(externalId)}`, {
+    headers: { authorization: `Bearer ${apiKey}` }
+  });
+  const response = batchToResponse(batch);
+  if (batch.status !== 'completed') return response;
+  if (!batch.output_file_id) throw new Error(`OpenAI batch ${externalId} completed without output_file_id.`);
+  const outputText = await openAiText(`/files/${encodeURIComponent(batch.output_file_id)}/content`, {
+    headers: { authorization: `Bearer ${apiKey}` }
+  });
+  const result = parseBatchOutput(outputText);
+  return {
+    ...response,
+    status: 'completed',
+    result
+  };
+}
+
+function buildResponsesBody(payload) {
+  return {
+    model: payload?.model || defaultModel,
+    instructions: buildInstructions(payload),
+    input: JSON.stringify(compactPayload(payload)),
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'smart_skip_segments',
+        schema
+      }
+    }
+  };
+}
+
+function batchToResponse(batch) {
+  return {
+    provider: 'openai',
+    externalId: batch.id,
+    status: normalizeBatchStatus(batch.status),
+    inputFileId: batch.input_file_id,
+    outputFileId: batch.output_file_id,
+    errorFileId: batch.error_file_id,
+    error: batch.errors ? JSON.stringify(batch.errors).slice(0, 1000) : undefined
+  };
+}
+
+function normalizeBatchStatus(status) {
+  if (status === 'cancelling') return 'in_progress';
+  return status || 'submitted';
+}
+
+function parseBatchOutput(outputText) {
+  const lines = outputText.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) throw new Error('OpenAI batch output was empty.');
+  const first = JSON.parse(lines[0]);
+  if (first.error) throw new Error(first.error.message || 'OpenAI batch request failed.');
+  const body = first.response?.body;
+  if (!body) throw new Error('OpenAI batch output did not include response body.');
+  return parseSegmenterOutput(body);
 }
 
 function buildInstructions(payload) {
@@ -139,4 +252,41 @@ function parseSegmenterOutput(response) {
   const parsed = JSON.parse(text);
   if (!parsed || !Array.isArray(parsed.segments)) throw new Error('OpenAI segmenter response did not include segments.');
   return parsed;
+}
+
+function mockSegmenterOutput(body) {
+  const transcript = JSON.stringify(body?.transcript || {}).toLowerCase();
+  const hasSponsor = transcript.includes('brought to you by') || transcript.includes('use code');
+  return {
+    segments: hasSponsor ? [{
+      type: 'sponsorship',
+      subtype: 'mock',
+      startMs: 10_000,
+      endMs: 30_000,
+      confidence: 0.96,
+      action: 'auto_skip',
+      label: 'Sponsor',
+      evidence: ['mock sponsor phrase']
+    }] : []
+  };
+}
+
+function requireOpenAiKey() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is required when MOCK_SEGMENTER=false.');
+  return apiKey;
+}
+
+async function openAiJson(pathname, init) {
+  const response = await fetch(`${openAiBaseUrl}${pathname}`, init);
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`OpenAI request failed with ${response.status}: ${raw.slice(0, 500)}`);
+  return JSON.parse(raw);
+}
+
+async function openAiText(pathname, init) {
+  const response = await fetch(`${openAiBaseUrl}${pathname}`, init);
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`OpenAI request failed with ${response.status}: ${raw.slice(0, 500)}`);
+  return raw;
 }
