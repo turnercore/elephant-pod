@@ -1,4 +1,4 @@
-import { ListTree } from 'lucide-react';
+import { LuListTree as ListTree } from 'react-icons/lu';
 import type { Chapter } from '@/types/domain';
 import { formatDuration } from '@/lib/dates';
 import { EmptyState } from '../EmptyState';

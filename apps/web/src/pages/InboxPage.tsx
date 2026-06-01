@@ -1,4 +1,4 @@
-import { ArchiveX, ListEnd, ListStart, Pause, Play, RefreshCw, Rss } from 'lucide-react';
+import { LuArchiveX as ArchiveX, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRefreshCw as RefreshCw, LuRss as Rss } from 'react-icons/lu';
 import { useRef, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
 import { EmptyState } from '@/components/EmptyState';

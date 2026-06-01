@@ -1,5 +1,5 @@
 import type { HTMLAttributes, PropsWithChildren, ReactNode } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { LuArrowLeft as ArrowLeft } from 'react-icons/lu';
 import { cn } from '@/lib/cn';
 import { useBackNavigation } from '../Layout/BackNavigationContext';
 import { IconButton } from './IconButton';

@@ -1,4 +1,4 @@
-import { Download, FileDown, FileUp, Upload } from 'lucide-react';
+import { LuDownload as Download, LuFileDown as FileDown, LuFileUp as FileUp, LuUpload as Upload } from 'react-icons/lu';
 import type { AppSettings, ListeningStats, Podcast } from '@/types/domain';
 import type { ServerSession } from '@/lib/sync/serverAuth';
 import { Button } from '@/components/ui/Button';

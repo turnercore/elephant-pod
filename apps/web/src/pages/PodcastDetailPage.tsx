@@ -1,4 +1,4 @@
-import { ArrowDownWideNarrow, ArrowUpWideNarrow, Check, CheckCheck, Inbox, RefreshCw, RotateCcw, Settings2, X } from 'lucide-react';
+import { LuArrowDownWideNarrow as ArrowDownWideNarrow, LuArrowUpWideNarrow as ArrowUpWideNarrow, LuCheck as Check, LuCheckCheck as CheckCheck, LuInbox as Inbox, LuRefreshCw as RefreshCw, LuRotateCcw as RotateCcw, LuSettings2 as Settings2, LuX as X } from 'react-icons/lu';
 import { type ReactNode, useMemo, useState } from 'react';
 import type { CachedPodcast, EpisodeWithState, PodcastPreference } from '@/types/domain';
 import { EpisodeList } from '@/components/Episodes/EpisodeList';

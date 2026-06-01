@@ -1,4 +1,4 @@
-import { Podcast } from 'lucide-react';
+import { LuPodcast as Podcast } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
 import { EmptyState } from '../EmptyState';
 import { EpisodeCard } from './EpisodeCard';

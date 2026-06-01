@@ -1,4 +1,4 @@
-import { Moon } from 'lucide-react';
+import { LuMoon as Moon } from 'react-icons/lu';
 import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { Button } from '../ui/Button';

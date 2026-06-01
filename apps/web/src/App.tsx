@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Github } from 'lucide-react';
+import { LuGithub as Github } from 'react-icons/lu';
 import type { AppSettings, BackupFile, CachedPodcast, EpisodeWithState, ListeningStats, Podcast, PodcastPreference, SectionKey } from '@/types/domain';
 import { AppShell } from '@/components/Layout/AppShell';
 import { PlayerBar } from '@/components/Player/PlayerBar';

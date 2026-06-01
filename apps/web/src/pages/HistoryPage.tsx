@@ -1,4 +1,4 @@
-import { Clock3 } from 'lucide-react';
+import { LuClock3 as Clock3 } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
 import { EmptyState } from '@/components/EmptyState';
 import { EpisodeList } from '@/components/Episodes/EpisodeList';

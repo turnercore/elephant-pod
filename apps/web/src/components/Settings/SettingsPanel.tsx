@@ -1,4 +1,4 @@
-import { Server } from 'lucide-react';
+import { LuServer as Server } from 'react-icons/lu';
 import type { AppSettings, ListeningStats, SortDirection } from '@/types/domain';
 import type { PropsWithChildren } from 'react';
 import { Select, Input } from '../ui/Input';

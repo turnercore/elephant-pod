@@ -1,7 +1,7 @@
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, type DragEndEvent, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ArrowDownToLine, ArrowUpToLine, Check, FastForward, GripVertical, Inbox, ListEnd, ListMusic, ListStart, Pause, Play, Rewind, RotateCcw, Scissors, SkipForward, Trash2 } from 'lucide-react';
+import { LuArrowDownToLine as ArrowDownToLine, LuArrowUpToLine as ArrowUpToLine, LuCheck as Check, LuFastForward as FastForward, LuGripVertical as GripVertical, LuInbox as Inbox, LuListEnd as ListEnd, LuListMusic as ListMusic, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRewind as Rewind, LuRotateCcw as RotateCcw, LuScissors as Scissors, LuSkipForward as SkipForward, LuTrash2 as Trash2 } from 'react-icons/lu';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSettings, EpisodeWithState } from '@/types/domain';
 import type { SmartSkipEvent } from '@/lib/smartSkip/types';

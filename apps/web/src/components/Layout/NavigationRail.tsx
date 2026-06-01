@@ -1,4 +1,4 @@
-import { Archive, Clock3, Download, Github, Inbox, LogOut, PanelLeftClose, PanelLeftOpen, Search, Settings, UserCircle } from 'lucide-react';
+import { LuArchive as Archive, LuCircleUser as UserCircle, LuClock3 as Clock3, LuDownload as Download, LuGithub as Github, LuInbox as Inbox, LuLogOut as LogOut, LuPanelLeftClose as PanelLeftClose, LuPanelLeftOpen as PanelLeftOpen, LuSearch as Search, LuSettings as Settings } from 'react-icons/lu';
 import { useId, useState } from 'react';
 import type { SectionKey } from '@/types/domain';
 import type { ServerSession } from '@/lib/sync/serverAuth';

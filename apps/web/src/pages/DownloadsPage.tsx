@@ -1,4 +1,4 @@
-import { Download, HardDrive, Trash2 } from 'lucide-react';
+import { LuDownload as Download, LuHardDrive as HardDrive, LuTrash2 as Trash2 } from 'react-icons/lu';
 import { useEffect, useMemo, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
 import { EpisodeList } from '@/components/Episodes/EpisodeList';

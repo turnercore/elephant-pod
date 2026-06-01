@@ -1,4 +1,4 @@
-import { Podcast as PodcastIcon } from 'lucide-react';
+import { LuPodcast as PodcastIcon } from 'react-icons/lu';
 import { useMemo } from 'react';
 import type { CachedPodcast, EpisodeWithState, Podcast } from '@/types/domain';
 import { EmptyState } from '@/components/EmptyState';

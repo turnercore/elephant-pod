@@ -1,4 +1,4 @@
-import { Check, Download, Inbox, ListEnd, ListStart, Play, RotateCcw } from 'lucide-react';
+import { LuCheck as Check, LuDownload as Download, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuPlay as Play, LuRotateCcw as RotateCcw } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';

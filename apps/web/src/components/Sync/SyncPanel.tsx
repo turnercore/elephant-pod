@@ -1,4 +1,4 @@
-import { Github, LogOut, RefreshCw, Server } from 'lucide-react';
+import { LuGithub as Github, LuLogOut as LogOut, LuRefreshCw as RefreshCw, LuServer as Server } from 'react-icons/lu';
 import { useState } from 'react';
 import type { AppSettings } from '@/types/domain';
 import { syncNow } from '@/lib/sync/syncEngine';

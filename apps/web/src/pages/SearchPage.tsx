@@ -1,4 +1,4 @@
-import { Check, Loader2, Plus, Search } from 'lucide-react';
+import { LuCheck as Check, LuLoader as Loader2, LuPlus as Plus, LuSearch as Search } from 'react-icons/lu';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CachedPodcast, Podcast } from '@/types/domain';
 import { Badge } from '@/components/ui/Badge';

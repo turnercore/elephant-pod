@@ -1,4 +1,4 @@
-import { ListMusic } from 'lucide-react';
+import { LuListMusic as ListMusic } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
 import { Panel } from '@/components/ui/Panel';
 import { QueuePanel } from '@/components/Queue/QueuePanel';

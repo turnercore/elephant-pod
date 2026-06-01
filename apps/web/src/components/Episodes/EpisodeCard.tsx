@@ -1,4 +1,4 @@
-import { ArchiveX, Check, Download, Inbox, ListEnd, ListStart, MoreHorizontal, Pause, Play, RotateCcw, Star } from 'lucide-react';
+import { LuArchiveX as ArchiveX, LuCheck as Check, LuDownload as Download, LuEllipsis as MoreHorizontal, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuStar as Star } from 'react-icons/lu';
 import { useRef, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
 import { formatDate, formatDuration } from '@/lib/dates';

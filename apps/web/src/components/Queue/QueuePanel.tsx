@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ListMusic, Play, Trash2 } from 'lucide-react';
+import { LuArrowDown as ArrowDown, LuArrowUp as ArrowUp, LuListMusic as ListMusic, LuPlay as Play, LuTrash2 as Trash2 } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
 import { EmptyState } from '../EmptyState';
 import { IconButton } from '../ui/IconButton';
