@@ -203,8 +203,8 @@ The Superzima deployment publishes the app server as `100.92.133.126:20001` on T
 Required deployment secrets:
 
 - `SUPERZIMA_SSH_PRIVATE_KEY`
-- `FORGEJO_REGISTRY_USERNAME`
-- `FORGEJO_REGISTRY_TOKEN`
+- `REGISTRY_USERNAME`
+- `REGISTRY_TOKEN`
 
 ## Tauri desktop/mobile
 
