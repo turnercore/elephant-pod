@@ -14,7 +14,7 @@
 | Auto-download | Partial native-ready | Queued auto-download is on by default in Tauri/native builds. Browser auto-download only attempts same-origin media; manual browser downloads can still try Cache Storage where hosts allow CORS. |
 | Episode triage | Implemented | Inbox -> queue/dismiss/archive. |
 | Silence shortening | Server-map partial | Signed-in server ffmpeg analysis creates silence maps. Long silences are shortened to a retained duration; browser Web Audio analysis is disabled for remote podcast streams. |
-| Smart Skip V1 | Partial | Signed-in server route, storage, worker contract, UI settings, auto-skip, undo, and pure tests exist. Real Whisper/Codex workers and proactive active-user discovery are deployment follow-ups. |
+| Smart Skip V1 | Partial | Signed-in server route, durable job leasing, storage, worker contract, OpenAI-backed segmenter, UI settings, auto-skip, session-only undo, and pure tests exist. Real Whisper deployment and proactive active-user discovery are follow-ups. |
 | Listening stats | Implemented local | Tracks real listening time, per-podcast totals, speed-up savings, and silence-skip savings in local profile stats. |
 | RSS-first/no lock-in | Implemented | Add RSS URL, OPML import/export, JSON backup. |
 | Episode artwork | Implemented | RSS item-level `<itunes:image>` and `media:thumbnail` artwork is preserved; episode views fall back to show artwork when item art is absent. |

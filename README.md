@@ -39,8 +39,8 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - `apps/web/src/lib/audio/silenceMaps.ts`: frontend handoff to signed-in server-generated silence maps.
 - `apps/web/src/lib/sync/syncEngine.ts`: bidirectional Supabase sync with merge conflict accounting.
 - `infra/docker-compose.yml`: local Postgres plus Elephant Pod server for local development.
-- `.github/workflows/publish-container.yml`: GitHub-hosted build-and-push flow for the server image.
-- `.github/workflows/deploy-superzima.yml`: SSH deploy flow that pulls the GHCR image on `superzima`.
+- `.forgejo/workflows/publish-container.yml`: Forgejo Actions build-and-push flow for the server image.
+- `.forgejo/workflows/deploy-superzima.yml`: SSH deploy flow that pulls the Forgejo registry image on `superzima`.
 
 ## Run locally
 
@@ -166,7 +166,13 @@ cd infra
 SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
 ```
 
-The profile starts `whisper-worker` on `/v1/transcribe` and `codex-segmenter` on `/v1/segment`. The checked-in workers default to deterministic mock mode for local validation; production should point `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL` at real worker hosts.
+The profile starts `whisper-worker` on `/v1/transcribe` and `codex-segmenter` on `/v1/segment`. The checked-in Whisper worker defaults to deterministic mock mode for local validation only. The segmenter can run in real mode with `MOCK_SEGMENTER=false` and `OPENAI_API_KEY`; it uses `gpt-5.4-mini` by default. Real Smart Skip processing requires a live `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; the likely Superzima layout is app server plus segmenter on Superzima, with Whisper running on an Aero X16, Mac, or other GPU-capable host.
+
+For an existing database, apply the Smart Skip V1 migration before enabling real workers:
+
+```bash
+psql "$DATABASE_URL" -f infra/postgres/migrations/20260601_smart_skip_v1.sql
+```
 
 A fresh database mounts `postgres/init.sql` to create the Elephant Pod sync tables and clip registry.
 
@@ -182,18 +188,23 @@ docker compose up -d
 
 That bundle provides auth and Postgres together and is the recommended example to follow when you want a single local stack with Supabase-managed auth.
 
-## GHCR deployment
+## Forgejo deployment
 
-The production container image is built by GitHub Actions on GitHub-hosted runners and pushed to GHCR as `ghcr.io/<owner>/elephant-pod-server`.
+The production container images are built by Forgejo Actions and pushed to the Forgejo container registry:
 
-`superzima` then pulls that image through its Compose file instead of building from a copied checkout.
+- `forge.elephanthand.com/elephant-hand-games/elephant-pod-server`
+- `forge.elephanthand.com/elephant-hand-games/elephant-pod-segmenter`
+- `forge.elephanthand.com/elephant-hand-games/elephant-pod-whisper-worker`
+
+`superzima` then pulls those images through its Compose file instead of building from a copied checkout.
 
 The Superzima deployment publishes the app server as `100.92.133.126:20001` on Tailscale. Racknerd's public Caddy proxy should route `pod.elephanthand.com` to that address.
 
 Required deployment secrets:
 
 - `SUPERZIMA_SSH_PRIVATE_KEY`
-- `GHCR_TOKEN`
+- `FORGEJO_REGISTRY_USERNAME`
+- `FORGEJO_REGISTRY_TOKEN`
 
 ## Tauri desktop/mobile
 

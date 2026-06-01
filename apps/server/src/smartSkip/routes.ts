@@ -1,9 +1,7 @@
-import crypto from 'node:crypto';
 import type { Express, RequestHandler } from 'express';
 import type { SmartSkipConfig } from './config.js';
-import { feedbackRequestSchema } from './schemas.js';
 import { createOrGetSmartSkipJob } from './jobs.js';
-import { getJob, getLatestSegmentMap, insertFeedback } from './storage.js';
+import { getJob, getLatestSegmentMap } from './storage.js';
 
 export function registerSmartSkipRoutes(app: Express, config: SmartSkipConfig, authMiddleware?: RequestHandler): void {
   const maybeAuth = config.requireAuth && authMiddleware ? [authMiddleware] : [];
@@ -40,13 +38,4 @@ export function registerSmartSkipRoutes(app: Express, config: SmartSkipConfig, a
     res.json({ status: map.status, segmentMap: map.status === 'ready' ? map : null });
   });
 
-  app.post('/api/smart-skip/feedback', ...maybeAuth, async (req, res) => {
-    try {
-      const feedback = feedbackRequestSchema.parse(req.body);
-      await insertFeedback({ id: `ssk_fb_${crypto.randomUUID()}`, ...feedback });
-      res.status(201).json({ ok: true });
-    } catch (error) {
-      res.status(422).json({ error: error instanceof Error ? error.message : 'Invalid Smart Skip feedback.' });
-    }
-  });
 }

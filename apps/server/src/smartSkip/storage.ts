@@ -1,4 +1,4 @@
-import { queryDatabase } from '../database.js';
+import { hasLocalDatabase, queryDatabase, withDatabaseTransaction } from '../database.js';
 import type { SmartSkipMediaVersion } from './mediaVersion.js';
 import type { SmartSkipJob, SmartSkipSegmentMap, SmartSkipTranscript } from './types.js';
 
@@ -6,12 +6,14 @@ const memory = {
   mediaVersions: new Map<string, SmartSkipMediaVersion>(),
   jobs: new Map<string, SmartSkipJob>(),
   maps: new Map<string, SmartSkipSegmentMap>(),
-  transcripts: new Map<string, SmartSkipTranscript>(),
-  feedback: [] as Record<string, unknown>[]
+  transcripts: new Map<string, SmartSkipTranscript>()
 };
 
 export async function upsertMediaVersion(mediaVersion: SmartSkipMediaVersion): Promise<void> {
-  memory.mediaVersions.set(mediaVersion.id, mediaVersion);
+  if (!hasLocalDatabase()) {
+    memory.mediaVersions.set(mediaVersion.id, mediaVersion);
+    return;
+  }
   await queryDatabase(
     `insert into public.smart_skip_media_versions
       (id, episode_local_id, podcast_local_id, audio_url, audio_url_hash, duration_ms, public_audio_url, created_at, updated_at)
@@ -33,15 +35,20 @@ export async function upsertMediaVersion(mediaVersion: SmartSkipMediaVersion): P
       mediaVersion.createdAt,
       mediaVersion.updatedAt
     ]
-  ).catch(() => null);
+  );
+  memory.mediaVersions.set(mediaVersion.id, mediaVersion);
 }
 
 export async function upsertJob(job: SmartSkipJob): Promise<void> {
-  memory.jobs.set(job.id, job);
+  if (!hasLocalDatabase()) {
+    memory.jobs.set(job.id, job);
+    return;
+  }
   await queryDatabase(
     `insert into public.smart_skip_jobs
-      (id, episode_local_id, media_version_id, priority, status, stage, request, error, attempts, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      (id, episode_local_id, media_version_id, priority, status, stage, request, error, attempts,
+       locked_at, locked_until, worker_id, next_attempt_at, last_heartbeat_at, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      on conflict (id) do update set
       media_version_id = excluded.media_version_id,
       priority = excluded.priority,
@@ -50,6 +57,11 @@ export async function upsertJob(job: SmartSkipJob): Promise<void> {
       request = excluded.request,
       error = excluded.error,
       attempts = excluded.attempts,
+      locked_at = excluded.locked_at,
+      locked_until = excluded.locked_until,
+      worker_id = excluded.worker_id,
+      next_attempt_at = excluded.next_attempt_at,
+      last_heartbeat_at = excluded.last_heartbeat_at,
       updated_at = excluded.updated_at`,
     [
       job.id,
@@ -61,18 +73,125 @@ export async function upsertJob(job: SmartSkipJob): Promise<void> {
       JSON.stringify(job.request),
       job.error ?? null,
       job.attempts,
+      job.lockedAt ?? null,
+      job.lockedUntil ?? null,
+      job.workerId ?? null,
+      job.nextAttemptAt ?? null,
+      job.lastHeartbeatAt ?? null,
       job.createdAt,
       job.updatedAt
     ]
-  ).catch(() => null);
+  );
+  memory.jobs.set(job.id, job);
 }
 
 export async function getJob(id: string): Promise<SmartSkipJob | null> {
   const cached = memory.jobs.get(id);
   if (cached) return cached;
-  const rows = await queryDatabase<Record<string, unknown>>('select * from public.smart_skip_jobs where id = $1 limit 1', [id]).catch(() => null);
+  const rows = await queryDatabase<Record<string, unknown>>('select * from public.smart_skip_jobs where id = $1 limit 1', [id]);
   const row = rows?.[0];
   return row ? rowToJob(row) : null;
+}
+
+export async function recoverStaleJobs(maxAttempts = 3): Promise<void> {
+  const now = new Date().toISOString();
+  for (const job of memory.jobs.values()) {
+    if (!isStaleLeasedJob(job)) continue;
+    if (job.attempts >= maxAttempts) {
+      memory.jobs.set(job.id, { ...job, status: 'failed', stage: 'failed', error: 'Smart Skip job exceeded retry limit.', workerId: undefined, lockedAt: undefined, lockedUntil: undefined, updatedAt: now });
+    } else {
+      memory.jobs.set(job.id, { ...job, status: 'queued', stage: 'requeued', workerId: undefined, lockedAt: undefined, lockedUntil: undefined, updatedAt: now });
+    }
+  }
+  await queryDatabase(
+    `update public.smart_skip_jobs
+     set status = 'queued',
+      worker_id = null,
+      locked_at = null,
+      locked_until = null,
+      stage = 'requeued',
+      updated_at = now()
+     where status in ('leased', 'processing')
+      and locked_until < now()
+      and attempts < $1`,
+    [maxAttempts]
+  );
+  await queryDatabase(
+    `update public.smart_skip_jobs
+     set status = 'failed',
+      error = 'Smart Skip job exceeded retry limit.',
+      worker_id = null,
+      locked_at = null,
+      locked_until = null,
+      stage = 'failed',
+      updated_at = now()
+     where status in ('leased', 'processing')
+      and locked_until < now()
+      and attempts >= $1`,
+    [maxAttempts]
+  );
+}
+
+export async function claimNextJob(workerId: string, leaseMs = 15 * 60_000): Promise<SmartSkipJob | null> {
+  const now = new Date();
+  const lockedUntil = new Date(now.getTime() + leaseMs).toISOString();
+  if (!hasLocalDatabase()) {
+    const queued = [...memory.jobs.values()]
+      .filter((job) => job.status === 'queued' && (!job.nextAttemptAt || new Date(job.nextAttemptAt).getTime() <= now.getTime()))
+      .sort((a, b) => b.priority - a.priority || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0];
+    if (!queued) return null;
+    const leased = { ...queued, status: 'leased' as const, workerId, lockedAt: now.toISOString(), lockedUntil, updatedAt: now.toISOString() };
+    memory.jobs.set(leased.id, leased);
+    return leased;
+  }
+  const rows = await queryDatabase<Record<string, unknown>>(
+    `with next_job as (
+      select id
+      from public.smart_skip_jobs
+      where status = 'queued'
+        and (next_attempt_at is null or next_attempt_at <= now())
+      order by priority desc, created_at asc
+      for update skip locked
+      limit 1
+     )
+     update public.smart_skip_jobs j
+     set status = 'leased',
+      worker_id = $1,
+      locked_at = now(),
+      locked_until = now() + ($2::text)::interval,
+      updated_at = now()
+     from next_job
+     where j.id = next_job.id
+     returning j.*`,
+    [workerId, `${Math.max(1, Math.floor(leaseMs / 1000))} seconds`]
+  );
+  const row = rows?.[0];
+  if (row) {
+    const job = rowToJob(row);
+    memory.jobs.set(job.id, job);
+    return job;
+  }
+  return null;
+}
+
+export async function heartbeatJob(id: string, workerId: string, stage: string, leaseMs = 15 * 60_000): Promise<void> {
+  const now = new Date().toISOString();
+  const lockedUntil = new Date(Date.now() + leaseMs).toISOString();
+  const cached = memory.jobs.get(id);
+  if (cached && cached.workerId === workerId) {
+    memory.jobs.set(id, { ...cached, status: 'processing', stage, lastHeartbeatAt: now, lockedUntil, updatedAt: now });
+  }
+  await queryDatabase(
+    `update public.smart_skip_jobs
+     set status = 'processing',
+      stage = $2,
+      last_heartbeat_at = now(),
+      locked_until = now() + ($4::text)::interval,
+      updated_at = now()
+     where id = $1
+      and worker_id = $3`,
+    [id, stage, workerId, `${Math.max(1, Math.floor(leaseMs / 1000))} seconds`]
+  );
 }
 
 export async function getLatestSegmentMap(episodeId: string, audioUrl?: string): Promise<SmartSkipSegmentMap | null> {
@@ -112,15 +231,19 @@ export async function getLatestSegmentMap(episodeId: string, audioUrl?: string):
      order by m.updated_at desc
      limit 1`,
     [episodeId, audioUrl ?? null]
-  ).catch(() => null);
+  );
   const row = rows?.[0];
   return row ? rowToMap(row) : null;
 }
 
 export async function upsertSegmentMap(map: SmartSkipSegmentMap): Promise<void> {
   const mapId = `ssk_map_${map.mediaVersionId}`;
-  memory.maps.set(mapId, map);
-  await queryDatabase(
+  if (!hasLocalDatabase()) {
+    memory.maps.set(mapId, map);
+    return;
+  }
+  const wrote = await withDatabaseTransaction(async (query) => {
+    await query(
     `insert into public.smart_skip_segment_maps
       (id, episode_local_id, media_version_id, schema_version, status, generated_at, source_summary, created_at, updated_at)
      values ($1,$2,$3,$4,$5,$6,$7,now(),now())
@@ -130,21 +253,14 @@ export async function upsertSegmentMap(map: SmartSkipSegmentMap): Promise<void> 
       source_summary = excluded.source_summary,
       updated_at = now()`,
     [mapId, map.episodeId, map.mediaVersionId, map.schemaVersion, map.status, map.generatedAt, JSON.stringify({ count: map.segments.length })]
-  ).catch(() => null);
-  for (const segment of map.segments) {
-    await queryDatabase(
+    );
+    await query('delete from public.smart_skip_segments where segment_map_id = $1', [mapId]);
+    for (const segment of map.segments) {
+      await query(
       `insert into public.smart_skip_segments
         (id, segment_map_id, type, subtype, start_ms, end_ms, confidence, action, source, label, evidence, original_start_ms, original_end_ms)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       on conflict (id) do update set
-        start_ms = excluded.start_ms,
-        end_ms = excluded.end_ms,
-        confidence = excluded.confidence,
-        action = excluded.action,
-        label = excluded.label,
-        evidence = excluded.evidence,
-        original_start_ms = excluded.original_start_ms,
-        original_end_ms = excluded.original_end_ms`,
+       on conflict (id) do nothing`,
       [
         segment.id,
         mapId,
@@ -160,12 +276,19 @@ export async function upsertSegmentMap(map: SmartSkipSegmentMap): Promise<void> 
         segment.originalStartMs ?? null,
         segment.originalEndMs ?? null
       ]
-    ).catch(() => null);
-  }
+      );
+    }
+    return true;
+  });
+  void wrote;
+  memory.maps.set(mapId, map);
 }
 
 export async function upsertTranscript(transcript: SmartSkipTranscript): Promise<void> {
-  memory.transcripts.set(transcript.mediaVersionId, transcript);
+  if (!hasLocalDatabase()) {
+    memory.transcripts.set(transcript.mediaVersionId, transcript);
+    return;
+  }
   await queryDatabase(
     `insert into public.smart_skip_transcripts
       (id, media_version_id, provider, model, language, transcript_json, plain_text)
@@ -183,26 +306,8 @@ export async function upsertTranscript(transcript: SmartSkipTranscript): Promise
       JSON.stringify(transcript),
       transcript.segments.map((segment) => segment.text).join('\n')
     ]
-  ).catch(() => null);
-}
-
-export async function insertFeedback(feedback: Record<string, unknown>): Promise<void> {
-  memory.feedback.push(feedback);
-  await queryDatabase(
-    `insert into public.smart_skip_feedback
-      (id, user_id, episode_local_id, media_version_id, segment_id, feedback_type, actual_start_ms, actual_end_ms)
-     values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [
-      feedback.id,
-      null,
-      feedback.episodeId,
-      feedback.mediaVersionId ?? null,
-      feedback.segmentId ?? null,
-      feedback.feedbackType,
-      feedback.actualStartMs ?? null,
-      feedback.actualEndMs ?? null
-    ]
-  ).catch(() => null);
+  );
+  memory.transcripts.set(transcript.mediaVersionId, transcript);
 }
 
 function rowToJob(row: Record<string, unknown>): SmartSkipJob {
@@ -216,6 +321,11 @@ function rowToJob(row: Record<string, unknown>): SmartSkipJob {
     request: row.request as SmartSkipJob['request'],
     error: typeof row.error === 'string' ? row.error : undefined,
     attempts: Number(row.attempts || 0),
+    lockedAt: row.locked_at ? String(row.locked_at) : undefined,
+    lockedUntil: row.locked_until ? String(row.locked_until) : undefined,
+    workerId: typeof row.worker_id === 'string' ? row.worker_id : undefined,
+    nextAttemptAt: row.next_attempt_at ? String(row.next_attempt_at) : undefined,
+    lastHeartbeatAt: row.last_heartbeat_at ? String(row.last_heartbeat_at) : undefined,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -236,4 +346,8 @@ function rowToMap(row: Record<string, unknown>): SmartSkipSegmentMap {
       confidence: Number((segment as { confidence: unknown }).confidence)
     })) : []
   };
+}
+
+function isStaleLeasedJob(job: SmartSkipJob): boolean {
+  return (job.status === 'leased' || job.status === 'processing') && Boolean(job.lockedUntil) && new Date(job.lockedUntil!).getTime() < Date.now();
 }

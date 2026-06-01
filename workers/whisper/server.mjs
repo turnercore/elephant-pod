@@ -4,6 +4,16 @@ const port = Number(process.env.PORT || 8001);
 const mock = process.env.MOCK_WHISPER === 'true';
 
 http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      ok: true,
+      service: 'smart-skip-whisper-contract',
+      mock,
+      model: process.env.WHISPER_MODEL || 'large-v3-turbo'
+    }));
+    return;
+  }
   if (req.method !== 'POST' || req.url !== '/v1/transcribe') {
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));

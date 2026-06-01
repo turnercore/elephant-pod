@@ -7,7 +7,7 @@ import { ensureServerSilenceMap, getCachedReadySilenceMap } from './silenceMaps'
 import { shouldUseNativeAudio } from '../runtime';
 import type { SilenceMap } from '@/types/domain';
 import { findAutoSkipTarget } from '../smartSkip/decisions';
-import { fetchSmartSkipSegmentMap, requestSmartSkipProcessing, sendSmartSkipFeedback } from '../smartSkip/api';
+import { fetchSmartSkipSegmentMap, requestSmartSkipProcessing } from '../smartSkip/api';
 import { resolveSmartSkipSettings } from '../smartSkip/useSmartSkip';
 import type { SmartSkipEvent, SmartSkipSegmentMap } from '../smartSkip/types';
 
@@ -300,15 +300,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     suppressedSmartSkipIdsRef.current.add(last.segment.id);
     setSmartSkipNotice(null);
     seek(Math.max(0, last.segment.startMs / 1000));
-    void sendSmartSkipFeedback({
-      serverUrl: effectiveSettings().serverUrl,
-      accessToken: serverAccessToken,
-      episodeId: last.episodeId,
-      mediaVersionId: smartSkipMapRef.current?.mediaVersionId,
-      segmentId: last.segment.id,
-      feedbackType: 'undo'
-    });
-  }, [effectiveSettings, seek, serverAccessToken]);
+  }, [seek]);
 
   const setVolume = useCallback((value: number) => {
     const audio = audioRef.current;
@@ -325,11 +317,9 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         const positionSec = status.positionSec || 0;
         const durationSec = status.durationSec || currentRef.current?.durationSec || 0;
         const smartSkipped = maybeSkipSmartSegment(positionSec, durationSec, (target, event) => {
-          setCurrentTime(target);
-          currentTimeRef.current = target;
           lastSmartSkipRef.current = event;
           setSmartSkipNotice(event);
-          void seekNativeAudio(target);
+          seek(target);
         }, currentRef.current, smartSkipMapRef.current, suppressedSmartSkipIdsRef, effectiveSettings(), podcastPreferences);
         if (smartSkipped) return;
         const skipped = maybeSkipSilenceSegment(positionSec, (target) => {
@@ -361,7 +351,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [effectiveSettings, nativeActive]);
+  }, [effectiveSettings, nativeActive, podcastPreferences, seek]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -371,11 +361,9 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       setCurrentTime(audio.currentTime);
       const durationSec = Number.isFinite(audio.duration) ? audio.duration : currentRef.current?.durationSec || 0;
       const smartSkipped = maybeSkipSmartSegment(audio.currentTime, durationSec, (target, event) => {
-        audio.currentTime = target;
-        setCurrentTime(target);
-        currentTimeRef.current = target;
         lastSmartSkipRef.current = event;
         setSmartSkipNotice(event);
+        seek(target);
       }, currentRef.current, smartSkipMapRef.current, suppressedSmartSkipIdsRef, effectiveSettings(), podcastPreferences);
       if (smartSkipped) return;
       maybeSkipSilenceSegment(audio.currentTime, (target) => {
@@ -435,7 +423,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('play', onPlay);
     };
-  }, [effectiveSettings, podcastPreferences]);
+  }, [effectiveSettings, podcastPreferences, seek]);
 
   useEffect(() => {
     const episode = currentRef.current;

@@ -7,27 +7,36 @@ on:
     paths:
       - apps/server/Dockerfile
       - apps/server/src/**
+      - apps/segmenter/**
       - apps/web/**
+      - workers/whisper/**
       - package.json
       - package-lock.json
       - tsconfig.base.json
-      - .github/workflows/publish-container.yml
+      - .forgejo/workflows/publish-container.yml
       - deploy/superzima/**
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
-
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/elephant-pod-server
+  REGISTRY: forge.elephanthand.com
   DOCKER_BUILD_RECORD_UPLOAD: false
 
 jobs:
   publish:
-    name: Build and publish server image
+    name: Build and publish images
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: server
+            image: forge.elephanthand.com/elephant-hand-games/elephant-pod-server
+            dockerfile: apps/server/Dockerfile
+          - name: segmenter
+            image: forge.elephanthand.com/elephant-hand-games/elephant-pod-segmenter
+            dockerfile: apps/segmenter/Dockerfile
+          - name: whisper-worker
+            image: forge.elephanthand.com/elephant-hand-games/elephant-pod-whisper-worker
+            dockerfile: workers/whisper/Dockerfile
 
     steps:
       - name: Check out repository
@@ -36,28 +45,28 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to Forgejo container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.FORGEJO_REGISTRY_USERNAME }}
+          password: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}
 
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ${{ matrix.image }}
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push image
+      - name: Build and push ${{ matrix.name }} image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/server/Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: true
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}

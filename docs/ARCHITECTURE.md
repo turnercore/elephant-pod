@@ -90,7 +90,7 @@ The server is required for the hosted browser build because that runtime is acco
 - Public clip pages.
 - Rendered MP3 clip files via ffmpeg.
 - Signed-in silence-map analysis jobs via ffmpeg.
-- Signed-in Smart Skip metadata jobs for media versions, transcripts, segment maps, segments, feedback, and worker orchestration.
+- Signed-in Smart Skip metadata jobs for media versions, transcripts, segment maps, segments, durable leasing, and worker orchestration.
 - Sync/search mediation layer (server validates auth and calls Supabase/PodcastIndex)
 
 Future server jobs should include:

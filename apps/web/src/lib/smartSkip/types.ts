@@ -11,12 +11,10 @@ export type SmartSkipAction = 'auto_skip' | 'soft_skip' | 'label_only' | 'do_not
 
 export type SmartSkipSource =
   | 'rss_metadata'
-  | 'sponsorblock'
   | 'whisper_transcript'
   | 'codex_segmenter'
   | 'silence_detector'
   | 'boundary_refiner'
-  | 'manual_feedback'
   | 'ensemble';
 
 export interface SmartSkipSegment {

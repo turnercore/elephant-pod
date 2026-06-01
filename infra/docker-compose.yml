@@ -43,11 +43,13 @@ services:
       GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI}
       CLIP_RENDER_ENABLED: "true"
       SILENCE_RENDER_ENABLED: "true"
+      # Local compose defaults point at mock workers for integration checks.
+      # Production must override these to real Whisper and segmenter endpoints.
       SMART_SKIP_ENABLED: ${SMART_SKIP_ENABLED:-false}
       SMART_SKIP_REQUIRE_AUTH: "true"
       SMART_SKIP_WHISPER_BASE_URL: ${SMART_SKIP_WHISPER_BASE_URL:-http://whisper-worker:8001}
       SMART_SKIP_SEGMENTER_BASE_URL: ${SMART_SKIP_SEGMENTER_BASE_URL:-http://codex-segmenter:8002}
-      SMART_SKIP_SEGMENTER_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.3-codex-spark}
+      SMART_SKIP_SEGMENTER_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
       SMART_SKIP_PROCESSING_CONCURRENCY: "1"
       FFMPEG_PATH: ffmpeg
     ports:
@@ -64,11 +66,15 @@ services:
       context: ..
       dockerfile: apps/segmenter/Dockerfile
     environment:
-      CODEX_MODEL: ${CODEX_MODEL:-gpt-5.3-codex-spark}
+      CODEX_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       CODEX_HOME: /codex-home
       MOCK_SEGMENTER: ${MOCK_SEGMENTER:-true}
     volumes:
       - codex_home:/codex-home
+    ports:
+      - '8002:8002'
     profiles: ["smart-skip"]
 
   whisper-worker:
@@ -78,7 +84,10 @@ services:
     environment:
       WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
+      # Mock mode is not a production transcription backend.
       MOCK_WHISPER: ${MOCK_WHISPER:-true}
+    ports:
+      - '8001:8001'
     profiles: ["smart-skip"]
 
 # Optional self-hosted Supabase path:

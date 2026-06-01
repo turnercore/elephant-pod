@@ -6,7 +6,7 @@
 - Accounts are optional in Tauri/native runtime.
 - The native app is useful on a single device without any backend.
 - A self-hosted server plus local Postgres unlocks cross-device sync and public clip sharing.
-- Production deployment can pull a prebuilt GHCR image from GitHub Actions instead of building from a copied source tree on the server.
+- Production deployment can pull a prebuilt Forgejo registry image from Forgejo Actions instead of building from a copied source tree on the server.
 - Sign-in is the sync opt-in. There is no separate sync opt-out toggle; signing out returns the app to local-only behavior.
 - Core playback, RSS/OPML, and local backup remain first-class in Tauri local-only mode.
 
@@ -88,9 +88,9 @@ The server uses ffmpeg `silencedetect` and server env defaults to create map seg
 
 ## Smart Skip
 
-`POST /api/smart-skip/process`, `GET /api/smart-skip/jobs/:id`, `GET /api/smart-skip/episodes/:episodeId/segment-map`, and `POST /api/smart-skip/feedback` require `Authorization: Bearer <token>` by default.
+`POST /api/smart-skip/process`, `GET /api/smart-skip/jobs/:id`, and `GET /api/smart-skip/episodes/:episodeId/segment-map` require `Authorization: Bearer <token>` by default.
 
-The server stores media versions, transcripts, segment maps, segments, jobs, and feedback in local Postgres when `DATABASE_URL` is configured. If no database is configured, the server keeps an in-memory fallback for local development only. Worker services are configured with `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`.
+The server stores media versions, transcripts, segment maps, segments, and jobs in local Postgres when `DATABASE_URL` is configured. Existing databases should apply `infra/postgres/migrations/20260601_smart_skip_v1.sql` before enabling Smart Skip. If no database is configured, the server keeps an in-memory fallback for local development only. Worker services are configured with `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; local compose mocks validate integration only, while production needs real Whisper and OpenAI-backed segmenter endpoints.
 
 ## Public clips
 

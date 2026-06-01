@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
 
   elephant-pod:
-    image: ghcr.io/turnercore/elephant-pod-server:latest
+    image: forge.elephanthand.com/elephant-hand-games/elephant-pod-server:latest
     container_name: elephant-pod
     env_file:
       - ./.env
@@ -41,11 +41,13 @@ services:
       GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI}
       CLIP_RENDER_ENABLED: "true"
       SILENCE_RENDER_ENABLED: "true"
+      # Superzima can run the app and segmenter, but real processing should
+      # override SMART_SKIP_WHISPER_BASE_URL to an external GPU/Mac host.
       SMART_SKIP_ENABLED: ${SMART_SKIP_ENABLED:-false}
       SMART_SKIP_REQUIRE_AUTH: "true"
       SMART_SKIP_WHISPER_BASE_URL: ${SMART_SKIP_WHISPER_BASE_URL:-http://whisper-worker:8001}
       SMART_SKIP_SEGMENTER_BASE_URL: ${SMART_SKIP_SEGMENTER_BASE_URL:-http://codex-segmenter:8002}
-      SMART_SKIP_SEGMENTER_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.3-codex-spark}
+      SMART_SKIP_SEGMENTER_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
       SMART_SKIP_PROCESSING_CONCURRENCY: "1"
       FFMPEG_PATH: ffmpeg
     ports:
@@ -59,11 +61,11 @@ services:
     restart: unless-stopped
 
   codex-segmenter:
-    build:
-      context: ../..
-      dockerfile: apps/segmenter/Dockerfile
+    image: forge.elephanthand.com/elephant-hand-games/elephant-pod-segmenter:latest
     environment:
-      CODEX_MODEL: ${CODEX_MODEL:-gpt-5.3-codex-spark}
+      CODEX_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       CODEX_HOME: /codex-home
       MOCK_SEGMENTER: ${MOCK_SEGMENTER:-true}
     volumes:
@@ -71,12 +73,11 @@ services:
     profiles: ["smart-skip"]
 
   whisper-worker:
-    build:
-      context: ../..
-      dockerfile: workers/whisper/Dockerfile
+    image: forge.elephanthand.com/elephant-hand-games/elephant-pod-whisper-worker:latest
     environment:
       WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
+      # Mock mode is for deployment smoke tests, not production transcripts.
       MOCK_WHISPER: ${MOCK_WHISPER:-true}
     profiles: ["smart-skip"]
 

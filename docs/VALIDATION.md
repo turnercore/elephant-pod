@@ -47,3 +47,18 @@ SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
 ```
 
 Then sign in to the app server, queue a test episode, and confirm `POST /api/smart-skip/process` requires a bearer token. Local/offline Tauri mode should not show Smart Skip controls and should continue normal playback.
+This validates only the local integration contract because the compose workers default to mocks. Real Smart Skip processing requires production `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL` endpoints.
+
+Real segmenter check:
+
+```bash
+cd infra
+SMART_SKIP_ENABLED=true MOCK_SEGMENTER=false OPENAI_API_KEY=sk-... docker compose --profile smart-skip up --build codex-segmenter
+curl http://localhost:8002/health
+```
+
+Existing databases should be migrated before real Smart Skip testing:
+
+```bash
+psql "$DATABASE_URL" -f infra/postgres/migrations/20260601_smart_skip_v1.sql
+```

@@ -11,12 +11,10 @@ export type SmartSkipAction = 'auto_skip' | 'soft_skip' | 'label_only' | 'do_not
 
 export type SmartSkipSource =
   | 'rss_metadata'
-  | 'sponsorblock'
   | 'whisper_transcript'
   | 'codex_segmenter'
   | 'silence_detector'
   | 'boundary_refiner'
-  | 'manual_feedback'
   | 'ensemble';
 
 export interface SmartSkipSegment {
@@ -67,6 +65,11 @@ export interface SilenceBoundary {
   endMs: number;
 }
 
+export interface SmartSkipSilenceBoundary extends SilenceBoundary {
+  silenceStartMs: number;
+  silenceEndMs: number;
+}
+
 export interface SmartSkipProcessRequest {
   episodeId: string;
   podcastId?: string;
@@ -87,11 +90,16 @@ export interface SmartSkipJob {
   episodeLocalId: string;
   mediaVersionId?: string;
   priority: number;
-  status: 'queued' | 'processing' | 'ready' | 'failed';
+  status: 'queued' | 'leased' | 'processing' | 'ready' | 'failed' | 'cancelled';
   stage?: string;
   request: SmartSkipProcessRequest;
   error?: string;
   attempts: number;
+  lockedAt?: string;
+  lockedUntil?: string;
+  workerId?: string;
+  nextAttemptAt?: string;
+  lastHeartbeatAt?: string;
   createdAt: string;
   updatedAt: string;
 }

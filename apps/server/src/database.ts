@@ -1,4 +1,4 @@
-import { Pool, type PoolClient } from 'pg';
+import { Pool, type PoolClient, type QueryResultRow } from 'pg';
 import type { ServerClip } from './types.js';
 
 type AllowedTable = 'subscriptions' | 'episodes' | 'episode_states' | 'podcast_preferences' | 'user_settings' | 'clips' | 'sync_tombstones' | 'public_clips';
@@ -64,6 +64,23 @@ export async function queryDatabase<T = Record<string, unknown>>(sql: string, va
   return withClient(async (client) => {
     const result = await client.query(sql, values);
     return result.rows as T[];
+  });
+}
+
+export async function withDatabaseTransaction<T>(callback: (query: <Row extends QueryResultRow = QueryResultRow>(sql: string, values?: unknown[]) => Promise<Row[]>) => Promise<T>): Promise<T | null> {
+  return withClient(async (client) => {
+    await client.query('begin');
+    try {
+      const result = await callback(async <Row extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => {
+        const queryResult = await client.query<Row>(sql, values);
+        return queryResult.rows;
+      });
+      await client.query('commit');
+      return result;
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    }
   });
 }
 

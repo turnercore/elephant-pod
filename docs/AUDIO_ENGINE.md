@@ -68,9 +68,8 @@ The server routes are:
 - `POST /api/smart-skip/process`
 - `GET /api/smart-skip/jobs/:id`
 - `GET /api/smart-skip/episodes/:episodeId/segment-map`
-- `POST /api/smart-skip/feedback`
 
-Processing uses optional SponsorBlock data for real YouTube IDs, a Whisper-compatible `/v1/transcribe` service, a Codex/LLM-compatible `/v1/segment` service, and ffmpeg `silencedetect` boundaries. The server refines segment boundaries deterministically before storing maps. Playback still goes through `useAudioController.seek`; Smart Skip does not create a second audio engine.
+Processing always follows the same V1 path: ffmpeg silence boundaries, a Whisper-compatible `/v1/transcribe` service, an OpenAI-backed `/v1/segment` service, deterministic boundary refinement, and SegmentMap storage. The local compose workers are integration mocks unless `MOCK_SEGMENTER=false` and `OPENAI_API_KEY` are set; production needs real Whisper and segmenter endpoints. Playback still goes through `useAudioController.seek`; Smart Skip does not create a second audio engine.
 
 ## iOS target behavior
 

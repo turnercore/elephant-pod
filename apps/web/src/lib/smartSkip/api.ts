@@ -38,25 +38,6 @@ export async function fetchSmartSkipSegmentMap(episode: EpisodeWithState, server
   return normalizeSegmentMap(payload.segmentMap);
 }
 
-export async function sendSmartSkipFeedback(input: {
-  serverUrl?: string;
-  accessToken?: string | null;
-  episodeId: string;
-  mediaVersionId?: string;
-  segmentId?: string;
-  feedbackType: 'false_positive' | 'false_negative' | 'bad_boundary' | 'undo' | 'confirmation';
-  actualStartMs?: number;
-  actualEndMs?: number;
-}): Promise<void> {
-  const base = input.serverUrl?.replace(/\/$/, '');
-  if (!base || !input.accessToken) return;
-  await fetch(`${base}/api/smart-skip/feedback`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${input.accessToken}` },
-    body: JSON.stringify(input)
-  }).catch(() => undefined);
-}
-
 function normalizeSegmentMap(raw: unknown): SmartSkipSegmentMap | null {
   if (!raw || typeof raw !== 'object') return null;
   const record = raw as SmartSkipSegmentMap;

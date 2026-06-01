@@ -14,6 +14,7 @@ import { podcastIndexBrowseHandler, podcastIndexSearchHandler } from './podcastI
 import { upsertPublicClip } from './database.js';
 import { syncHandler } from './sync.js';
 import { readSmartSkipConfig } from './smartSkip/config.js';
+import { startSmartSkipQueue } from './smartSkip/jobs.js';
 import { registerSmartSkipRoutes } from './smartSkip/routes.js';
 import { startSmartSkipScheduler } from './smartSkip/scheduler.js';
 
@@ -203,6 +204,7 @@ app.get('/media/silence/:id.mp3', (req, res) => {
 });
 
 registerSmartSkipRoutes(app, smartSkipConfig, requireBearerAuth());
+startSmartSkipQueue(smartSkipConfig);
 startSmartSkipScheduler(smartSkipConfig, () => {
   console.log('Smart Skip proactive scheduler is configured; active-user discovery is a documented V1 follow-up.');
 });

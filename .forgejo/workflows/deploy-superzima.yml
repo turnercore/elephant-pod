@@ -8,9 +8,6 @@ on:
       - completed
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 concurrency:
   group: deploy-superzima
   cancel-in-progress: false
@@ -19,6 +16,7 @@ env:
   DEPLOY_ROOT: /mnt/nvme/apps/elephant-pod
   SUPERZIMA_SSH_HOST: 192.168.0.147
   SUPERZIMA_SSH_USER: turnercore
+  REGISTRY: forge.elephanthand.com
 
 jobs:
   deploy:
@@ -64,7 +62,7 @@ jobs:
           )
 
           ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
-            "mkdir -p '$DEPLOY_ROOT/postgres'"
+            "mkdir -p '$DEPLOY_ROOT/postgres/migrations'"
 
           rsync -a \
             -e "ssh ${ssh_opts[*]}" \
@@ -76,9 +74,15 @@ jobs:
             deploy/superzima/postgres/init.sql \
             "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}:$DEPLOY_ROOT/postgres/init.sql"
 
-      - name: Log in to GHCR on the host
+          rsync -a \
+            -e "ssh ${ssh_opts[*]}" \
+            infra/postgres/migrations/ \
+            "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}:$DEPLOY_ROOT/postgres/migrations/"
+
+      - name: Log in to Forgejo registry on the host
         env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          FORGEJO_REGISTRY_USERNAME: ${{ secrets.FORGEJO_REGISTRY_USERNAME }}
+          FORGEJO_REGISTRY_TOKEN: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}
         run: |
           set -Eeuo pipefail
 
@@ -89,10 +93,10 @@ jobs:
             -o BatchMode=yes
           )
 
-          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
-            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          printf '%s' "$FORGEJO_REGISTRY_TOKEN" | ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
+            "docker login '$REGISTRY' -u '$FORGEJO_REGISTRY_USERNAME' --password-stdin"
 
-      - name: Pull image and restart the stack
+      - name: Pull image, migrate database, and restart the stack
         run: |
           set -Eeuo pipefail
 
@@ -107,4 +111,9 @@ jobs:
             "cd '$DEPLOY_ROOT' && \
              docker compose config --quiet && \
              docker compose pull && \
+             docker compose up -d postgres && \
+             for migration in postgres/migrations/*.sql; do \
+               [ -f \"\$migration\" ] || continue; \
+               docker compose exec -T postgres psql -U postgres -d elephant_pod -v ON_ERROR_STOP=1 < \"\$migration\"; \
+             done && \
              docker compose up -d --force-recreate"

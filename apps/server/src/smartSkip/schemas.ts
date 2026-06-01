@@ -4,12 +4,10 @@ export const segmentTypeSchema = z.enum(['ad', 'sponsorship', 'network_promo', '
 export const segmentActionSchema = z.enum(['auto_skip', 'soft_skip', 'label_only', 'do_not_skip']);
 export const segmentSourceSchema = z.enum([
   'rss_metadata',
-  'sponsorblock',
   'whisper_transcript',
   'codex_segmenter',
   'silence_detector',
   'boundary_refiner',
-  'manual_feedback',
   'ensemble'
 ]);
 
@@ -58,17 +56,6 @@ export const processRequestSchema = z.object({
     url: z.string().optional()
   })).default([]),
   priority: z.enum(['nowPlaying', 'queue', 'inbox', 'proactiveActiveUser', 'backlog']).default('queue')
-});
-
-export const feedbackRequestSchema = z.object({
-  episodeId: z.string().min(1),
-  mediaVersionId: z.string().optional(),
-  segmentId: z.string().optional(),
-  feedbackType: z.enum(['false_positive', 'false_negative', 'bad_boundary', 'undo', 'confirmation']),
-  actualStartMs: z.number().int().min(0).optional(),
-  actualEndMs: z.number().int().min(0).optional()
-}).refine((feedback) => feedback.actualEndMs === undefined || feedback.actualStartMs === undefined || feedback.actualEndMs > feedback.actualStartMs, {
-  message: 'actualEndMs must be greater than actualStartMs'
 });
 
 export const whisperResponseSchema = z.object({
