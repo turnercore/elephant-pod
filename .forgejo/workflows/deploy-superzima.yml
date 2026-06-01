@@ -29,7 +29,7 @@ jobs:
           github.event.workflow_run.head_branch == 'main'
         )
       }}
-    runs-on: [self-hosted, studio-runner, elephant-hand, superzima, ssh, rsync, docker, Linux, X64]
+    runs-on: [self-hosted, studio-runner, elephant-hand, superzima, ssh, rsync, docker, linux, x64]
 
     steps:
       - name: Check out repository
