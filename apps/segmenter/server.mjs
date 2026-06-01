@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env.PORT || 8002);
 const mock = process.env.MOCK_SEGMENTER === 'true';
+// Segmenter backend options:
+// - none: disable real segmenting in this service
+// - openai_batch: use OpenAI Batch API against /v1/responses
 const backend = process.env.SEGMENTER_BACKEND || 'openai_batch';
 const openAiBaseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
 const defaultModel = process.env.SEGMENTER_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini';
@@ -282,8 +285,11 @@ function requireOpenAiKey() {
 }
 
 function assertOpenAiBatchBackend() {
+  if (backend === 'none') {
+    throw new Error('SEGMENTER_BACKEND=none disables the Smart Skip segmenter service.');
+  }
   if (backend !== 'openai_batch') {
-    throw new Error(`Unsupported SEGMENTER_BACKEND=${backend}. This container currently implements openai_batch.`);
+    throw new Error(`Unsupported SEGMENTER_BACKEND=${backend}. Supported values: none, openai_batch.`);
   }
 }
 

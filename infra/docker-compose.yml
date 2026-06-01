@@ -69,6 +69,8 @@ services:
       dockerfile: apps/segmenter/Dockerfile
     environment:
       SEGMENTER_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
+      # Segmenter backend options: "none" disables real segmenting;
+      # "openai_batch" uses OpenAI Batch API against /v1/responses.
       SEGMENTER_BACKEND: ${SEGMENTER_BACKEND:-openai_batch}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
