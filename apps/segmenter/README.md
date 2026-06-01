@@ -16,7 +16,8 @@ Real mode calls the OpenAI Responses API with structured JSON output:
 ```bash
 OPENAI_API_KEY=sk-...
 MOCK_SEGMENTER=false
-CODEX_MODEL=gpt-5.4-mini
+SEGMENTER_BACKEND=openai_batch
+SEGMENTER_MODEL=gpt-5.4-mini
 node apps/segmenter/server.mjs
 ```
 
@@ -42,6 +43,9 @@ curl http://localhost:8002/health
 
 ## Production notes
 
+- `SEGMENTER_BACKEND=openai_batch` selects the current backend. Future backends
+  should keep the same HTTP contract so the app server does not need to know
+  whether segmenting is OpenAI Batch, Codex CLI, or another implementation.
 - Keep `OPENAI_API_KEY` only on the segmenter host or secret manager.
 - `MOCK_SEGMENTER=false` is required for real episode testing.
 - `SMART_SKIP_SEGMENTER_BATCH_ENABLED=true` makes the app server submit

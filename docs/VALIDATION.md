@@ -53,7 +53,7 @@ Real segmenter check:
 
 ```bash
 cd infra
-SMART_SKIP_ENABLED=true MOCK_SEGMENTER=false OPENAI_API_KEY=sk-... docker compose --profile smart-skip up --build codex-segmenter
+SMART_SKIP_ENABLED=true MOCK_SEGMENTER=false OPENAI_API_KEY=sk-... docker compose --profile smart-skip up --build openai-batch-segmenter
 curl http://localhost:8002/health
 ```
 

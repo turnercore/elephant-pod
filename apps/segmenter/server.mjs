@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env.PORT || 8002);
 const mock = process.env.MOCK_SEGMENTER === 'true';
+const backend = process.env.SEGMENTER_BACKEND || 'openai_batch';
 const openAiBaseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
-const defaultModel = process.env.CODEX_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini';
+const defaultModel = process.env.SEGMENTER_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4-mini';
 const timeoutMs = Number(process.env.SEGMENTER_TIMEOUT_MS || 120_000);
 const localDir = path.dirname(fileURLToPath(import.meta.url));
 const schemaPath = existsSync('/app/segmenter-output.schema.json')
@@ -17,7 +18,7 @@ const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
 http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, service: 'smart-skip-segmenter', mock, model: defaultModel }));
+    res.end(JSON.stringify({ ok: true, service: 'smart-skip-segmenter', backend, mock, model: defaultModel }));
     return;
   }
   if (req.method === 'GET' && req.url?.startsWith('/v1/segment-batches/')) {
@@ -86,6 +87,7 @@ function readJson(req) {
 }
 
 async function segmentWithOpenAI(payload) {
+  assertOpenAiBatchBackend();
   const apiKey = requireOpenAiKey();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs).unref();
@@ -122,6 +124,7 @@ async function submitSegmentBatch(payload) {
       result: mockSegmenterOutput(request)
     };
   }
+  assertOpenAiBatchBackend();
   const apiKey = requireOpenAiKey();
   const jsonl = JSON.stringify({
     custom_id: customId,
@@ -161,6 +164,7 @@ async function checkSegmentBatch(externalId) {
   if (mock || externalId.startsWith('mock_batch_')) {
     return { provider: 'mock', externalId, status: 'completed', result: { segments: [] } };
   }
+  assertOpenAiBatchBackend();
   const apiKey = requireOpenAiKey();
   const batch = await openAiJson(`/batches/${encodeURIComponent(externalId)}`, {
     headers: { authorization: `Bearer ${apiKey}` }
@@ -275,6 +279,12 @@ function requireOpenAiKey() {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is required when MOCK_SEGMENTER=false.');
   return apiKey;
+}
+
+function assertOpenAiBatchBackend() {
+  if (backend !== 'openai_batch') {
+    throw new Error(`Unsupported SEGMENTER_BACKEND=${backend}. This container currently implements openai_batch.`);
+  }
 }
 
 async function openAiJson(pathname, init) {
