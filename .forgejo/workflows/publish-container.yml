@@ -24,7 +24,13 @@ env:
 jobs:
   publish:
     name: Build and publish images
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - studio-runner
+      - docker
+      - dind
+      - linux
+      - x64
     strategy:
       matrix:
         include:
