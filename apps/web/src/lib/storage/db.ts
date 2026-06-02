@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type { AppSettings, ArtworkCacheEntry, CachedPodcast, Clip, Episode, EpisodeState, ListeningStats, Podcast, PodcastPreference, SilenceMap, SmartSkipMapCacheEntry, SyncMeta, SyncTombstone } from '@/types/domain';
-import { defaultSettings, defaultStateFor, demoEpisodes, demoPodcasts } from '../sampleData';
+import { defaultSettings, demoEpisodes, demoPodcasts } from '../sampleData';
 import { nowIso } from '../dates';
 
 export class ElephantPodDatabase extends Dexie {
@@ -207,6 +207,7 @@ export const db = new ElephantPodDatabase();
 
 export async function ensureSeedData(): Promise<void> {
   const now = nowIso();
+  await removeDemoData();
   const settings = await db.settings.get('local');
   if (!settings) {
     await db.settings.put({ ...defaultSettings, deviceId: crypto.randomUUID(), updatedAt: now });
@@ -257,14 +258,25 @@ export async function ensureSeedData(): Promise<void> {
     await db.syncMeta.put({ id: 'main', deviceId: current?.deviceId || crypto.randomUUID(), updatedAt: now });
   }
 
-  const feedCount = await db.feeds.count();
-  if (feedCount === 0) {
-    await db.transaction('rw', db.feeds, db.episodes, db.states, async () => {
-      await db.feeds.bulkPut(demoPodcasts);
-      await db.episodes.bulkPut(demoEpisodes);
-      await db.states.bulkPut(demoEpisodes.map((ep, index) => defaultStateFor(ep.id, index)));
-    });
-  }
+}
+
+async function removeDemoData(): Promise<void> {
+  const demoPodcastIds = demoPodcasts.map((podcast) => podcast.id);
+  const demoEpisodeIds = demoEpisodes.map((episode) => episode.id);
+  await db.transaction('rw', [db.feeds, db.episodes, db.states, db.podcastCache, db.cachedEpisodes, db.podcastPreferences, db.silenceMaps, db.smartSkipMaps], async () => {
+    await Promise.all([
+      db.feeds.bulkDelete(demoPodcastIds),
+      db.episodes.bulkDelete(demoEpisodeIds),
+      db.states.bulkDelete(demoEpisodeIds),
+      db.podcastCache.bulkDelete(demoPodcastIds),
+      db.cachedEpisodes.bulkDelete(demoEpisodeIds),
+      db.podcastPreferences.bulkDelete(demoPodcastIds)
+    ]);
+    for (const episodeId of demoEpisodeIds) {
+      await db.silenceMaps.where('episodeId').equals(episodeId).delete();
+      await db.smartSkipMaps.where('episodeId').equals(episodeId).delete();
+    }
+  });
 }
 
 function defaultListeningStats(): ListeningStats {
