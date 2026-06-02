@@ -12,7 +12,7 @@ export function findAutoSkipTarget(input: {
   const durationMs = input.durationSec > 0 ? Math.round(input.durationSec * 1000) : input.segmentMap.durationMs;
   for (const segment of input.segmentMap.segments) {
     if (input.suppressedSegmentIds.has(segment.id)) continue;
-    if (segment.action !== 'auto_skip') continue;
+    if (segment.action !== 'auto_skip' && !(segment.action === 'soft_skip' && input.settings.softSkips)) continue;
     if (!isTypeEnabled(segment.type, input.settings)) continue;
     if (nowMs < segment.startMs || nowMs >= segment.endMs - 50) continue;
     const seekToSec = Math.max(input.currentTimeSec, segment.endMs / 1000);

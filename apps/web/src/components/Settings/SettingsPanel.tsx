@@ -128,7 +128,7 @@ export function SettingsPanel({
             <Switch label="Skip intros" checked={settings.smartSkipIntros} onCheckedChange={(checked) => onChange({ ...settings, smartSkipIntros: checked })} />
             <Switch label="Skip outros" checked={settings.smartSkipOutros} onCheckedChange={(checked) => onChange({ ...settings, smartSkipOutros: checked })} />
             <Switch label="Skip Smart Skip silence" checked={settings.smartSkipSilence} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSilence: checked })} />
-            <Switch label="Prompt for lower confidence" checked={settings.smartSkipSoftPrompt} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSoftPrompt: checked })} />
+            <Switch label="Skip soft matches" checked={settings.smartSkipSoftSkips} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSoftSkips: checked })} />
           </div>
         </SettingsSection>
       ) : null}

@@ -779,6 +779,7 @@ export default function App() {
           subscribed={feeds.some((feed) => feed.id === selectedPodcast.id)}
           episodes={selectedPodcastEpisodes}
           preference={selectedPodcastPreference}
+          smartSkipDefaults={runtimeSettings}
           onSubscribe={() => void handleSubscribePodcast(selectedPodcast.id)}
           onUnsubscribe={() => void handleUnsubscribePodcast(selectedPodcast.id)}
           onRefresh={() => void handleRefreshSelectedPodcast()}
@@ -947,6 +948,7 @@ const fallbackSettings: AppSettings = {
   smartSkipNetworkPromos: true,
   smartSkipSelfPromos: false,
   smartSkipSilence: false,
+  smartSkipSoftSkips: false,
   smartSkipSoftPrompt: true,
   smartSkipUseServerMedia: true,
   theme: 'dark'

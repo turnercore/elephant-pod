@@ -350,7 +350,10 @@ export async function upsertTranscript(transcript: SmartSkipTranscript): Promise
     `insert into public.smart_skip_transcripts
       (id, media_version_id, provider, model, language, transcript_json, plain_text)
      values ($1,$2,$3,$4,$5,$6,$7)
-     on conflict (media_version_id, provider, model) do update set
+     on conflict (id) do update set
+      media_version_id = excluded.media_version_id,
+      provider = excluded.provider,
+      model = excluded.model,
       language = excluded.language,
       transcript_json = excluded.transcript_json,
       plain_text = excluded.plain_text`,

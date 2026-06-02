@@ -45,6 +45,8 @@ export interface PodcastPreference {
   smartSkipOutro?: boolean;
   smartSkipNetworkPromos?: boolean;
   smartSkipSelfPromos?: boolean;
+  smartSkipSilence?: boolean;
+  smartSkipSoftSkips?: boolean;
   sortDirection: SortDirection;
   addNewEpisodesToInbox: boolean;
   updatedAt: string;
@@ -183,6 +185,7 @@ export interface AppSettings {
   smartSkipNetworkPromos: boolean;
   smartSkipSelfPromos: boolean;
   smartSkipSilence: boolean;
+  smartSkipSoftSkips: boolean;
   smartSkipSoftPrompt: boolean;
   smartSkipUseServerMedia: boolean;
   nativeAudioPreferred: boolean;

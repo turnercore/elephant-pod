@@ -23,16 +23,33 @@ interface SegmenterBatchResponse {
   error?: string;
 }
 
+export type SegmenterUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  raw?: unknown;
+};
+
 export async function segmentWithCodex(input: SegmenterInput) {
+  return (await segmentWithCodexResult(input)).segments;
+}
+
+export async function segmentWithCodexResult(input: SegmenterInput): Promise<{
+  segments: ReturnType<typeof parseSegmenterSegments>;
+  usage?: SegmenterUsage;
+}> {
   if (!input.config.segmenterBaseUrl) throw new Error('SMART_SKIP_SEGMENTER_BASE_URL is not configured.');
   const response = await fetch(`${input.config.segmenterBaseUrl.replace(/\/$/, '')}/v1/segment`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(buildSegmenterPayload(input))
   });
-  if (!response.ok) throw new Error(`Segmenter request failed with ${response.status}`);
+  if (!response.ok) throw new Error(`Segmenter request failed with ${response.status}: ${(await response.text()).slice(0, 500)}`);
   const parsed = segmenterResponseSchema.parse(await response.json());
-  return parsed.segments.map((segment) => ({ ...segment, source: 'codex_segmenter' as const }));
+  return {
+    segments: parsed.segments.map((segment) => ({ ...segment, source: 'codex_segmenter' as const })),
+    usage: parsed.usage
+  };
 }
 
 export async function submitSegmentBatch(input: SegmenterInput & { customId: string }): Promise<SegmenterBatchResponse> {

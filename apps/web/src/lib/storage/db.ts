@@ -185,6 +185,7 @@ export async function ensureSeedData(): Promise<void> {
     settings.autoDeleteAfterListen === undefined ||
     settings.nativeAudioPreferred === undefined ||
     settings.smartSkipEnabled === undefined ||
+    settings.smartSkipSoftSkips === undefined ||
     !settings.inboxSortDirection
   ) {
     await db.settings.put({
@@ -202,6 +203,7 @@ export async function ensureSeedData(): Promise<void> {
       smartSkipNetworkPromos: settings.smartSkipNetworkPromos ?? defaultSettings.smartSkipNetworkPromos,
       smartSkipSelfPromos: settings.smartSkipSelfPromos ?? defaultSettings.smartSkipSelfPromos,
       smartSkipSilence: settings.smartSkipSilence ?? defaultSettings.smartSkipSilence,
+      smartSkipSoftSkips: settings.smartSkipSoftSkips ?? defaultSettings.smartSkipSoftSkips,
       smartSkipSoftPrompt: settings.smartSkipSoftPrompt ?? defaultSettings.smartSkipSoftPrompt,
       smartSkipUseServerMedia: settings.smartSkipUseServerMedia ?? defaultSettings.smartSkipUseServerMedia,
       inboxSortDirection: settings.inboxSortDirection || defaultSettings.inboxSortDirection,

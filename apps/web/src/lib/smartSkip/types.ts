@@ -53,6 +53,7 @@ export interface ResolvedSmartSkipSettings {
   networkPromos: boolean;
   selfPromos: boolean;
   silence: boolean;
+  softSkips: boolean;
   softPrompt: boolean;
 }
 

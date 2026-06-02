@@ -32,6 +32,7 @@ export const defaultSettings: AppSettings = {
   smartSkipNetworkPromos: true,
   smartSkipSelfPromos: false,
   smartSkipSilence: false,
+  smartSkipSoftSkips: false,
   smartSkipSoftPrompt: true,
   smartSkipUseServerMedia: true,
   nativeAudioPreferred: true,

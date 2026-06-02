@@ -82,5 +82,11 @@ export const segmenterResponseSchema = z.object({
     action: segmentActionSchema.default('auto_skip'),
     label: z.string().min(1),
     evidence: z.array(z.string()).default([])
-  }).refine((segment) => segment.endMs > segment.startMs, { message: 'Segment endMs must be greater than startMs' }))
+  }).refine((segment) => segment.endMs > segment.startMs, { message: 'Segment endMs must be greater than startMs' })),
+  usage: z.object({
+    inputTokens: z.number().int().nonnegative().optional(),
+    outputTokens: z.number().int().nonnegative().optional(),
+    totalTokens: z.number().int().nonnegative().optional(),
+    raw: z.unknown().optional()
+  }).optional()
 });

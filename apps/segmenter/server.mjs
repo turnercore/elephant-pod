@@ -258,7 +258,24 @@ function parseSegmenterOutput(response) {
   if (!text) throw new Error('OpenAI segmenter response did not include output text.');
   const parsed = JSON.parse(text);
   if (!parsed || !Array.isArray(parsed.segments)) throw new Error('OpenAI segmenter response did not include segments.');
+  parsed.segments = parsed.segments.map((segment) => {
+    if (segment && typeof segment === 'object' && segment.subtype === null) {
+      const { subtype, ...rest } = segment;
+      return rest;
+    }
+    return segment;
+  });
+  if (response.usage) parsed.usage = normalizeUsage(response.usage);
   return parsed;
+}
+
+function normalizeUsage(usage) {
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    totalTokens: usage.total_tokens,
+    raw: usage
+  };
 }
 
 function mockSegmenterOutput(body) {

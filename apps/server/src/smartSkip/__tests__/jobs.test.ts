@@ -94,6 +94,7 @@ function configFixture(): SmartSkipConfig {
     enabled: true,
     requireAuth: true,
     whisperModel: 'mock',
+    whisperFormat: 'contract',
     segmenterModel: 'mock',
     segmenterBatchEnabled: true,
     segmenterBatchCheckIntervalHours: 12,

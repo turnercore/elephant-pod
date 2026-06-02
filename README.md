@@ -75,7 +75,7 @@ Set these in the app server environment (example in `.env.example`):
 - `GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI`
 - `SITE_URL` and `API_EXTERNAL_URL` for Supabase auth redirects/hosting expectations
 - `SILENCE_THRESHOLD_DB`, `SILENCE_MINIMUM_SEC`, `SILENCE_RETAINED_SEC`, and `SILENCE_ANALYZER_VERSION` for signed-in server silence-map analysis defaults
-- `SMART_SKIP_ENABLED`, `SMART_SKIP_REQUIRE_AUTH`, `SMART_SKIP_WHISPER_BASE_URL`, `SMART_SKIP_SEGMENTER_BASE_URL`, and related `SMART_SKIP_*` limits for signed-in Smart Skip processing
+- `SMART_SKIP_ENABLED`, `SMART_SKIP_REQUIRE_AUTH`, `SMART_SKIP_WHISPER_BASE_URL`, `SMART_SKIP_WHISPER_FORMAT`, `SMART_SKIP_SEGMENTER_BASE_URL`, and related `SMART_SKIP_*` limits for signed-in Smart Skip processing
 
 Security assumptions:
 
@@ -166,7 +166,7 @@ cd infra
 SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
 ```
 
-The profile starts `whisper-worker` on `/v1/transcribe` and `openai-batch-segmenter` on `/v1/segment` plus `/v1/segment-batches`. The checked-in Whisper worker defaults to deterministic mock mode for local validation only. The segmenter can run in real mode with `MOCK_SEGMENTER=false`, `SEGMENTER_BACKEND=openai_batch`, and `OPENAI_API_KEY`; it uses `gpt-5.4-mini` by default. `SEGMENTER_BACKEND` currently supports `none` and `openai_batch`; `none` disables real segmenting in the segmenter service. The app server submits real segmenting work through the generic segmenter HTTP contract and rechecks pending batches every 12 hours (`SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS=12`). Real Smart Skip processing requires a live `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; the likely Superzima layout is app server plus segmenter on Superzima, with Whisper running on an Aero X16, Mac, or other GPU-capable host.
+The profile starts `whisper-worker` on `/v1/transcribe` and `openai-batch-segmenter` on `/v1/segment` plus `/v1/segment-batches`. The checked-in Whisper worker defaults to deterministic mock mode for local validation only. For OpenAI-compatible Whisper servers that expose multipart `/v1/audio/transcriptions`, set `SMART_SKIP_WHISPER_FORMAT=openai` and usually send `SMART_SKIP_WHISPER_MODEL=whisper-1` even if the server runs another model internally. The segmenter can run in real mode with `MOCK_SEGMENTER=false`, `SEGMENTER_BACKEND=openai_batch`, and `OPENAI_API_KEY`; it uses `gpt-5.4-mini` by default. `SEGMENTER_BACKEND` currently supports `none` and `openai_batch`; `none` disables real segmenting in the segmenter service. The app server submits real segmenting work through the generic segmenter HTTP contract and rechecks pending batches every 12 hours (`SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS=12`). For QA only, authenticated callers can post the normal Smart Skip request body to `POST /api/smart-skip/process-now`; this bypasses batch submission and waits for immediate `/v1/segment` resolution. Real Smart Skip processing requires a live `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; the likely Superzima layout is app server plus segmenter on Superzima, with Whisper running on an Aero X16, Mac, or other GPU-capable host.
 
 For an existing database, apply the Smart Skip V1 migration before enabling real workers:
 
