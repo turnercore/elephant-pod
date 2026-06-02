@@ -79,6 +79,7 @@ describe('importYoutubeMetadata', () => {
             </entry>
           </feed>`);
       }
+      if (url === 'https://www.youtube.com/watch?v=v1&list=PL123' || url === 'https://www.youtube.com/watch?v=v2&list=PL123') return textResponse('<html><link rel="canonical" href="https://www.youtube.com/watch?v=regular"></html>');
       if (url.endsWith('/history')) return jsonResponse({ done: [] });
       throw new Error(`Unexpected URL ${url}`);
     };
@@ -89,6 +90,60 @@ describe('importYoutubeMetadata', () => {
     assert.equal(imported.podcast.title, 'Podcast Playlist');
     assert.equal(imported.episodes.length, 2);
     assert.equal(imported.episodes[0].extractionStatus, 'none');
+  });
+
+  it('omits Shorts from playlist synthetic podcasts', async () => {
+    process.env.METUBE_BASE_URL = 'http://metube.local';
+    const fetchMock = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === 'https://www.youtube.com/feeds/videos.xml?playlist_id=PLSHORTS') {
+        return textResponse(`<?xml version="1.0"?>
+          <feed>
+            <title>Mixed Playlist</title>
+            <author><name>Playlist Author</name></author>
+            <entry>
+              <yt:videoId>regular1</yt:videoId>
+              <title>Long Episode</title>
+              <link href="https://www.youtube.com/watch?v=regular1&amp;list=PLSHORTS" />
+              <published>2026-06-01T00:00:00Z</published>
+              <media:group><media:description>One</media:description></media:group>
+            </entry>
+            <entry>
+              <yt:videoId>short1</yt:videoId>
+              <title>Quick clip #Shorts</title>
+              <link href="https://www.youtube.com/watch?v=short1&amp;list=PLSHORTS" />
+              <published>2026-06-02T00:00:00Z</published>
+              <media:group><media:description>Two</media:description></media:group>
+            </entry>
+            <entry>
+              <yt:videoId>short2</yt:videoId>
+              <title>Canonical short</title>
+              <link href="https://www.youtube.com/watch?v=short2&amp;list=PLSHORTS" />
+              <published>2026-06-03T00:00:00Z</published>
+              <media:group><media:description>Three</media:description></media:group>
+            </entry>
+          </feed>`);
+      }
+      if (url === 'https://www.youtube.com/watch?v=regular1&list=PLSHORTS') return textResponse('<html><link rel="canonical" href="https://www.youtube.com/watch?v=regular1"></html>');
+      if (url === 'https://www.youtube.com/watch?v=short2&list=PLSHORTS') return textResponse('<html><link rel="canonical" href="https://www.youtube.com/shorts/short2"></html>');
+      if (url.endsWith('/history')) return jsonResponse({ done: [] });
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const imported = await importYoutubeMetadata('https://www.youtube.com/playlist?list=PLSHORTS', { publicUrl: 'https://pod.example' }, fetchMock as typeof fetch);
+
+    assert.equal(imported.episodes.length, 1);
+    assert.equal(imported.episodes[0].title, 'Long Episode');
+  });
+
+  it('rejects direct Shorts URLs', async () => {
+    process.env.METUBE_BASE_URL = 'http://metube.local';
+    await assert.rejects(
+      () => importYoutubeMetadata('https://www.youtube.com/shorts/abc123', { publicUrl: 'https://pod.example' }, (() => {
+        throw new Error('Shorts URL should not fetch metadata.');
+      }) as typeof fetch),
+      /Shorts are not imported/
+    );
   });
 
   it('caches YouTube thumbnails under the server media route', async () => {

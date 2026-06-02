@@ -16,6 +16,11 @@ describe('classifyAddPodcastInput', () => {
       value: 'https://www.youtube.com/watch?v=abc123',
       youtubeKind: 'video'
     });
+    assert.deepEqual(classifyAddPodcastInput('https://www.youtube.com/shorts/abc123'), {
+      kind: 'youtube-url',
+      value: 'https://www.youtube.com/shorts/abc123',
+      youtubeKind: 'video'
+    });
   });
 
   it('recognizes YouTube playlists and podcast playlists', () => {

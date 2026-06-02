@@ -123,6 +123,7 @@ export async function handleYoutubeExtract(req: Request, res: Response) {
     const sourceUrl = normalizeUrl(parsed.data.sourceUrl);
     const kind = classifyYoutubeUrl(sourceUrl);
     if (!kind) throw new Error('Only YouTube episode URLs can be extracted.');
+    if (isYoutubeShortsUrl(sourceUrl)) throw new Error('YouTube Shorts are not imported as podcast episodes.');
     const before = await getMetubeHistory().catch(() => []);
     const existing = collectRelevantHistoryRows(before, sourceUrl)[0];
     if (!existing || statusFromRow(existing) === 'failed') await addToMetube(sourceUrl, 'video');
@@ -178,6 +179,7 @@ export async function importYoutubeMetadata(sourceUrl: string, options: YoutubeI
   const normalizedUrl = normalizeUrl(sourceUrl);
   const kind = classifyYoutubeUrl(normalizedUrl);
   if (!kind) throw new Error('Only YouTube video, playlist, channel, and podcast playlist URLs are supported.');
+  if (isYoutubeShortsUrl(normalizedUrl)) throw new Error('YouTube Shorts are not imported as podcast episodes.');
 
   const metadata = await fetchYoutubeMetadata(normalizedUrl, kind, fetchImpl);
   const history = isYoutubeImportConfigured() ? await getMetubeHistory(fetchImpl).catch(() => []) : [];
@@ -236,12 +238,12 @@ async function fetchYoutubeMetadata(sourceUrl: string, kind: YoutubeSourceKind, 
   if (kind === 'playlist') {
     const playlistId = new URL(sourceUrl).searchParams.get('list') || sourceUrl.split('/').filter(Boolean).pop();
     if (!playlistId) throw new Error('Could not find the YouTube playlist id.');
-    return parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`, fetchImpl), { playlistId });
+    return omitYoutubeShorts(parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`, fetchImpl), { playlistId }), fetchImpl);
   }
 
   if (kind === 'channel') {
     const channelId = await resolveChannelId(sourceUrl, fetchImpl);
-    return parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, fetchImpl), { channelId });
+    return omitYoutubeShorts(parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, fetchImpl), { channelId }), fetchImpl);
   }
 
   const oembed = await fetchJson(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(sourceUrl)}`, fetchImpl).catch(() => ({}));
@@ -258,6 +260,7 @@ async function fetchYoutubeMetadata(sourceUrl: string, kind: YoutubeSourceKind, 
     channel: firstString((oembed as Record<string, unknown>).author_name),
     channelId
   };
+  if (await isYoutubeShortEntry(videoEntry, fetchImpl)) throw new Error('YouTube Shorts are not imported as podcast episodes.');
   return {
     title: firstString((oembed as Record<string, unknown>).author_name) || 'YouTube Channel',
     author: firstString((oembed as Record<string, unknown>).author_name),
@@ -362,6 +365,36 @@ function parseYoutubeFeed(xml: string, source: { channelId?: string; playlistId?
     playlistId: source.playlistId,
     entries
   };
+}
+
+async function omitYoutubeShorts(metadata: YoutubeMetadata, fetchImpl: typeof fetch): Promise<YoutubeMetadata> {
+  const entries = [];
+  for (const entry of metadata.entries) {
+    if (!(await isYoutubeShortEntry(entry, fetchImpl))) entries.push(entry);
+  }
+  return { ...metadata, entries };
+}
+
+async function isYoutubeShortEntry(entry: Record<string, unknown>, fetchImpl: typeof fetch): Promise<boolean> {
+  const sourceUrl = firstString(entry.url, entry.webpage_url, entry.webpageUrl, entry.original_url);
+  if (sourceUrl && isYoutubeShortsUrl(sourceUrl)) return true;
+  const duration = positiveNumber(entry.duration, entry.durationSec);
+  if (duration !== undefined && duration <= 61) return true;
+  const title = firstString(entry.title, entry.name) || '';
+  const description = firstString(entry.description, entry.summary) || '';
+  if (/(^|\s)#shorts?\b/i.test(`${title} ${description}`)) return true;
+  if (!sourceUrl) return false;
+  const videoId = firstString(entry.videoId, entry.video_id, entry.id) || videoIdFromUrl(sourceUrl);
+  if (!videoId) return false;
+  const html = await fetchText(sourceUrl, fetchImpl).catch(() => '');
+  return htmlIndicatesYoutubeShort(html, videoId);
+}
+
+function htmlIndicatesYoutubeShort(html: string, videoId: string): boolean {
+  if (!html) return false;
+  const escapedId = escapeRegExp(videoId);
+  return new RegExp(`<link[^>]+rel=["']canonical["'][^>]+href=["']https?://www\\.youtube\\.com/shorts/${escapedId}["']`, 'i').test(html) ||
+    new RegExp(`["']/shorts/${escapedId}(?:["'/?#&])`, 'i').test(html);
 }
 
 async function cacheImportThumbnails(imported: ParsedYoutubeImport, options: YoutubeImportOptions, fetchImpl: typeof fetch): Promise<ParsedYoutubeImport> {
@@ -588,8 +621,18 @@ function classifyYoutubeUrl(input: string): YoutubeSourceKind | null {
   if (host === 'youtu.be') return 'video';
   if (url.searchParams.has('list') || url.pathname.startsWith('/playlist') || url.pathname.startsWith('/podcast/')) return 'playlist';
   if (url.pathname.startsWith('/watch') && url.searchParams.has('v')) return 'video';
+  if (url.pathname.startsWith('/shorts/')) return 'video';
   if (url.pathname.startsWith('/channel/') || url.pathname.startsWith('/c/') || url.pathname.startsWith('/@')) return 'channel';
   return 'unknown';
+}
+
+function isYoutubeShortsUrl(input: string): boolean {
+  try {
+    const url = new URL(input);
+    return url.hostname.replace(/^www\./, '').toLowerCase().endsWith('youtube.com') && url.pathname.startsWith('/shorts/');
+  } catch {
+    return false;
+  }
 }
 
 function normalizeUrl(input: string): string {
@@ -608,6 +651,10 @@ function safeNormalizeUrl(input: string): string | null {
 
 function stableId(input: string, prefix: string): string {
   return `${prefix}_${crypto.createHash('sha1').update(input).digest('hex').slice(0, 18)}`;
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function metubeHeaders(extra: Record<string, string> = {}): Record<string, string> {

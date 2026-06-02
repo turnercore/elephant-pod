@@ -32,6 +32,7 @@ export function classifyYoutubeUrl(input: string): YoutubeInputKind | null {
   if (url.pathname.startsWith('/playlist')) return 'playlist';
   if (url.pathname.startsWith('/podcast/')) return 'playlist';
   if (url.pathname.startsWith('/watch') && url.searchParams.has('v')) return 'video';
+  if (url.pathname.startsWith('/shorts/')) return 'video';
   if (url.pathname.startsWith('/channel/') || url.pathname.startsWith('/c/') || url.pathname.startsWith('/@')) return 'channel';
   return 'unknown';
 }
