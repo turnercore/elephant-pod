@@ -12,7 +12,8 @@ COPY src-tauri src-tauri
 RUN npm run build:web && npm run build:server
 
 FROM node:22-alpine AS runtime
-RUN apk add --no-cache ffmpeg yt-dlp
+RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache yt-dlp
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8787
