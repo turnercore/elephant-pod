@@ -1,4 +1,4 @@
-import { LuArchiveX as ArchiveX, LuCheck as Check, LuDownload as Download, LuEllipsis as MoreHorizontal, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuStar as Star } from 'react-icons/lu';
+import { LuArchiveX as ArchiveX, LuCheck as Check, LuDownload as Download, LuEllipsis as MoreHorizontal, LuInbox as Inbox, LuLoaderCircle as LoaderCircle, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuStar as Star, LuTrash as Trash, LuX as X } from 'react-icons/lu';
 import { useRef, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
 import { formatDuration, formatEpisodeReleaseDate } from '@/lib/dates';
@@ -15,12 +15,16 @@ interface EpisodeCardProps {
   onSendInbox?: (episode: EpisodeWithState) => void;
   onDismiss?: (episode: EpisodeWithState) => void;
   onDownload?: (episode: EpisodeWithState) => void;
+  onCancelDeleteDownload?: () => void;
   onTogglePlayed: (episode: EpisodeWithState) => void;
   onOpenEpisode?: (episode: EpisodeWithState) => void;
   onOpenPodcast?: (podcastId: string) => void;
   podcastImageUrl?: string;
   currentEpisodeId?: string;
   isCurrentPlaying?: boolean;
+  downloading?: boolean;
+  confirmingDeleteDownload?: boolean;
+  processedBadges?: string[];
 }
 
 export function EpisodeCard({
@@ -33,12 +37,16 @@ export function EpisodeCard({
   onSendInbox,
   onDismiss,
   onDownload,
+  onCancelDeleteDownload,
   onTogglePlayed,
   onOpenEpisode,
   onOpenPodcast,
   podcastImageUrl,
   currentEpisodeId,
-  isCurrentPlaying
+  isCurrentPlaying,
+  downloading,
+  confirmingDeleteDownload,
+  processedBadges
 }: EpisodeCardProps) {
   const [revealed, setRevealed] = useState(false);
   const startX = useRef<number | null>(null);
@@ -51,12 +59,21 @@ export function EpisodeCard({
   const badges = [
     episode.state.played ? 'Played' : 'New',
     episode.state.downloaded ? 'Offline' : '',
-    episode.state.queuePosition ? `#${episode.state.queuePosition}` : ''
+    episode.state.queuePosition ? `#${episode.state.queuePosition}` : '',
+    ...(processedBadges || [])
   ].filter(Boolean);
+  const downloadLabel = downloading ? 'Downloading' : episode.state.downloaded ? 'Delete download' : 'Download';
+  const DownloadIcon = downloading ? LoaderCircle : episode.state.downloaded ? Check : Download;
 
   return (
     <article
-      className="group rounded-eh border border-bone/15 bg-surface/85 transition hover:border-yellow/35"
+      className="group rounded-eh border border-bone/15 bg-surface/85 transition hover:border-yellow/35 has-[button:focus-visible]:border-yellow"
+      onClick={(event) => {
+        if (!onOpenEpisode) return;
+        const target = event.target as HTMLElement;
+        if (target.closest('button,a,input,select,textarea,[role="button"]')) return;
+        onOpenEpisode(episode);
+      }}
       onTouchStart={(event) => {
         startX.current = event.changedTouches[0]?.clientX ?? null;
       }}
@@ -84,7 +101,7 @@ export function EpisodeCard({
           {badges.length ? (
             <div className="mb-1 flex min-w-0 items-center gap-1.5">
               {badges.slice(0, 3).map((badge) => (
-                <Badge key={badge} tone={badge === 'Offline' ? 'teal' : badge.startsWith('#') ? 'mauve' : episode.state.played ? 'sage' : 'yellow'}>{badge}</Badge>
+                <Badge key={badge} tone={badge === 'Offline' || badge === 'Smart Skip' ? 'teal' : badge === 'Trim silence' || badge.startsWith('#') ? 'mauve' : episode.state.played ? 'sage' : 'yellow'}>{badge}</Badge>
               ))}
               {episode.state.favorite && <Star size={13} className="shrink-0 text-yellow" fill="currentColor" aria-label="Favorite" />}
             </div>
@@ -128,9 +145,32 @@ export function EpisodeCard({
             {episode.state.played ? <RotateCcw size={16} aria-hidden /> : <Check size={16} aria-hidden />}
           </IconButton>
           {onDownload ? (
-            <IconButton label="Download" onClick={() => onDownload(episode)} active={episode.state.downloaded} className="h-9 w-full">
-              <Download size={16} aria-hidden />
-            </IconButton>
+            confirmingDeleteDownload ? (
+              <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 rounded-eh border border-coral/35 bg-coral/10 px-2">
+                <span className="truncate text-xs font-bold text-cream">Delete download?</span>
+                <IconButton label="Delete download?" danger onClick={() => onDownload(episode)} className="h-7 w-7 shrink-0">
+                  <Trash size={16} aria-hidden />
+                </IconButton>
+                <IconButton label="Cancel delete download" onClick={onCancelDeleteDownload} className="h-7 w-7 shrink-0">
+                  <X size={16} aria-hidden />
+                </IconButton>
+              </div>
+            ) : (
+              <IconButton
+                label={downloadLabel}
+                title={downloadLabel}
+                onClick={() => onDownload(episode)}
+                active={episode.state.downloaded}
+                disabled={downloading}
+                className={[
+                  'h-9 w-full overflow-hidden',
+                  downloading ? 'border-coral/50 bg-coral/20 text-coral' : '',
+                  episode.state.downloaded ? 'border-teal bg-teal text-canvas hover:text-canvas' : ''
+                ].filter(Boolean).join(' ')}
+              >
+                <DownloadIcon size={16} aria-hidden className={downloading ? 'animate-spin' : undefined} />
+              </IconButton>
+            )
           ) : null}
           {onSendInbox ? (
             <IconButton label="Send to inbox" onClick={() => onSendInbox(episode)} active={episode.state.inboxState === 'new'} className="h-9 w-full">

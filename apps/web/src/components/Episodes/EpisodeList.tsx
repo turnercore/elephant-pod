@@ -9,11 +9,17 @@ export function EpisodeList({
   episodes,
   podcastImageUrl,
   getPodcastImageUrl,
+  downloadingEpisodeIds,
+  confirmDeleteDownloadEpisodeId,
+  episodeBadgesById,
   ...handlers
 }: {
   episodes: EpisodeWithState[];
   podcastImageUrl?: string;
   getPodcastImageUrl?: (podcastId: string) => string | undefined;
+  downloadingEpisodeIds?: Set<string>;
+  confirmDeleteDownloadEpisodeId?: string | null;
+  episodeBadgesById?: Record<string, string[]>;
 } & CardHandlers) {
   if (!episodes.length) {
     return (
@@ -26,7 +32,15 @@ export function EpisodeList({
   return (
     <div className="grid gap-3" aria-label="Episode list">
       {episodes.map((episode) => (
-        <EpisodeCard key={episode.id} episode={episode} podcastImageUrl={podcastImageUrl || getPodcastImageUrl?.(episode.podcastId)} {...handlers} />
+        <EpisodeCard
+          key={episode.id}
+          episode={episode}
+          podcastImageUrl={podcastImageUrl || getPodcastImageUrl?.(episode.podcastId)}
+          downloading={downloadingEpisodeIds?.has(episode.id)}
+          confirmingDeleteDownload={confirmDeleteDownloadEpisodeId === episode.id}
+          processedBadges={episodeBadgesById?.[episode.id]}
+          {...handlers}
+        />
       ))}
     </div>
   );

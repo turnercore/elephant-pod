@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { XMLParser } from 'fast-xml-parser';
 import { z } from 'zod';
 
@@ -172,7 +174,18 @@ export async function handleYoutubeAudio(req: Request, res: Response) {
     res.status(404).json({ error: 'YouTube audio file URL is not available yet.' });
     return;
   }
-  res.redirect(audioUrl);
+  const upstream = await fetch(audioUrl, { headers: metubeHeaders() });
+  if (!upstream.ok || !upstream.body) {
+    res.status(upstream.status || 502).json({ error: `YouTube audio proxy failed with ${upstream.status || 502}.` });
+    return;
+  }
+  res.status(200);
+  res.setHeader('content-type', upstream.headers.get('content-type') || 'audio/mpeg');
+  const contentLength = upstream.headers.get('content-length');
+  const acceptRanges = upstream.headers.get('accept-ranges');
+  if (contentLength) res.setHeader('content-length', contentLength);
+  if (acceptRanges) res.setHeader('accept-ranges', acceptRanges);
+  Readable.fromWeb(upstream.body as NodeReadableStream<Uint8Array>).pipe(res);
 }
 
 export async function importYoutubeMetadata(sourceUrl: string, options: YoutubeImportOptions, fetchImpl: typeof fetch = fetch): Promise<ParsedYoutubeImport> {
@@ -229,6 +242,7 @@ type YoutubeMetadata = {
   author?: string;
   description?: string;
   imageUrl?: string;
+  canonicalSourceUrl?: string;
   channelId?: string;
   playlistId?: string;
   entries: Record<string, unknown>[];
@@ -238,12 +252,14 @@ async function fetchYoutubeMetadata(sourceUrl: string, kind: YoutubeSourceKind, 
   if (kind === 'playlist') {
     const playlistId = new URL(sourceUrl).searchParams.get('list') || sourceUrl.split('/').filter(Boolean).pop();
     if (!playlistId) throw new Error('Could not find the YouTube playlist id.');
-    return omitYoutubeShorts(parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`, fetchImpl), { playlistId }), fetchImpl);
+    const metadata = parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`, fetchImpl), { playlistId });
+    return omitYoutubeShorts({ ...metadata, canonicalSourceUrl: canonicalPlaylistUrl(playlistId) }, fetchImpl);
   }
 
   if (kind === 'channel') {
     const channelId = await resolveChannelId(sourceUrl, fetchImpl);
-    return omitYoutubeShorts(parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, fetchImpl), { channelId }), fetchImpl);
+    const metadata = parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, fetchImpl), { channelId });
+    return omitYoutubeShorts({ ...metadata, canonicalSourceUrl: canonicalChannelUrl(channelId) }, fetchImpl);
   }
 
   const oembed = await fetchJson(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(sourceUrl)}`, fetchImpl).catch(() => ({}));
@@ -265,6 +281,7 @@ async function fetchYoutubeMetadata(sourceUrl: string, kind: YoutubeSourceKind, 
     title: firstString((oembed as Record<string, unknown>).author_name) || 'YouTube Channel',
     author: firstString((oembed as Record<string, unknown>).author_name),
     imageUrl: firstString((oembed as Record<string, unknown>).thumbnail_url) || match(videoHtml, /<meta property="og:image" content="([^"]+)"/),
+    canonicalSourceUrl: channelId ? canonicalChannelUrl(channelId) : sourceUrl,
     channelId,
     entries: [videoEntry]
   };
@@ -282,9 +299,10 @@ function buildImportResult(sourceUrl: string, kind: YoutubeSourceKind, metadata:
   const now = new Date().toISOString();
   const externalSourceId = metadata.playlistId || metadata.channelId || stableId(sourceUrl, 'yt_src');
   const sourceType: PodcastSourceType = kind === 'channel' ? 'youtube-channel' : kind === 'playlist' ? 'youtube-playlist' : 'youtube-ad-hoc';
+  const canonicalSourceUrl = metadata.canonicalSourceUrl || sourceUrl;
   const podcastTitle = metadata.title || youtubeSourceTitle(kind);
-  const podcastId = stableId(`${sourceType}:${externalSourceId}:${sourceUrl}`, 'feed');
-  const feedUrl = `${publicUrl}/api/youtube/feed.xml?url=${encodeURIComponent(sourceUrl)}`;
+  const podcastId = stableId(`${sourceType}:${externalSourceId}:${canonicalSourceUrl}`, 'feed');
+  const feedUrl = `${publicUrl}/api/youtube/feed.xml?url=${encodeURIComponent(canonicalSourceUrl)}`;
 
   return {
     podcast: {
@@ -294,10 +312,10 @@ function buildImportResult(sourceUrl: string, kind: YoutubeSourceKind, metadata:
       description: metadata.description || `Synthetic podcast feed for a YouTube ${kind === 'video' ? 'channel' : kind}.`,
       imageUrl: metadata.imageUrl,
       feedUrl,
-      websiteUrl: sourceUrl,
+      websiteUrl: canonicalSourceUrl,
       tags: ['YouTube'],
       sourceType,
-      sourceUrl,
+      sourceUrl: canonicalSourceUrl,
       externalId: externalSourceId,
       createdAt: now,
       updatedAt: now,
@@ -602,6 +620,14 @@ function sourceUrlList(sourceUrl: string): Set<string> {
   const playlistId = url.searchParams.get('list');
   if (playlistId) list.add(normalizeUrl(`https://www.youtube.com/playlist?list=${playlistId}`));
   return list;
+}
+
+function canonicalChannelUrl(channelId: string): string {
+  return `https://www.youtube.com/channel/${encodeURIComponent(channelId)}`;
+}
+
+function canonicalPlaylistUrl(playlistId: string): string {
+  return `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
 }
 
 function resolveMetubeAudioUrl(row: Record<string, unknown>): string | null {

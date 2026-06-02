@@ -92,6 +92,44 @@ describe('importYoutubeMetadata', () => {
     assert.equal(imported.episodes[0].extractionStatus, 'none');
   });
 
+  it('canonicalizes equivalent channel URLs to one synthetic show', async () => {
+    process.env.METUBE_BASE_URL = 'http://metube.local';
+    const channelPage = '<html><link type="application/rss+xml" href="https://www.youtube.com/feeds/videos.xml?channel_id=UCJETBRAINS"></html>';
+    const channelFeed = `<?xml version="1.0"?>
+      <feed>
+        <title>JetBrains</title>
+        <author><name>JetBrains TV</name></author>
+        <entry>
+          <yt:videoId>jb1</yt:videoId>
+          <yt:channelId>UCJETBRAINS</yt:channelId>
+          <title>Episode 1</title>
+          <link href="https://www.youtube.com/watch?v=jb1" />
+          <published>2026-06-01T00:00:00Z</published>
+          <media:group><media:description>One</media:description></media:group>
+        </entry>
+      </feed>`;
+    const fetchMock = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === 'https://www.youtube.com/@JetBrainsTV' || url === 'https://www.youtube.com/@JetBrainsTV/featured' || url === 'https://www.youtube.com/@JetBrainsTV/playlists') return textResponse(channelPage);
+      if (url === 'https://www.youtube.com/feeds/videos.xml?channel_id=UCJETBRAINS') return textResponse(channelFeed);
+      if (url === 'https://www.youtube.com/watch?v=jb1') return textResponse('<html><link rel="canonical" href="https://www.youtube.com/watch?v=jb1"></html>');
+      if (url.endsWith('/history')) return jsonResponse({ done: [] });
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    const [bare, featured, playlists] = await Promise.all([
+      importYoutubeMetadata('https://www.youtube.com/@JetBrainsTV', { publicUrl: 'https://pod.example' }, fetchMock as typeof fetch),
+      importYoutubeMetadata('https://www.youtube.com/@JetBrainsTV/featured', { publicUrl: 'https://pod.example' }, fetchMock as typeof fetch),
+      importYoutubeMetadata('https://www.youtube.com/@JetBrainsTV/playlists', { publicUrl: 'https://pod.example' }, fetchMock as typeof fetch)
+    ]);
+
+    assert.equal(featured.podcast.id, bare.podcast.id);
+    assert.equal(playlists.podcast.id, bare.podcast.id);
+    assert.equal(bare.podcast.sourceUrl, 'https://www.youtube.com/channel/UCJETBRAINS');
+    assert.equal(featured.podcast.sourceUrl, bare.podcast.sourceUrl);
+    assert.equal(playlists.podcast.feedUrl, bare.podcast.feedUrl);
+  });
+
   it('omits Shorts from playlist synthetic podcasts', async () => {
     process.env.METUBE_BASE_URL = 'http://metube.local';
     const fetchMock = async (input: string | URL | Request) => {

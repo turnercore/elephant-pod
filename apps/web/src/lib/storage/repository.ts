@@ -131,6 +131,16 @@ export async function markSilenceMapChecked(mapId: string): Promise<void> {
   await db.silenceMaps.put({ ...existing, lastCheckedAt: nowIso() });
 }
 
+export async function listReadySilenceMapEpisodeIds(): Promise<string[]> {
+  const maps = await db.silenceMaps.where('status').equals('ready').toArray();
+  return [...new Set(maps.filter((map) => map.segments.length > 0).map((map) => map.episodeId))];
+}
+
+export async function listReadySmartSkipMapEpisodeIds(): Promise<string[]> {
+  const maps = await db.smartSkipMaps.toArray();
+  return [...new Set(maps.map((map) => map.episodeId))];
+}
+
 export async function upsertParsedFeed(result: ParsedFeedResult): Promise<void> {
   const timestamp = nowIso();
   await db.transaction('rw', [db.feeds, db.episodes, db.states, db.podcastCache, db.cachedEpisodes, db.podcastPreferences], async () => {

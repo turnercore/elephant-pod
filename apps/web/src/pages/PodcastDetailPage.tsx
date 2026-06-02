@@ -1,5 +1,5 @@
 import { LuArrowDownWideNarrow as ArrowDownWideNarrow, LuArrowUpWideNarrow as ArrowUpWideNarrow, LuCheck as Check, LuCheckCheck as CheckCheck, LuInbox as Inbox, LuRefreshCw as RefreshCw, LuRotateCcw as RotateCcw, LuSettings2 as Settings2, LuX as X } from 'react-icons/lu';
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import type { AppSettings, CachedPodcast, EpisodeWithState, PodcastPreference } from '@/types/domain';
 import { EpisodeList } from '@/components/Episodes/EpisodeList';
 import { Badge } from '@/components/ui/Badge';
@@ -48,6 +48,7 @@ export function PodcastDetailPage({
   const [filter, setFilter] = useState<'all' | 'played' | 'unplayed'>('all');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [visibleCount, setVisibleCount] = useState(80);
   const sortedEpisodes = useMemo(() => {
     return episodes
       .filter((episode) => {
@@ -61,6 +62,12 @@ export function PodcastDetailPage({
       });
   }, [episodes, filter, preference.sortDirection]);
 
+  useEffect(() => {
+    setVisibleCount(80);
+  }, [podcast.id, filter, preference.sortDirection]);
+
+  const visibleEpisodes = sortedEpisodes.slice(0, visibleCount);
+  const hiddenEpisodeCount = Math.max(0, sortedEpisodes.length - visibleEpisodes.length);
   const unplayedCount = episodes.filter((episode) => !episode.state.played).length;
 
   return (
@@ -212,7 +219,14 @@ export function PodcastDetailPage({
           </IconButton>
         </div>
         <div className="mt-4">
-          <EpisodeList episodes={sortedEpisodes} podcastImageUrl={podcast.imageUrl} {...handlers} />
+          <EpisodeList episodes={visibleEpisodes} podcastImageUrl={podcast.imageUrl} {...handlers} />
+          {hiddenEpisodeCount > 0 ? (
+            <div className="mt-4 flex justify-center">
+              <Button variant="secondary" onClick={() => setVisibleCount((count) => count + 80)}>
+                Load more episodes ({hiddenEpisodeCount} remaining)
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
     </Panel>

@@ -1,4 +1,4 @@
-import { LuCheck as Check, LuDownload as Download, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuPlay as Play, LuRotateCcw as RotateCcw } from 'react-icons/lu';
+import { LuCheck as Check, LuDownload as Download, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuLoaderCircle as LoaderCircle, LuPlay as Play, LuRotateCcw as RotateCcw, LuTrash as Trash, LuX as X } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -14,7 +14,10 @@ export function EpisodeDetailPage({
   onQueueEnd,
   onSendInbox,
   onDownload,
-  onTogglePlayed
+  onCancelDeleteDownload,
+  onTogglePlayed,
+  downloading,
+  confirmingDeleteDownload
 }: {
   episode: EpisodeWithState;
   podcastImageUrl?: string;
@@ -24,7 +27,10 @@ export function EpisodeDetailPage({
   onQueueEnd: (episode: EpisodeWithState) => void;
   onSendInbox: (episode: EpisodeWithState) => void;
   onDownload?: (episode: EpisodeWithState) => void;
+  onCancelDeleteDownload?: () => void;
   onTogglePlayed: (episode: EpisodeWithState) => void;
+  downloading?: boolean;
+  confirmingDeleteDownload?: boolean;
 }) {
   const episodeArtworkUrl = episode.imageUrl;
   const artworkUrl = episodeArtworkUrl || podcastImageUrl;
@@ -90,10 +96,28 @@ export function EpisodeDetailPage({
                 Send to inbox
               </Button>
               {onDownload ? (
-                <Button variant="secondary" onClick={() => onDownload(episode)}>
-                  <Download size={16} aria-hidden />
-                  Download
-                </Button>
+                confirmingDeleteDownload ? (
+                  <span className="inline-flex items-center gap-2 rounded-eh border border-coral/35 bg-coral/10 p-1 pl-3">
+                    <span className="text-xs font-bold text-cream">Delete download?</span>
+                    <Button variant="danger" size="sm" onClick={() => onDownload(episode)}>
+                      <Trash size={14} aria-hidden />
+                      Delete
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={onCancelDeleteDownload}>
+                      <X size={14} aria-hidden />
+                      Cancel
+                    </Button>
+                  </span>
+                ) : (
+                  <Button
+                    variant={episode.state.downloaded ? 'primary' : 'secondary'}
+                    onClick={() => onDownload(episode)}
+                    disabled={downloading}
+                  >
+                    {downloading ? <LoaderCircle size={16} className="animate-spin" aria-hidden /> : episode.state.downloaded ? <Check size={16} aria-hidden /> : <Download size={16} aria-hidden />}
+                    {downloading ? 'Downloading' : episode.state.downloaded ? 'Downloaded' : 'Download'}
+                  </Button>
+                )
               ) : null}
               <Button variant="secondary" onClick={() => onTogglePlayed(episode)}>
                 {episode.state.played ? <RotateCcw size={16} aria-hidden /> : <Check size={16} aria-hidden />}

@@ -21,7 +21,7 @@ import { nowIso } from '@/lib/dates';
 import { fetchFeedThroughServer } from '@/lib/rss';
 import { extractYoutubeEpisode, fetchServerCapabilities, importYoutubeSource } from '@/lib/youtubeImport';
 import { exportOpml, importOpml } from '@/lib/opml';
-import { downloadEpisodeToCache } from '@/lib/storage/cache';
+import { deleteEpisodeFromCache, downloadEpisodeToCache } from '@/lib/storage/cache';
 import { cacheArtworkForOfflineEpisodes, hydrateArtworkForLibrary, revokeArtworkObjectUrls } from '@/lib/storage/artwork';
 import { ensureSeedData } from '@/lib/storage/db';
 import { clearServerSession, consumeAuthTokenFromCallback, fetchServerSessionProfile, isServerSessionExpired, loadServerSession, resolveBrowserServerUrl, saveServerSession, startGithubSignIn, testServerConnection, type ServerSession } from '@/lib/sync/serverAuth';
@@ -40,6 +40,8 @@ import {
   listEpisodes,
   listFeeds,
   listPodcastPreferences,
+  listReadySilenceMapEpisodeIds,
+  listReadySmartSkipMapEpisodeIds,
   markAllInFeedPlayed,
   markAllInFeedUnplayed,
   moveInQueue,
@@ -81,6 +83,10 @@ export default function App() {
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [navStack, setNavStack] = useState<ViewSnapshot[]>([]);
   const [episodeSilenceOverrides, setEpisodeSilenceOverrides] = useState<Record<string, boolean>>({});
+  const [downloadingEpisodeIds, setDownloadingEpisodeIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteDownloadEpisodeId, setConfirmDeleteDownloadEpisodeId] = useState<string | null>(null);
+  const [readySilenceEpisodeIds, setReadySilenceEpisodeIds] = useState<Set<string>>(new Set());
+  const [readySmartSkipEpisodeIds, setReadySmartSkipEpisodeIds] = useState<Set<string>>(new Set());
   const [playerCollapseToken, setPlayerCollapseToken] = useState(0);
   const [status, setStatus] = useState('');
   const [serverTestStatus, setServerTestStatus] = useState('');
@@ -159,14 +165,16 @@ export default function App() {
 
   const refreshLocalState = useCallback(async () => {
     await ensureSeedData();
-    const [nextSettings, nextFeeds, nextEpisodes, nextCachedPodcasts, nextCachedEpisodes, nextPodcastPreferences, nextListeningStats] = await Promise.all([
+    const [nextSettings, nextFeeds, nextEpisodes, nextCachedPodcasts, nextCachedEpisodes, nextPodcastPreferences, nextListeningStats, nextReadySilenceIds, nextReadySmartSkipIds] = await Promise.all([
       getSettings(),
       listFeeds(),
       listEpisodes(),
       listCachedPodcasts(),
       listCachedEpisodes(),
       listPodcastPreferences(),
-      getListeningStats()
+      getListeningStats(),
+      listReadySilenceMapEpisodeIds(),
+      listReadySmartSkipMapEpisodeIds()
     ]);
     const normalizedSettings = isTauriRuntime() && isLoopbackUrl(nextSettings.serverUrl || '') ? { ...nextSettings, serverUrl: '' } : nextSettings;
     if (normalizedSettings !== nextSettings) void saveSettings(normalizedSettings);
@@ -185,6 +193,8 @@ export default function App() {
     setCachedEpisodes(hydrated.cachedEpisodes);
     setPodcastPreferences(nextPodcastPreferences);
     setListeningStats(nextListeningStats);
+    setReadySilenceEpisodeIds(new Set(nextReadySilenceIds));
+    setReadySmartSkipEpisodeIds(new Set(nextReadySmartSkipIds));
     void cacheArtworkForOfflineEpisodes([...nextEpisodes, ...nextCachedEpisodes], [...nextFeeds, ...nextCachedPodcasts]).then((count) => {
       if (count > 0) void refreshLocalState();
     });
@@ -384,6 +394,19 @@ export default function App() {
     () => selectedEpisode ? visibleCachedPodcasts.find((podcast) => podcast.id === selectedEpisode.podcastId) || visibleFeeds.find((podcast) => podcast.id === selectedEpisode.podcastId) : null,
     [selectedEpisode, visibleCachedPodcasts, visibleFeeds]
   );
+  const episodeBadgesById = useMemo(() => {
+    if (!settings) return {};
+    const preferences = new Map(podcastPreferences.map((preference) => [preference.podcastId, preference]));
+    const badges: Record<string, string[]> = {};
+    for (const episode of visibleEpisodes) {
+      const preference = preferences.get(episode.podcastId);
+      const episodeBadges: string[] = [];
+      if ((preference?.smartSkipEnabled ?? settings.smartSkipEnabled) && readySmartSkipEpisodeIds.has(episode.id)) episodeBadges.push('Smart Skip');
+      if ((episodeSilenceOverrides[episode.id] ?? preference?.silenceShortening ?? settings.silenceShortening) && readySilenceEpisodeIds.has(episode.id)) episodeBadges.push('Trim silence');
+      if (episodeBadges.length) badges[episode.id] = episodeBadges;
+    }
+    return badges;
+  }, [episodeSilenceOverrides, podcastPreferences, readySilenceEpisodeIds, readySmartSkipEpisodeIds, settings, visibleEpisodes]);
   const effectivePlayerSettings = useMemo(() => {
     const preference = audio.current ? podcastPreferences.find((item) => item.podcastId === audio.current?.podcastId) : undefined;
     return {
@@ -521,7 +544,7 @@ export default function App() {
     setStatus('Signed out. Local data remains on this device.');
   }
 
-  const browserNeedsSignIn = Boolean(settings) && !isTauriRuntime() && (!serverSession || isServerSessionExpired(serverSession));
+  const browserNeedsSignIn = hostedWebRuntime && Boolean(settings) && !isTauriRuntime() && (!serverSession || isServerSessionExpired(serverSession));
 
   async function handlePlay(episode: EpisodeWithState) {
     if (!(await ensureYoutubeAudioReady(episode))) return;
@@ -606,7 +629,40 @@ export default function App() {
   }
 
   async function handleDownload(episode: EpisodeWithState) {
+    if (downloadingEpisodeIds.has(episode.id)) return;
+    if (episode.state.downloaded) {
+      if (confirmDeleteDownloadEpisodeId !== episode.id) {
+        setConfirmDeleteDownloadEpisodeId(episode.id);
+        return;
+      }
+      setConfirmDeleteDownloadEpisodeId(null);
+      setDownloadingEpisodeIds((ids) => new Set(ids).add(episode.id));
+      try {
+        await deleteEpisodeFromCache(episode);
+        await updateEpisodeState(episode.id, {
+          downloaded: false,
+          downloadedAt: undefined,
+          downloadPath: undefined,
+          downloadBytes: undefined,
+          downloadBackend: undefined,
+          downloadSource: undefined
+        });
+        setStatus(`Deleted download for ${episode.title}.`);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Could not delete download.');
+      } finally {
+        setDownloadingEpisodeIds((ids) => {
+          const next = new Set(ids);
+          next.delete(episode.id);
+          return next;
+        });
+        await refreshLocalState();
+      }
+      return;
+    }
     if (!(await ensureYoutubeAudioReady(episode))) return;
+    setConfirmDeleteDownloadEpisodeId(null);
+    setDownloadingEpisodeIds((ids) => new Set(ids).add(episode.id));
     try {
       const result = await downloadEpisodeToCache(episode);
       await updateEpisodeState(episode.id, {
@@ -624,6 +680,12 @@ export default function App() {
       setStatus(`Downloaded ${episode.title} ${result.backend === 'tauri-filesystem' ? 'to native storage' : 'to browser cache'}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Download failed. Host may block browser downloads, or native storage may be unavailable.');
+    } finally {
+      setDownloadingEpisodeIds((ids) => {
+        const next = new Set(ids);
+        next.delete(episode.id);
+        return next;
+      });
     }
     await refreshLocalState();
   }
@@ -876,7 +938,11 @@ export default function App() {
     onOpenEpisode: (episode: EpisodeWithState) => navigateEpisode(episode.id),
     onOpenPodcast: (podcastId: string) => navigatePodcast(podcastId),
     currentEpisodeId: audio.current?.id,
-    isCurrentPlaying: audio.isPlaying
+    isCurrentPlaying: audio.isPlaying,
+    downloadingEpisodeIds,
+    confirmDeleteDownloadEpisodeId,
+    onCancelDeleteDownload: () => setConfirmDeleteDownloadEpisodeId(null),
+    episodeBadgesById
   };
 
   const page = (() => {
@@ -939,7 +1005,10 @@ export default function App() {
           onQueueEnd={(episode) => void handleQueueEnd(episode)}
           onSendInbox={(episode) => void handleSendInbox(episode)}
           onDownload={(episode) => void handleDownload(episode)}
+          onCancelDeleteDownload={() => setConfirmDeleteDownloadEpisodeId(null)}
           onTogglePlayed={(episode) => void handleTogglePlayed(episode)}
+          downloading={downloadingEpisodeIds.has(selectedEpisode.id)}
+          confirmingDeleteDownload={confirmDeleteDownloadEpisodeId === selectedEpisode.id}
         />
       );
     }
