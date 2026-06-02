@@ -81,9 +81,9 @@ export function NavigationRail({
               aria-current={activeItem ? 'page' : undefined}
               onClick={() => onSelect(item.key)}
               className={cn(
-                'eh-sidebar-primary-item flex h-11 items-center justify-center gap-3 rounded-eh border border-transparent px-3 text-sm font-black uppercase tracking-[0.06em] text-bone transition hover:border-yellow/30 hover:text-yellow',
+                'eh-sidebar-primary-item flex h-10 items-center justify-start gap-3 rounded-eh border border-bone/15 bg-surface/70 px-3 text-sm font-black uppercase tracking-[0.06em] text-cream transition hover:border-yellow/40 hover:text-yellow',
                 collapsed ? 'md:justify-center md:px-0' : 'md:justify-start',
-                activeItem && 'border-yellow/60 bg-yellow text-canvas hover:text-canvas'
+                activeItem && 'border-yellow/40 bg-surface/90 text-yellow hover:text-yellow'
               )}
             >
               <Icon size={20} aria-hidden />
