@@ -207,6 +207,9 @@ function normalizeRemoteFeed(row: unknown): Podcast | null {
     feedUrl,
     websiteUrl: asOptionalString(record.website_url ?? record.websiteUrl),
     tags: Array.isArray(record.tags) ? (record.tags as string[]) : [],
+    sourceType: asPodcastSourceType(record.source_type ?? record.sourceType),
+    sourceUrl: asOptionalString(record.source_url ?? record.sourceUrl),
+    externalId: asOptionalString(record.external_id ?? record.externalId),
     lastRefreshedAt: asOptionalString(record.last_refreshed_at ?? record.lastRefreshedAt),
     createdAt: asOptionalString(record.created_at ?? record.createdAt) || nowIso(),
     updatedAt: asOptionalString(record.updated_at ?? record.updatedAt) || nowIso()
@@ -237,6 +240,10 @@ function normalizeRemoteEpisode(row: unknown): Episode | null {
     chapters: Array.isArray(record.chapters) ? (record.chapters as Episode['chapters']) : [],
     guid: asString(record.guid),
     enclosureLength: asNumber(record.enclosure_length ?? record.enclosureLength),
+    sourceType: asEpisodeSourceType(record.source_type ?? record.sourceType),
+    sourceUrl: asOptionalString(record.source_url ?? record.sourceUrl),
+    externalId: asOptionalString(record.external_id ?? record.externalId),
+    extractionStatus: asExtractionStatus(record.extraction_status ?? record.extractionStatus),
     createdAt: asOptionalString(record.created_at ?? record.createdAt) || nowIso(),
     updatedAt: asOptionalString(record.updated_at ?? record.updatedAt) || nowIso()
   };
@@ -279,6 +286,17 @@ function normalizeRemotePodcastPreference(row: unknown): PodcastPreference | nul
     skipIntroSec: asNumber(record.skip_intro_sec ?? record.skipIntroSec) ?? 0,
     skipOutroSec: asNumber(record.skip_outro_sec ?? record.skipOutroSec) ?? 0,
     silenceShortening: typeof (record.silence_shortening ?? record.silenceShortening) === 'boolean' ? Boolean(record.silence_shortening ?? record.silenceShortening) : undefined,
+    smartSkipEnabled: typeof (record.smart_skip_enabled ?? record.smartSkipEnabled) === 'boolean' ? Boolean(record.smart_skip_enabled ?? record.smartSkipEnabled) : undefined,
+    smartSkipCommercials: typeof (record.smart_skip_commercials ?? record.smartSkipCommercials ?? record.smart_skip_ads ?? record.smartSkipAds ?? record.smart_skip_sponsors ?? record.smartSkipSponsors ?? record.smart_skip_network_promos ?? record.smartSkipNetworkPromos) === 'boolean'
+      ? Boolean(record.smart_skip_commercials ?? record.smartSkipCommercials ?? record.smart_skip_ads ?? record.smartSkipAds ?? record.smart_skip_sponsors ?? record.smartSkipSponsors ?? record.smart_skip_network_promos ?? record.smartSkipNetworkPromos)
+      : undefined,
+    smartSkipIntro: typeof (record.smart_skip_intro ?? record.smartSkipIntro) === 'boolean' ? Boolean(record.smart_skip_intro ?? record.smartSkipIntro) : undefined,
+    smartSkipOutro: typeof (record.smart_skip_outro ?? record.smartSkipOutro) === 'boolean' ? Boolean(record.smart_skip_outro ?? record.smartSkipOutro) : undefined,
+    smartSkipSelfPromos: typeof (record.smart_skip_self_promos ?? record.smartSkipSelfPromos) === 'boolean' ? Boolean(record.smart_skip_self_promos ?? record.smartSkipSelfPromos) : undefined,
+    smartSkipSilence: typeof (record.smart_skip_silence ?? record.smartSkipSilence) === 'boolean' ? Boolean(record.smart_skip_silence ?? record.smartSkipSilence) : undefined,
+    smartSkipIncludeSoftMatches: typeof (record.smart_skip_include_soft_matches ?? record.smartSkipIncludeSoftMatches ?? record.smart_skip_soft_skips ?? record.smartSkipSoftSkips) === 'boolean'
+      ? Boolean(record.smart_skip_include_soft_matches ?? record.smartSkipIncludeSoftMatches ?? record.smart_skip_soft_skips ?? record.smartSkipSoftSkips)
+      : undefined,
     sortDirection: sortDirection === 'oldest' ? 'oldest' : 'newest',
     addNewEpisodesToInbox: typeof (record.add_new_episodes_to_inbox ?? record.addNewEpisodesToInbox) === 'boolean' ? Boolean(record.add_new_episodes_to_inbox ?? record.addNewEpisodesToInbox) : true,
     updatedAt: asOptionalString(record.updated_at ?? record.updatedAt) || nowIso()
@@ -650,6 +668,23 @@ function asRenderStatus(value: unknown): Clip['renderStatus'] | undefined {
   ) {
     return value;
   }
+  return undefined;
+}
+
+function asPodcastSourceType(value: unknown): Podcast['sourceType'] {
+  if (value === 'youtube-channel' || value === 'youtube-playlist' || value === 'youtube-ad-hoc') return value;
+  if (value === 'rss') return 'rss';
+  return undefined;
+}
+
+function asEpisodeSourceType(value: unknown): Episode['sourceType'] {
+  if (value === 'youtube') return 'youtube';
+  if (value === 'rss') return 'rss';
+  return undefined;
+}
+
+function asExtractionStatus(value: unknown): Episode['extractionStatus'] {
+  if (value === 'queued' || value === 'processing' || value === 'ready' || value === 'failed' || value === 'none') return value;
   return undefined;
 }
 

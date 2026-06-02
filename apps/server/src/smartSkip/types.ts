@@ -103,3 +103,34 @@ export interface SmartSkipJob {
   createdAt: string;
   updatedAt: string;
 }
+
+export type SmartSkipExternalTaskKind = 'segmenter_batch';
+
+export type SmartSkipExternalTaskStatus =
+  | 'submitted'
+  | 'validating'
+  | 'in_progress'
+  | 'finalizing'
+  | 'completed'
+  | 'failed'
+  | 'expired'
+  | 'cancelled';
+
+export interface SmartSkipExternalTask {
+  id: string;
+  jobId: string;
+  kind: SmartSkipExternalTaskKind;
+  provider: string;
+  externalId: string;
+  status: SmartSkipExternalTaskStatus;
+  inputFileId?: string;
+  outputFileId?: string;
+  errorFileId?: string;
+  resultJson?: unknown;
+  error?: string;
+  submittedAt?: string;
+  lastCheckedAt?: string;
+  nextCheckAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -1,10 +1,11 @@
-import { LuCheck as Check, LuLoader as Loader2, LuPlus as Plus, LuSearch as Search } from 'react-icons/lu';
+import { LuCheck as Check, LuLoader as Loader2, LuPlus as Plus, LuSearch as Search, LuWifiOff as WifiOff, LuYoutube as Youtube } from 'react-icons/lu';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CachedPodcast, Podcast } from '@/types/domain';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Panel } from '@/components/ui/Panel';
+import { classifyAddPodcastInput } from '@/lib/addPodcastOmnibar';
 import { searchPodcastIndex, type PodcastDiscoveryResult } from '@/lib/podcastDiscovery';
 
 const MIN_REMOTE_QUERY_LENGTH = 2;
@@ -15,26 +16,30 @@ export function SearchPage({
   podcasts,
   cachedPodcasts,
   canSearchRemote,
+  canUseYoutubeImport,
+  offline,
   accessToken,
   serverUrl,
   onOpenPodcast,
   onOpenRemotePodcast,
   onResolveFeedUrl,
+  onImportYoutube,
   onSubscribe,
-  onSubscribeRemote,
-  onUnsubscribe
+  onSubscribeRemote
 }: {
   podcasts: Podcast[];
   cachedPodcasts: CachedPodcast[];
   canSearchRemote: boolean;
+  canUseYoutubeImport: boolean;
+  offline?: boolean;
   accessToken: string | null;
   serverUrl?: string;
   onOpenPodcast: (podcastId: string) => void;
   onOpenRemotePodcast: (result: PodcastDiscoveryResult) => void;
   onResolveFeedUrl: (feedUrl: string) => Promise<void>;
+  onImportYoutube: (url: string) => Promise<void>;
   onSubscribe: (podcastId: string) => void;
   onSubscribeRemote: (result: PodcastDiscoveryResult) => void;
-  onUnsubscribe: (podcastId: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [remoteResults, setRemoteResults] = useState<PodcastDiscoveryResult[]>([]);
@@ -44,24 +49,34 @@ export function SearchPage({
   const lastRemoteRequestAtRef = useRef(0);
   const subscribedFeedKeys = useMemo(() => new Set(podcasts.map((podcast) => normalizeFeedKey(podcast.feedUrl))), [podcasts]);
   const subscribedByFeedKey = useMemo(() => new Map(podcasts.map((podcast) => [normalizeFeedKey(podcast.feedUrl), podcast.id])), [podcasts]);
-  const localResults = useMemo(() => searchLocalPodcasts(cachedPodcasts, query), [cachedPodcasts, query]);
-  const localFeedKeys = useMemo(() => new Set(localResults.map((podcast) => normalizeFeedKey(podcast.feedUrl))), [localResults]);
+  const input = useMemo(() => classifyAddPodcastInput(query), [query]);
+  const visibleInput = input.kind === 'youtube-url' && !canUseYoutubeImport ? { kind: 'search' as const, value: input.value } : input;
+  const exactKnownPodcast = useMemo(() => {
+    if (visibleInput.kind !== 'rss-url' && visibleInput.kind !== 'youtube-url') return null;
+    return cachedPodcasts.find((podcast) =>
+      normalizeFeedKey(podcast.feedUrl) === normalizeFeedKey(visibleInput.value) ||
+      normalizeFeedKey(podcast.sourceUrl || '') === normalizeFeedKey(visibleInput.value)
+    ) || null;
+  }, [cachedPodcasts, visibleInput.kind, visibleInput.value]);
 
   const results = useMemo(() => {
-    const merged: SearchResult[] = localResults.map((podcast) => ({
-      id: podcast.id,
-      title: podcast.title,
-      author: podcast.author,
-      description: podcast.description,
-      imageUrl: podcast.imageUrl,
-      feedUrl: podcast.feedUrl,
-      categories: podcast.categories,
-      kind: 'local',
-      subscribed: subscribedFeedKeys.has(normalizeFeedKey(podcast.feedUrl)),
-      subscribedPodcastId: subscribedByFeedKey.get(normalizeFeedKey(podcast.feedUrl))
-    }));
+    const merged: SearchResult[] = [];
+    if (exactKnownPodcast) {
+      merged.push({
+        id: exactKnownPodcast.id,
+        title: exactKnownPodcast.title,
+        author: exactKnownPodcast.author,
+        description: exactKnownPodcast.description,
+        imageUrl: exactKnownPodcast.imageUrl,
+        feedUrl: exactKnownPodcast.feedUrl,
+        categories: exactKnownPodcast.categories,
+        kind: 'known',
+        subscribed: subscribedFeedKeys.has(normalizeFeedKey(exactKnownPodcast.feedUrl)),
+        subscribedPodcastId: subscribedByFeedKey.get(normalizeFeedKey(exactKnownPodcast.feedUrl))
+      });
+    }
     for (const podcast of remoteResults) {
-      if (localFeedKeys.has(normalizeFeedKey(podcast.feedUrl))) continue;
+      if (exactKnownPodcast && normalizeFeedKey(exactKnownPodcast.feedUrl) === normalizeFeedKey(podcast.feedUrl)) continue;
       merged.push({
         ...podcast,
         kind: 'remote',
@@ -70,22 +85,46 @@ export function SearchPage({
       });
     }
     return merged;
-  }, [localResults, remoteResults, localFeedKeys, subscribedFeedKeys, subscribedByFeedKey]);
+  }, [exactKnownPodcast, remoteResults, subscribedFeedKeys, subscribedByFeedKey]);
 
   useEffect(() => {
     let cancelled = false;
     const q = query.trim();
+    const classified = classifyAddPodcastInput(q);
     if (!q) {
       setRemoteResults([]);
       setRemoteLoading(false);
-      setRemoteStatus('');
+      setRemoteStatus(offline ? 'You are offline. Add Podcast search is unavailable until you reconnect.' : '');
       return;
     }
 
-    if (isFeedUrl(q)) {
+    if (offline) {
       setRemoteResults([]);
-      const cached = cachedPodcasts.some((podcast) => normalizeFeedKey(podcast.feedUrl) === normalizeFeedKey(q));
-      if (cached) {
+      setRemoteLoading(false);
+      setRemoteStatus('You are offline. Reconnect to search PodcastIndex, parse RSS feeds, or import YouTube sources.');
+      return;
+    }
+
+    if (classified.kind === 'youtube-url') {
+      setRemoteResults([]);
+      if (!canUseYoutubeImport) {
+        setRemoteLoading(false);
+        setRemoteStatus('');
+        return;
+      }
+      if (exactKnownPodcast) {
+        setRemoteLoading(false);
+        setRemoteStatus('This source is already in your library.');
+        return;
+      }
+      setRemoteLoading(false);
+      setRemoteStatus(`YouTube ${classified.youtubeKind || 'source'} ready to import.`);
+      return;
+    }
+
+    if (classified.kind === 'rss-url') {
+      setRemoteResults([]);
+      if (exactKnownPodcast) {
         setRemoteLoading(false);
         setRemoteStatus('Feed found in local cache.');
         return;
@@ -95,7 +134,7 @@ export function SearchPage({
       const timer = window.setTimeout(() => {
         void (async () => {
           try {
-            await onResolveFeedUrl(q);
+            await onResolveFeedUrl(classified.value);
             if (!cancelled) setRemoteStatus('Feed cached. Subscribe from the result below.');
           } catch (error) {
             if (!cancelled) setRemoteStatus(error instanceof Error ? error.message : 'Feed could not be parsed.');
@@ -110,7 +149,7 @@ export function SearchPage({
       };
     }
 
-    const remoteQueryKey = normalizeSearch(q);
+    const remoteQueryKey = normalizeSearch(classified.value);
     if (remoteQueryKey.length < MIN_REMOTE_QUERY_LENGTH) {
       setRemoteResults([]);
       setRemoteLoading(false);
@@ -143,7 +182,7 @@ export function SearchPage({
           if (waitMs) await delay(waitMs);
           if (cancelled) return;
           lastRemoteRequestAtRef.current = Date.now();
-          const discovered = await searchPodcastIndex(serverUrl, accessToken, q);
+          const discovered = await searchPodcastIndex(serverUrl, accessToken, classified.value);
           if (cancelled) return;
           remoteCacheRef.current.set(remoteQueryKey, discovered);
           setRemoteResults(discovered);
@@ -162,42 +201,78 @@ export function SearchPage({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [accessToken, cachedPodcasts, canSearchRemote, onResolveFeedUrl, query, serverUrl]);
+  }, [accessToken, canSearchRemote, canUseYoutubeImport, exactKnownPodcast, offline, onResolveFeedUrl, query, serverUrl]);
 
   return (
     <Panel title="Search" className="h-full">
       <div className="border-b border-bone/15 p-4">
         <div className="relative w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-bone" size={18} aria-hidden />
-          <Input className="h-14 w-full pl-10 text-lg" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search podcasts by name, creator, or private RSS URL" aria-label="Search podcasts" />
+          <Input
+            className="h-14 w-full pl-10 text-lg"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={offline ? 'Offline' : canUseYoutubeImport ? 'Add by podcast name, RSS feed URL, or YouTube URL' : 'Add by podcast name or RSS feed URL'}
+            aria-label="Add podcast search"
+          />
         </div>
       </div>
       <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">
+        {offline ? (
+          <article className="mb-4 flex items-start gap-3 rounded-eh border border-yellow/25 bg-yellow/10 p-3 text-yellow">
+            <WifiOff size={18} className="mt-0.5 shrink-0" aria-hidden />
+            <div className="min-w-0">
+              <h3 className="text-sm font-black uppercase tracking-[0.08em]">Offline</h3>
+              <p className="mt-1 text-sm leading-5 text-bone">Reconnect to add podcasts, parse RSS feeds, search PodcastIndex, or import YouTube sources.</p>
+            </div>
+          </article>
+        ) : null}
         {remoteLoading || remoteStatus ? (
           <p className="mb-4 flex items-center gap-2 text-sm text-bone" role="status">
             {remoteLoading ? <Loader2 size={15} className="animate-spin" aria-hidden /> : null}
             {remoteLoading ? remoteStatus || 'Searching...' : remoteStatus}
           </p>
         ) : null}
-        {!query.trim() ? <p className="text-sm text-bone">Search by podcast name, creator, or paste a private RSS feed URL. Local cached podcasts appear first.</p> : null}
+        {!query.trim() && !offline ? <p className="text-sm text-bone">{canUseYoutubeImport ? 'Search PodcastIndex, paste an RSS feed, or paste a YouTube video, playlist, channel, or podcast URL.' : 'Search PodcastIndex or paste an RSS feed URL.'}</p> : null}
+        {canUseYoutubeImport && input.kind === 'youtube-url' && query.trim() && !exactKnownPodcast ? (
+          <article className="mb-4 rounded-eh border border-bone/15 bg-surface/80 p-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-eh border border-bone/15 bg-canvas text-yellow">
+                <Youtube size={22} aria-hidden />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate text-base font-black text-cream">Import YouTube {input.youtubeKind || 'source'}</h3>
+                <p className="mt-1 text-sm text-bone">This creates a podcast-style feed first. Audio imports only when you choose an episode.</p>
+              </div>
+              <Button
+                variant="primary"
+                onClick={() => void onImportYoutube(input.value)}
+                disabled={!canUseYoutubeImport}
+                aria-label="Import YouTube audio"
+              >
+                <Plus size={16} aria-hidden />
+                Import
+              </Button>
+            </div>
+          </article>
+        ) : null}
         <div className="grid gap-3">
           {results.map((result) => (
             <PodcastSearchRow
               key={`${result.kind}:${result.id}`}
               result={result}
-              onOpen={() => result.kind === 'local' ? onOpenPodcast(result.id) : onOpenRemotePodcast(result)}
-              onSubscribe={() => result.kind === 'local' ? onSubscribe(result.id) : onSubscribeRemote(result)}
-              onUnsubscribe={() => onUnsubscribe(result.subscribedPodcastId || result.id)}
+              onOpen={() => result.kind === 'known' ? onOpenPodcast(result.subscribedPodcastId || result.id) : result.subscribed ? onOpenPodcast(result.subscribedPodcastId || result.id) : onOpenRemotePodcast(result)}
+              onSubscribe={() => result.kind === 'known' ? onSubscribe(result.id) : onSubscribeRemote(result)}
             />
           ))}
         </div>
-        {query.trim() && !results.length && !remoteLoading ? <p className="mt-8 text-sm text-bone">No podcasts matched yet.</p> : null}
+        {query.trim() && !offline && !results.length && !remoteLoading ? <p className="mt-8 text-sm text-bone">No podcasts matched yet.</p> : null}
       </div>
     </Panel>
   );
 }
 
-function PodcastSearchRow({ result, onOpen, onSubscribe, onUnsubscribe }: { result: SearchResult; onOpen: () => void; onSubscribe: () => void; onUnsubscribe: () => void }) {
+function PodcastSearchRow({ result, onOpen, onSubscribe }: { result: SearchResult; onOpen: () => void; onSubscribe: () => void }) {
   return (
     <article className="rounded-eh border border-bone/15 bg-surface/80 p-3 transition hover:border-yellow/35">
       <div className="flex min-w-0 gap-3">
@@ -208,14 +283,14 @@ function PodcastSearchRow({ result, onOpen, onSubscribe, onUnsubscribe }: { resu
             {result.author ? <span className="mt-1 block truncate text-sm font-bold text-yellow">{result.author}</span> : null}
             {result.description ? <span className="mt-2 line-clamp-2 text-sm leading-5 text-bone">{stripHtml(result.description)}</span> : null}
             <span className="mt-2 flex flex-wrap gap-1">
-              {result.kind === 'local' ? <Badge tone="teal">Cached</Badge> : <Badge tone="mauve">PodcastIndex</Badge>}
+              {result.kind === 'known' ? <Badge tone="teal">Known</Badge> : <Badge tone="mauve">PodcastIndex</Badge>}
               {result.categories?.slice(0, 4).map((category) => <Badge key={category} tone="yellow">{category}</Badge>)}
             </span>
           </span>
         </button>
         <div className="flex shrink-0 items-start">
           {result.subscribed ? (
-            <Button variant="secondary" onClick={onUnsubscribe} aria-label={`Unsubscribe from ${result.title}`}>
+            <Button variant="secondary" onClick={onOpen} aria-label={`Open subscribed podcast ${result.title}`}>
               <Check size={16} aria-hidden />
               Subscribed
             </Button>
@@ -231,51 +306,12 @@ function PodcastSearchRow({ result, onOpen, onSubscribe, onUnsubscribe }: { resu
   );
 }
 
-function searchLocalPodcasts(podcasts: CachedPodcast[], query: string): CachedPodcast[] {
-  const normalizedQuery = normalizeSearch(query);
-  if (!normalizedQuery) return [];
-  return podcasts
-    .map((podcast) => ({ podcast, score: scorePodcast(podcast, normalizedQuery) }))
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score || a.podcast.title.localeCompare(b.podcast.title))
-    .map(({ podcast }) => podcast);
-}
-
-function scorePodcast(podcast: CachedPodcast, query: string): number {
-  let score = 0;
-  score += scoreField(normalizeSearch(podcast.title), query, 1000);
-  score += scoreField(normalizeSearch(podcast.author || ''), query, 700);
-  score += scoreField(normalizeSearch(podcast.feedUrl), query, 650);
-  score += scoreField(normalizeSearch((podcast.categories || podcast.tags || []).join(' ')), query, 160);
-  score += scoreField(normalizeSearch(podcast.description || ''), query, 60);
-  return score;
-}
-
-function scoreField(field: string, query: string, weight: number): number {
-  if (!field) return 0;
-  if (field === query) return weight;
-  if (field.startsWith(query)) return Math.floor(weight * 0.9);
-  if (field.includes(query)) return Math.floor(weight * 0.7);
-  const tokens = query.split(' ').filter(Boolean);
-  const hits = tokens.filter((token) => field.includes(token)).length;
-  return hits ? Math.floor((hits / tokens.length) * weight * 0.5) : 0;
-}
-
 function normalizeSearch(value: string): string {
   return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
 function normalizeFeedKey(value: string): string {
   return value.trim().replace(/\/$/, '').toLowerCase();
-}
-
-function isFeedUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
 }
 
 function delay(ms: number): Promise<void> {
@@ -294,7 +330,7 @@ type SearchResult = {
   imageUrl?: string;
   feedUrl: string;
   categories?: string[];
-  kind: 'local' | 'remote';
+  kind: 'known' | 'remote';
   subscribed: boolean;
   subscribedPodcastId?: string;
 };

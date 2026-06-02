@@ -1,8 +1,9 @@
-import { LuPodcast as PodcastIcon } from 'react-icons/lu';
-import { useMemo } from 'react';
+import { LuPodcast as PodcastIcon, LuSearch as Search } from 'react-icons/lu';
+import { useMemo, useState } from 'react';
 import type { CachedPodcast, EpisodeWithState, Podcast } from '@/types/domain';
 import { EmptyState } from '@/components/EmptyState';
 import { Badge } from '@/components/ui/Badge';
+import { Input } from '@/components/ui/Input';
 import { Panel } from '@/components/ui/Panel';
 import { cn } from '@/lib/cn';
 
@@ -17,6 +18,7 @@ export function LibraryPage({
   episodes: EpisodeWithState[];
   onOpenPodcast: (podcastId: string) => void;
 }) {
+  const [query, setQuery] = useState('');
   const subscribedIds = useMemo(() => new Set(subscribedFeeds.map((feed) => feed.id)), [subscribedFeeds]);
   const stats = useMemo(() => {
     const map = new Map<string, { total: number; unplayed: number }>();
@@ -29,11 +31,27 @@ export function LibraryPage({
     return map;
   }, [episodes]);
   const sorted = useMemo(() => {
-    return [...podcasts].filter((podcast) => subscribedIds.has(podcast.id)).sort((a, b) => a.title.localeCompare(b.title));
-  }, [podcasts, subscribedIds]);
+    const normalizedQuery = normalizeSearch(query);
+    return [...podcasts]
+      .filter((podcast) => subscribedIds.has(podcast.id))
+      .filter((podcast) => !normalizedQuery || scorePodcast(podcast, normalizedQuery) > 0)
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [podcasts, query, subscribedIds]);
 
   return (
     <Panel title="Library" action={<Badge tone="yellow">{sorted.length} podcasts</Badge>} className="h-full">
+      <div className="border-b border-bone/15 p-4">
+        <div className="relative w-full">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-bone" size={18} aria-hidden />
+          <Input
+            className="h-12 w-full pl-10"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Filter subscribed podcasts"
+            aria-label="Filter subscribed podcasts"
+          />
+        </div>
+      </div>
       <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">
         {sorted.length ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-5">
@@ -49,12 +67,37 @@ export function LibraryPage({
           </div>
         ) : (
           <EmptyState icon={<PodcastIcon size={26} aria-hidden />} title="No subscribed podcasts yet">
-            Add a podcast from Search or paste an RSS feed in Inbox.
+            {query.trim() ? 'No subscribed podcasts match this filter.' : 'Add a podcast from Search or paste an RSS feed in Inbox.'}
           </EmptyState>
         )}
       </div>
     </Panel>
   );
+}
+
+function scorePodcast(podcast: CachedPodcast, query: string): number {
+  let score = 0;
+  score += scoreField(normalizeSearch(podcast.title), query, 1000);
+  score += scoreField(normalizeSearch(podcast.author || ''), query, 700);
+  score += scoreField(normalizeSearch(podcast.feedUrl), query, 650);
+  score += scoreField(normalizeSearch(podcast.sourceUrl || ''), query, 650);
+  score += scoreField(normalizeSearch((podcast.categories || podcast.tags || []).join(' ')), query, 160);
+  score += scoreField(normalizeSearch(podcast.description || ''), query, 60);
+  return score;
+}
+
+function scoreField(field: string, query: string, weight: number): number {
+  if (!field) return 0;
+  if (field === query) return weight;
+  if (field.startsWith(query)) return Math.floor(weight * 0.9);
+  if (field.includes(query)) return Math.floor(weight * 0.7);
+  const tokens = query.split(' ').filter(Boolean);
+  const hits = tokens.filter((token) => field.includes(token)).length;
+  return hits ? Math.floor((hits / tokens.length) * weight * 0.5) : 0;
+}
+
+function normalizeSearch(value: string): string {
+  return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
 function PodcastCard({ podcast, episodeCount, unplayedCount, onClick }: { podcast: CachedPodcast; episodeCount: number; unplayedCount: number; onClick: () => void }) {

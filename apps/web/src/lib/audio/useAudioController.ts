@@ -10,6 +10,7 @@ import { findAutoSkipTarget } from '../smartSkip/decisions';
 import { fetchSmartSkipSegmentMap, requestSmartSkipProcessing } from '../smartSkip/api';
 import { resolveSmartSkipSettings } from '../smartSkip/useSmartSkip';
 import type { SmartSkipEvent, SmartSkipSegmentMap } from '../smartSkip/types';
+import { getCachedSmartSkipSegmentMap } from '../smartSkip/cache';
 
 const RESUME_REWIND_AFTER_MS = 30_000;
 
@@ -133,7 +134,16 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     const resolved = effectiveSettings();
     const preference = podcastPreferences.find((item) => item.podcastId === episode.podcastId);
     const smartSkipSettings = resolveSmartSkipSettings(resolved, preference);
-    if (!smartSkipSettings.enabled || !resolved.serverUrl || !serverAccessToken) {
+    if (!smartSkipSettings.enabled) {
+      smartSkipMapRef.current = null;
+      return null;
+    }
+    const cached = await getCachedSmartSkipSegmentMap(episode);
+    if (cached) {
+      smartSkipMapRef.current = cached;
+      return cached;
+    }
+    if (!resolved.serverUrl || !serverAccessToken) {
       smartSkipMapRef.current = null;
       return null;
     }

@@ -1,5 +1,6 @@
 import type { EpisodeWithState } from '@/types/domain';
 import type { SmartSkipSegmentMap } from './types';
+import { saveSmartSkipSegmentMap } from './cache';
 
 export async function requestSmartSkipProcessing(episode: EpisodeWithState, serverUrl?: string, accessToken?: string | null, reason: 'nowPlaying' | 'queue' | 'inbox' | 'proactiveActiveUser' | 'backlog' = 'queue'): Promise<SmartSkipSegmentMap | null> {
   const base = serverUrl?.replace(/\/$/, '');
@@ -24,7 +25,9 @@ export async function requestSmartSkipProcessing(episode: EpisodeWithState, serv
   });
   if (!response.ok) return null;
   const payload = await response.json() as { segmentMap?: unknown };
-  return normalizeSegmentMap(payload.segmentMap);
+  const map = normalizeSegmentMap(payload.segmentMap);
+  if (map) await saveSmartSkipSegmentMap(map);
+  return map;
 }
 
 export async function fetchSmartSkipSegmentMap(episode: EpisodeWithState, serverUrl?: string, accessToken?: string | null): Promise<SmartSkipSegmentMap | null> {
@@ -35,7 +38,9 @@ export async function fetchSmartSkipSegmentMap(episode: EpisodeWithState, server
   const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) return null;
   const payload = await response.json() as { segmentMap?: unknown };
-  return normalizeSegmentMap(payload.segmentMap);
+  const map = normalizeSegmentMap(payload.segmentMap);
+  if (map) await saveSmartSkipSegmentMap(map);
+  return map;
 }
 
 function normalizeSegmentMap(raw: unknown): SmartSkipSegmentMap | null {

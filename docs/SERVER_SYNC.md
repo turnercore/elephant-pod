@@ -25,6 +25,7 @@ Server responsibilities:
 - Validate bearer tokens from the app session.
 - Use local Postgres for sync tables, public clip registry, and server-owned metadata.
 - Serve optional PodcastIndex discovery for logged-in users.
+- Serve optional YouTube import for logged-in users when `METUBE_BASE_URL` is configured.
 - Expose auth/sync endpoints (`/api/auth/*`, `/api/sync`) for client-mediated sign-in and merge.
 
 Auth/sync contract endpoints:
@@ -51,6 +52,8 @@ Current tables and entities:
 - `sync_tombstones`
 - `public_clips`
 
+Subscriptions and episodes include optional source metadata for RSS and YouTube synthetic sources: `source_type`, `source_url`, `external_id`, and episode `extraction_status`. Existing databases should apply `infra/postgres/migrations/20260602_youtube_sources.sql`.
+
 ## Conflict rules implemented
 
 | Data | Merge rule |
@@ -65,20 +68,40 @@ Current tables and entities:
 | Tombstones | Pulled tombstones delete matching local rows. |
 | Downloads | Not synced; every device owns its own downloaded files. |
 
-Download-related settings such as queued auto-download, inbox auto-download, delete-after-listen, Inbox sort direction, Wi-Fi-only downloads, and storage cap are part of the synced settings blob. Actual downloaded files, file paths, and local download-source tags remain local-only.
+Download-related settings such as queued auto-download, inbox auto-download, delete-after-listen, Inbox sort direction, Wi-Fi-only downloads, and storage cap are part of the synced settings blob. Actual downloaded files, file paths, local download-source tags, downloaded artwork blobs, and cached skip maps remain local-only.
+
+Downloaded episodes are the offline contract. When the browser reports offline, the app shows an offline banner and filters Library, Inbox, Queue, Downloads, and detail navigation to downloaded episodes and their parent podcasts. Episode state mutations still write to local IndexedDB while offline. When connectivity and a valid session return, the client runs sync again so played, progress, queue, Inbox, settings, and subscription changes can be pushed through the normal merge path.
 
 Listening stats are also local-only. They are profile facts on the device and can be exported in JSON backup, but they are not currently merged through Supabase/server sync.
 
-Silence maps are server-derived cache data. They are created through signed-in server endpoints, cached locally in IndexedDB, and not merged through Supabase/server sync.
+Silence maps are server-derived cache data. They are created through signed-in server endpoints, cached locally in IndexedDB, and not merged through Supabase/server sync. Downloading an episode attempts to cache the matching silence map so silence shortening can keep working offline when the map is ready.
 
-Smart Skip maps are server-owned cache data. They require signed-in server routes, are stored in Smart Skip tables, and are not merged through Supabase/server sync. Local-only Tauri playback, queueing, inbox triage, settings, and downloads must continue without them.
+Smart Skip maps are server-owned cache data. They require signed-in server routes, are stored in server Smart Skip tables, cached locally in IndexedDB when ready, and are not merged through Supabase/server sync. Downloading an episode attempts to cache the matching Smart Skip map so Smart Skip can keep working offline when the map is ready. Local-only Tauri playback, queueing, inbox triage, settings, and downloads must continue without server Smart Skip access.
 
-## Search contract
+## Search and Add Podcast contract
 
-- Local search is available without authentication in Tauri/native local-only mode.
-- Browser/web runtime requires authentication before local or remote search UI is available.
-- Local search covers on-device feed and episode metadata (`title`, `description`, `podcast` fields).
+- Library filtering is local and covers subscribed podcast title, author, tags, description, feed URL, and source URL.
+- The Add Podcast omnibar accepts RSS URLs, PodcastIndex search text, and YouTube URLs.
 - PodcastIndex discovery/search is only available when authenticated and runs through server routes.
+- YouTube import is only available when authenticated and when `/api/capabilities` reports `youtubeImport.enabled=true`.
+- The server never searches YouTube for plain text queries. Users must paste a YouTube video, playlist, channel, or podcast URL.
+- YouTube video URLs create one synthetic episode quickly under the parent channel. YouTube playlist, channel, and podcast playlist URLs create refreshable synthetic podcasts. A real RSS feed remains the preferred import path when available.
+
+## YouTube import
+
+`POST /api/youtube/import` and `POST /api/youtube/sources/:id/refresh` require `Authorization: Bearer <token>` and a configured MeTube instance. `GET /api/capabilities` exposes only whether import is enabled; it does not expose MeTube URLs or tokens to the client.
+
+YouTube source import is metadata-first. It creates a fake podcast feed and normal local-first podcast/episode rows without queueing audio extraction. The app server exposes the fake RSS-style feed as `/api/youtube/feed.xml?url=...` so other podcast clients can consume it.
+
+Server-only env:
+
+- `METUBE_BASE_URL`
+- `METUBE_AUDIO_PUBLIC_BASE_URL`
+- `METUBE_API_TOKEN`
+- `METUBE_AUDIO_FORMAT`
+- `METUBE_AUDIO_QUALITY`
+
+The app server fetches lightweight YouTube text/image metadata during source import and refresh. It does not queue yt-dlp audio extraction during feed creation or daily metadata refresh. Audio extraction is user-triggered through `POST /api/youtube/episodes/:id/extract`, which calls MeTube's HTTP API. Until extraction is ready, episode controls show an import action instead of trying to play unavailable audio. Final playback uses stable `/media/youtube/:episodeId.mp3` URLs that redirect to completed MeTube audio. Downloaded audio files and native file paths remain device-local after a client chooses to download an episode.
 
 ## Silence maps
 
@@ -90,7 +113,11 @@ The server uses ffmpeg `silencedetect` and server env defaults to create map seg
 
 `POST /api/smart-skip/process`, `GET /api/smart-skip/jobs/:id`, and `GET /api/smart-skip/episodes/:episodeId/segment-map` require `Authorization: Bearer <token>` by default.
 
-The server stores media versions, transcripts, segment maps, segments, and jobs in local Postgres when `DATABASE_URL` is configured. Existing databases should apply `infra/postgres/migrations/20260601_smart_skip_v1.sql` before enabling Smart Skip. If no database is configured, the server keeps an in-memory fallback for local development only. Worker services are configured with `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; local compose mocks validate integration only, while production needs real Whisper and OpenAI-backed segmenter endpoints.
+The server stores media versions, transcripts, segment maps, segments, jobs, and external batch task metadata in local Postgres when `DATABASE_URL` is configured. Existing databases should apply `infra/postgres/migrations/20260601_smart_skip_v1.sql` before enabling Smart Skip. If no database is configured, the server keeps an in-memory fallback for local development only. Worker services are configured with `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; local compose mocks validate integration only, while production needs real Whisper and a real segmenter endpoint. `SMART_SKIP_WHISPER_FORMAT=contract` calls the repo JSON `/v1/transcribe` worker contract, while `SMART_SKIP_WHISPER_FORMAT=openai` calls multipart `/v1/audio/transcriptions` for OpenAI-compatible Whisper servers. This iteration's segmenter backend is `openai_batch`: pending batches are stored in `smart_skip_external_tasks`, jobs are released with `stage='waiting-for-segment-batch'`, and `next_attempt_at` controls the next poll, defaulting to 12 hours. The authenticated `POST /api/smart-skip/process-now` route is a QA hook that uses the same request body as `/api/smart-skip/process` but forces immediate segmenting without submitting an OpenAI Batch job.
+
+For scripted QA, the server can also accept `SERVER_API_TOKEN` as a bearer token. This token is server-only and must not be shipped in browser or Tauri bundles.
+
+Per-show Smart Skip preference overrides sync through `podcast_preferences` as nullable booleans. `NULL` means "use the global app setting"; true or false is an explicit show override. The synced Smart Skip categories are sponsors/ads, self-promo, intros, outros, silence, and include-soft-matches. Existing databases should apply `infra/postgres/migrations/20260602_smart_skip_preferences.sql` to sync these overrides.
 
 ## Public clips
 

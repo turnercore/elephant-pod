@@ -23,6 +23,7 @@ Express app server
   - ffmpeg rendered clip files
   - ffmpeg silence-shortening jobs
   - authenticated API boundary for Supabase sync and PodcastIndex discovery
+  - optional MeTube-backed YouTube audio import
 
 Self-hosted Supabase
   - optional accounts/auth
@@ -91,7 +92,9 @@ The server is required for the hosted browser build because that runtime is acco
 - Rendered MP3 clip files via ffmpeg.
 - Signed-in silence-map analysis jobs via ffmpeg.
 - Signed-in Smart Skip metadata jobs for media versions, transcripts, segment maps, segments, durable leasing, and worker orchestration.
-- Sync/search mediation layer (server validates auth and calls Supabase/PodcastIndex)
+- Sync/search/import mediation layer (server validates auth and calls Supabase/PodcastIndex/MeTube)
+
+YouTube import is optional and disabled unless `METUBE_BASE_URL` is configured. Elephant Pod owns YouTube sources as synthetic podcast rows (`youtube-channel`, `youtube-playlist`, or `youtube-ad-hoc`) plus normal episode rows and a fake RSS-style feed URL. Source import and refresh fetch metadata only. MeTube/yt-dlp extracts audio only after a user explicitly imports audio for an episode; final episode playback uses stable app-server `/media/youtube/:id.mp3` URLs that redirect to completed server audio.
 
 Future server jobs should include:
 
@@ -119,6 +122,7 @@ Client ownership:
 Authenticated discovery:
 
 - PodcastIndex-backed discovery is available to logged-in users via the server, with `PODCASTINDEX_*` keys kept server-only.
+- YouTube URL import is available to logged-in users only when the server advertises the YouTube import capability. YouTube podcast URLs are treated as YouTube playlist sources unless an actual RSS feed is provided or found through podcast discovery.
 
 Conflict rule:
 

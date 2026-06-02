@@ -1,7 +1,7 @@
 import { LuArchiveX as ArchiveX, LuCheck as Check, LuDownload as Download, LuEllipsis as MoreHorizontal, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuStar as Star } from 'react-icons/lu';
 import { useRef, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
-import { formatDate, formatDuration } from '@/lib/dates';
+import { formatDuration, formatEpisodeReleaseDate } from '@/lib/dates';
 import { Badge } from '../ui/Badge';
 import { IconButton } from '../ui/IconButton';
 
@@ -44,8 +44,9 @@ export function EpisodeCard({
   const startX = useRef<number | null>(null);
   const artworkUrl = episode.imageUrl || podcastImageUrl;
   const isCurrentEpisode = currentEpisodeId === episode.id;
-  const playLabel = isCurrentEpisode && isCurrentPlaying ? `Pause ${episode.title}` : `Play ${episode.title}`;
-  const PlayIcon = isCurrentEpisode && isCurrentPlaying ? Pause : Play;
+  const needsYoutubeImport = episode.sourceType === 'youtube' && episode.extractionStatus !== 'ready';
+  const playLabel = needsYoutubeImport ? `Import YouTube audio for ${episode.title}` : isCurrentEpisode && isCurrentPlaying ? `Pause ${episode.title}` : `Play ${episode.title}`;
+  const PlayIcon = needsYoutubeImport ? Download : isCurrentEpisode && isCurrentPlaying ? Pause : Play;
   const progress = episode.durationSec ? Math.min(100, ((episode.state.progressSec || 0) / episode.durationSec) * 100) : 0;
   const badges = [
     episode.state.played ? 'Played' : 'New',
@@ -91,7 +92,7 @@ export function EpisodeCard({
           <button type="button" onClick={() => onOpenEpisode?.(episode)} className="block max-w-full truncate text-left text-sm font-black leading-tight text-cream hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow md:text-[0.95rem]" aria-label={`Open ${episode.title}`} title={`Open ${episode.title}`}>
             {episode.title}
           </button>
-          <p className="mt-0.5 truncate text-xs text-bone">{formatDate(episode.publishedAt)} · {formatDuration(episode.durationSec)}</p>
+          <p className="mt-0.5 truncate text-xs text-bone">{formatEpisodeReleaseDate(episode.publishedAt)} · {formatDuration(episode.durationSec)}</p>
           <button
             type="button"
             onClick={() => onOpenPodcast?.(episode.podcastId)}

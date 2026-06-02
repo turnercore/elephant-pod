@@ -6,6 +6,9 @@ export type SortDirection = 'newest' | 'oldest';
 export type ClipRenderStatus = 'local-only' | 'queued' | 'pending' | 'rendering' | 'ready' | 'rendered' | 'failed' | 'range-link' | 'time-range-only';
 export type DownloadBackend = 'browser-cache' | 'tauri-filesystem';
 export type DownloadSource = 'manual' | 'queue' | 'inbox';
+export type PodcastSourceType = 'rss' | 'youtube-channel' | 'youtube-playlist' | 'youtube-ad-hoc';
+export type EpisodeSourceType = 'rss' | 'youtube';
+export type ExtractionStatus = 'none' | 'queued' | 'processing' | 'ready' | 'failed';
 // `web-audio` is retained for older backups; browser playback no longer routes remote podcast media through Web Audio.
 export type SilenceShorteningMode = 'off' | 'web-audio' | 'server-ffmpeg' | 'native';
 
@@ -18,6 +21,9 @@ export interface Podcast {
   feedUrl: string;
   websiteUrl?: string;
   tags: string[];
+  sourceType?: PodcastSourceType;
+  sourceUrl?: string;
+  externalId?: string;
   lastRefreshedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -39,12 +45,16 @@ export interface PodcastPreference {
   skipOutroSec?: number;
   silenceShortening?: boolean;
   smartSkipEnabled?: boolean;
+  smartSkipCommercials?: boolean;
   smartSkipAds?: boolean;
   smartSkipSponsors?: boolean;
   smartSkipIntro?: boolean;
   smartSkipOutro?: boolean;
   smartSkipNetworkPromos?: boolean;
   smartSkipSelfPromos?: boolean;
+  smartSkipSilence?: boolean;
+  smartSkipIncludeSoftMatches?: boolean;
+  smartSkipSoftSkips?: boolean;
   sortDirection: SortDirection;
   addNewEpisodesToInbox: boolean;
   updatedAt: string;
@@ -74,6 +84,10 @@ export interface Episode {
   chapters: Chapter[];
   guid: string;
   enclosureLength?: number;
+  sourceType?: EpisodeSourceType;
+  sourceUrl?: string;
+  externalId?: string;
+  extractionStatus?: ExtractionStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -176,6 +190,7 @@ export interface AppSettings {
   silenceMinimumDurationSec?: number;
   silenceBoostRate: number;
   smartSkipEnabled: boolean;
+  smartSkipCommercials?: boolean;
   smartSkipAds: boolean;
   smartSkipSponsors: boolean;
   smartSkipIntros: boolean;
@@ -183,6 +198,8 @@ export interface AppSettings {
   smartSkipNetworkPromos: boolean;
   smartSkipSelfPromos: boolean;
   smartSkipSilence: boolean;
+  smartSkipIncludeSoftMatches?: boolean;
+  smartSkipSoftSkips: boolean;
   smartSkipSoftPrompt: boolean;
   smartSkipUseServerMedia: boolean;
   nativeAudioPreferred: boolean;
@@ -214,6 +231,24 @@ export interface ListeningStats {
   speedSavedSec: number;
   silenceSavedSec: number;
   byPodcast: Record<string, PodcastListeningStats>;
+  updatedAt: string;
+}
+
+export interface ArtworkCacheEntry {
+  url: string;
+  blob: Blob;
+  mimeType?: string;
+  bytes?: number;
+  cachedAt: string;
+  updatedAt: string;
+}
+
+export interface SmartSkipMapCacheEntry {
+  id: string;
+  episodeId: string;
+  audioUrl: string;
+  map: unknown;
+  cachedAt: string;
   updatedAt: string;
 }
 

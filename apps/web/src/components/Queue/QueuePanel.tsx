@@ -1,5 +1,6 @@
 import { LuArrowDown as ArrowDown, LuArrowUp as ArrowUp, LuListMusic as ListMusic, LuPlay as Play, LuTrash2 as Trash2 } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
+import { formatEpisodeReleaseDate } from '@/lib/dates';
 import { EmptyState } from '../EmptyState';
 import { IconButton } from '../ui/IconButton';
 
@@ -26,7 +27,7 @@ export function QueuePanel({ episodes, onPlay, onMove, onRemove }: QueuePanelPro
           <div className="grid h-9 w-9 place-items-center rounded-eh border border-mauve/45 bg-mauve/20 text-sm font-black text-cream">{index + 1}</div>
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-sm font-black text-cream">{episode.title}</h3>
-            <p className="truncate text-xs text-bone">{episode.podcastTitle}</p>
+            <p className="truncate text-xs text-bone">{episode.podcastTitle} · {formatEpisodeReleaseDate(episode.publishedAt)}</p>
           </div>
           <div className="flex gap-2">
             <IconButton label={`Play ${episode.title}`} onClick={() => onPlay(episode)}>

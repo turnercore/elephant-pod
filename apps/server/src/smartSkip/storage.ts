@@ -1,12 +1,13 @@
 import { hasLocalDatabase, queryDatabase, withDatabaseTransaction } from '../database.js';
 import type { SmartSkipMediaVersion } from './mediaVersion.js';
-import type { SmartSkipJob, SmartSkipSegmentMap, SmartSkipTranscript } from './types.js';
+import type { SmartSkipExternalTask, SmartSkipExternalTaskKind, SmartSkipJob, SmartSkipSegmentMap, SmartSkipTranscript } from './types.js';
 
 const memory = {
   mediaVersions: new Map<string, SmartSkipMediaVersion>(),
   jobs: new Map<string, SmartSkipJob>(),
   maps: new Map<string, SmartSkipSegmentMap>(),
-  transcripts: new Map<string, SmartSkipTranscript>()
+  transcripts: new Map<string, SmartSkipTranscript>(),
+  externalTasks: new Map<string, SmartSkipExternalTask>()
 };
 
 export async function upsertMediaVersion(mediaVersion: SmartSkipMediaVersion): Promise<void> {
@@ -284,6 +285,62 @@ export async function upsertSegmentMap(map: SmartSkipSegmentMap): Promise<void> 
   memory.maps.set(mapId, map);
 }
 
+export async function upsertExternalTask(task: SmartSkipExternalTask): Promise<void> {
+  if (!hasLocalDatabase()) {
+    memory.externalTasks.set(task.id, task);
+    return;
+  }
+  await queryDatabase(
+    `insert into public.smart_skip_external_tasks
+      (id, job_id, kind, provider, external_id, status, input_file_id, output_file_id, error_file_id,
+       result_json, error, submitted_at, last_checked_at, next_check_at, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     on conflict (job_id, kind) do update set
+      provider = excluded.provider,
+      external_id = excluded.external_id,
+      status = excluded.status,
+      input_file_id = excluded.input_file_id,
+      output_file_id = excluded.output_file_id,
+      error_file_id = excluded.error_file_id,
+      result_json = excluded.result_json,
+      error = excluded.error,
+      submitted_at = excluded.submitted_at,
+      last_checked_at = excluded.last_checked_at,
+      next_check_at = excluded.next_check_at,
+      updated_at = excluded.updated_at`,
+    [
+      task.id,
+      task.jobId,
+      task.kind,
+      task.provider,
+      task.externalId,
+      task.status,
+      task.inputFileId ?? null,
+      task.outputFileId ?? null,
+      task.errorFileId ?? null,
+      task.resultJson === undefined ? null : JSON.stringify(task.resultJson),
+      task.error ?? null,
+      task.submittedAt ?? null,
+      task.lastCheckedAt ?? null,
+      task.nextCheckAt ?? null,
+      task.createdAt,
+      task.updatedAt
+    ]
+  );
+  memory.externalTasks.set(task.id, task);
+}
+
+export async function getExternalTaskForJob(jobId: string, kind: SmartSkipExternalTaskKind): Promise<SmartSkipExternalTask | null> {
+  const cached = [...memory.externalTasks.values()].find((task) => task.jobId === jobId && task.kind === kind);
+  if (cached) return cached;
+  const rows = await queryDatabase<Record<string, unknown>>(
+    `select * from public.smart_skip_external_tasks where job_id = $1 and kind = $2 limit 1`,
+    [jobId, kind]
+  );
+  const row = rows?.[0];
+  return row ? rowToExternalTask(row) : null;
+}
+
 export async function upsertTranscript(transcript: SmartSkipTranscript): Promise<void> {
   if (!hasLocalDatabase()) {
     memory.transcripts.set(transcript.mediaVersionId, transcript);
@@ -293,7 +350,10 @@ export async function upsertTranscript(transcript: SmartSkipTranscript): Promise
     `insert into public.smart_skip_transcripts
       (id, media_version_id, provider, model, language, transcript_json, plain_text)
      values ($1,$2,$3,$4,$5,$6,$7)
-     on conflict (media_version_id, provider, model) do update set
+     on conflict (id) do update set
+      media_version_id = excluded.media_version_id,
+      provider = excluded.provider,
+      model = excluded.model,
       language = excluded.language,
       transcript_json = excluded.transcript_json,
       plain_text = excluded.plain_text`,
@@ -308,6 +368,23 @@ export async function upsertTranscript(transcript: SmartSkipTranscript): Promise
     ]
   );
   memory.transcripts.set(transcript.mediaVersionId, transcript);
+}
+
+export async function getTranscript(mediaVersionId: string): Promise<SmartSkipTranscript | null> {
+  const cached = memory.transcripts.get(mediaVersionId);
+  if (cached) return cached;
+  const rows = await queryDatabase<Record<string, unknown>>(
+    `select transcript_json from public.smart_skip_transcripts
+     where media_version_id = $1
+     order by created_at desc
+     limit 1`,
+    [mediaVersionId]
+  );
+  const value = rows?.[0]?.transcript_json;
+  if (!value) return null;
+  const transcript = value as SmartSkipTranscript;
+  memory.transcripts.set(mediaVersionId, transcript);
+  return transcript;
 }
 
 function rowToJob(row: Record<string, unknown>): SmartSkipJob {
@@ -326,6 +403,28 @@ function rowToJob(row: Record<string, unknown>): SmartSkipJob {
     workerId: typeof row.worker_id === 'string' ? row.worker_id : undefined,
     nextAttemptAt: row.next_attempt_at ? String(row.next_attempt_at) : undefined,
     lastHeartbeatAt: row.last_heartbeat_at ? String(row.last_heartbeat_at) : undefined,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+function rowToExternalTask(row: Record<string, unknown>): SmartSkipExternalTask {
+  const resultJson = row.result_json;
+  return {
+    id: String(row.id),
+    jobId: String(row.job_id),
+    kind: row.kind as SmartSkipExternalTask['kind'],
+    provider: String(row.provider),
+    externalId: String(row.external_id),
+    status: row.status as SmartSkipExternalTask['status'],
+    inputFileId: typeof row.input_file_id === 'string' ? row.input_file_id : undefined,
+    outputFileId: typeof row.output_file_id === 'string' ? row.output_file_id : undefined,
+    errorFileId: typeof row.error_file_id === 'string' ? row.error_file_id : undefined,
+    resultJson: resultJson === null || resultJson === undefined ? undefined : resultJson,
+    error: typeof row.error === 'string' ? row.error : undefined,
+    submittedAt: row.submitted_at ? String(row.submitted_at) : undefined,
+    lastCheckedAt: row.last_checked_at ? String(row.last_checked_at) : undefined,
+    nextCheckAt: row.next_check_at ? String(row.next_check_at) : undefined,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };

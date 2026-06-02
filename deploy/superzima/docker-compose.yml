@@ -41,13 +41,22 @@ services:
       GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI}
       CLIP_RENDER_ENABLED: "true"
       SILENCE_RENDER_ENABLED: "true"
+      METUBE_BASE_URL: ${METUBE_BASE_URL}
+      METUBE_AUDIO_PUBLIC_BASE_URL: ${METUBE_AUDIO_PUBLIC_BASE_URL}
+      METUBE_API_TOKEN: ${METUBE_API_TOKEN}
+      METUBE_AUDIO_FORMAT: ${METUBE_AUDIO_FORMAT:-mp3}
+      METUBE_AUDIO_QUALITY: ${METUBE_AUDIO_QUALITY:-audio}
       # Superzima can run the app and segmenter, but real processing should
       # override SMART_SKIP_WHISPER_BASE_URL to an external GPU/Mac host.
       SMART_SKIP_ENABLED: ${SMART_SKIP_ENABLED:-false}
       SMART_SKIP_REQUIRE_AUTH: "true"
       SMART_SKIP_WHISPER_BASE_URL: ${SMART_SKIP_WHISPER_BASE_URL:-http://whisper-worker:8001}
-      SMART_SKIP_SEGMENTER_BASE_URL: ${SMART_SKIP_SEGMENTER_BASE_URL:-http://codex-segmenter:8002}
+      SMART_SKIP_WHISPER_FORMAT: ${SMART_SKIP_WHISPER_FORMAT:-contract}
+      SMART_SKIP_WHISPER_MODEL: ${SMART_SKIP_WHISPER_MODEL:-large-v3-turbo}
+      SMART_SKIP_SEGMENTER_BASE_URL: ${SMART_SKIP_SEGMENTER_BASE_URL:-http://openai-batch-segmenter:8002}
       SMART_SKIP_SEGMENTER_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
+      SMART_SKIP_SEGMENTER_BATCH_ENABLED: ${SMART_SKIP_SEGMENTER_BATCH_ENABLED:-true}
+      SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS: ${SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS:-12}
       SMART_SKIP_PROCESSING_CONCURRENCY: "1"
       FFMPEG_PATH: ffmpeg
     ports:
@@ -60,16 +69,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  codex-segmenter:
+  openai-batch-segmenter:
     image: forge.elephanthand.com/elephant-hand-games/elephant-pod-segmenter:latest
     environment:
-      CODEX_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
+      SEGMENTER_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
+      # Segmenter backend options: "none" disables real segmenting;
+      # "openai_batch" uses OpenAI Batch API against /v1/responses.
+      SEGMENTER_BACKEND: ${SEGMENTER_BACKEND:-openai_batch}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      CODEX_HOME: /codex-home
       MOCK_SEGMENTER: ${MOCK_SEGMENTER:-true}
-    volumes:
-      - codex_home:/codex-home
     profiles: ["smart-skip"]
 
   whisper-worker:
@@ -84,4 +93,3 @@ services:
 volumes:
   elephant_pod_postgres:
   elephant_pod_data:
-  codex_home:

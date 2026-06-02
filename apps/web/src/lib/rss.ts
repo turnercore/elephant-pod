@@ -83,6 +83,8 @@ export function parseRssXml(xml: string, feedUrl: string): ParsedFeedResult {
     feedUrl,
     websiteUrl: text(channel.link),
     tags: [],
+    sourceType: 'rss',
+    sourceUrl: feedUrl,
     createdAt: timestamp,
     updatedAt: timestamp,
     lastRefreshedAt: timestamp
@@ -113,6 +115,9 @@ export function parseRssXml(xml: string, feedUrl: string): ParsedFeedResult {
       chapters: [],
       guid,
       enclosureLength: Number(enclosure?.['@_length'] || 0) || undefined,
+      sourceType: 'rss' as const,
+      sourceUrl: feedUrl,
+      extractionStatus: 'none' as const,
       createdAt: timestamp,
       updatedAt: timestamp
     };

@@ -46,13 +46,16 @@ export interface SmartSkipSegmentMap {
 
 export interface ResolvedSmartSkipSettings {
   enabled: boolean;
-  ads: boolean;
-  sponsors: boolean;
+  commercials: boolean;
+  ads?: boolean;
+  sponsors?: boolean;
   intros: boolean;
   outros: boolean;
-  networkPromos: boolean;
+  networkPromos?: boolean;
   selfPromos: boolean;
   silence: boolean;
+  includeSoftMatches: boolean;
+  softSkips?: boolean;
   softPrompt: boolean;
 }
 

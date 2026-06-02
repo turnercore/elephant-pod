@@ -1,6 +1,6 @@
 import { LuArrowDownWideNarrow as ArrowDownWideNarrow, LuArrowUpWideNarrow as ArrowUpWideNarrow, LuCheck as Check, LuCheckCheck as CheckCheck, LuInbox as Inbox, LuRefreshCw as RefreshCw, LuRotateCcw as RotateCcw, LuSettings2 as Settings2, LuX as X } from 'react-icons/lu';
 import { type ReactNode, useMemo, useState } from 'react';
-import type { CachedPodcast, EpisodeWithState, PodcastPreference } from '@/types/domain';
+import type { AppSettings, CachedPodcast, EpisodeWithState, PodcastPreference } from '@/types/domain';
 import { EpisodeList } from '@/components/Episodes/EpisodeList';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +17,7 @@ export function PodcastDetailPage({
   subscribed,
   episodes,
   preference,
+  smartSkipDefaults,
   onSubscribe,
   onUnsubscribe,
   onRefresh,
@@ -32,6 +33,7 @@ export function PodcastDetailPage({
   subscribed: boolean;
   episodes: EpisodeWithState[];
   preference: PodcastPreference;
+  smartSkipDefaults: Pick<AppSettings, 'smartSkipEnabled' | 'smartSkipCommercials' | 'smartSkipIntros' | 'smartSkipOutros' | 'smartSkipSelfPromos' | 'smartSkipSilence' | 'smartSkipIncludeSoftMatches'>;
   onSubscribe: () => void;
   onUnsubscribe: () => void;
   onRefresh: () => void;
@@ -153,13 +155,13 @@ export function PodcastDetailPage({
                 {canUseSilenceShortening ? <Switch checked={preference.silenceShortening ?? false} onCheckedChange={(checked) => onPreferenceChange({ ...preference, silenceShortening: checked })} label="Skip silence" /> : null}
                 {canUseSmartSkip ? (
                   <>
-                    <Switch checked={preference.smartSkipEnabled ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipEnabled: checked })} label="Smart Skip for this podcast" />
-                    <Switch checked={preference.smartSkipSponsors ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSponsors: checked })} label="Skip sponsors" />
-                    <Switch checked={preference.smartSkipAds ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipAds: checked })} label="Skip ads" />
-                    <Switch checked={preference.smartSkipIntro ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipIntro: checked })} label="Allow intro skips" />
-                    <Switch checked={preference.smartSkipOutro ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipOutro: checked })} label="Allow outro skips" />
-                    <Switch checked={preference.smartSkipNetworkPromos ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipNetworkPromos: checked })} label="Skip network promos" />
-                    <Switch checked={preference.smartSkipSelfPromos ?? true} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSelfPromos: checked })} label="Skip self promos" />
+                    <Switch checked={preference.smartSkipEnabled ?? smartSkipDefaults.smartSkipEnabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipEnabled: checked })} label="Smart Skip for this podcast" />
+                    <Switch checked={Boolean(preference.smartSkipCommercials ?? smartSkipDefaults.smartSkipCommercials)} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipCommercials: checked })} label="Skip sponsors/ads" />
+                    <Switch checked={preference.smartSkipIntro ?? smartSkipDefaults.smartSkipIntros} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipIntro: checked })} label="Skip intros" />
+                    <Switch checked={preference.smartSkipOutro ?? smartSkipDefaults.smartSkipOutros} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipOutro: checked })} label="Skip outros" />
+                    <Switch checked={preference.smartSkipSelfPromos ?? smartSkipDefaults.smartSkipSelfPromos} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSelfPromos: checked })} label="Skip self-promo" />
+                    <Switch checked={preference.smartSkipSilence ?? smartSkipDefaults.smartSkipSilence} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSilence: checked })} label="Skip silence" />
+                    <Switch checked={Boolean(preference.smartSkipIncludeSoftMatches ?? smartSkipDefaults.smartSkipIncludeSoftMatches)} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipIncludeSoftMatches: checked })} label="Include soft matches" />
                   </>
                 ) : null}
               </div>

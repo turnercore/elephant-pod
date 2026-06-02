@@ -3,6 +3,7 @@ import { nowIso } from './dates';
 import { stableId } from './ids';
 
 const createdAt = '2026-05-27T08:00:00.000Z';
+const defaultServerUrl = (import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL || '';
 
 export const defaultSettings: AppSettings = {
   id: 'local',
@@ -25,6 +26,7 @@ export const defaultSettings: AppSettings = {
   silenceMinMs: 350,
   silenceBoostRate: 2.15,
   smartSkipEnabled: true,
+  smartSkipCommercials: true,
   smartSkipAds: true,
   smartSkipSponsors: true,
   smartSkipIntros: false,
@@ -32,10 +34,12 @@ export const defaultSettings: AppSettings = {
   smartSkipNetworkPromos: true,
   smartSkipSelfPromos: false,
   smartSkipSilence: false,
+  smartSkipIncludeSoftMatches: false,
+  smartSkipSoftSkips: false,
   smartSkipSoftPrompt: true,
   smartSkipUseServerMedia: true,
   nativeAudioPreferred: true,
-  serverUrl: import.meta.env.VITE_API_BASE_URL || '',
+  serverUrl: defaultServerUrl,
   theme: 'dark',
   updatedAt: nowIso()
 };

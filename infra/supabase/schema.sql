@@ -14,11 +14,15 @@ create table if not exists public.subscriptions (
   feed_url text not null,
   website_url text,
   tags text[] not null default '{}',
+  source_type text not null default 'rss',
+  source_url text,
+  external_id text,
   last_refreshed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(user_id, local_id),
-  unique(user_id, feed_url)
+  unique(user_id, feed_url),
+  check (source_type in ('rss', 'youtube-channel', 'youtube-playlist', 'youtube-ad-hoc'))
 );
 
 create table if not exists public.episodes (
@@ -38,9 +42,15 @@ create table if not exists public.episodes (
   chapters jsonb not null default '[]'::jsonb,
   guid text not null,
   enclosure_length bigint,
+  source_type text not null default 'rss',
+  source_url text,
+  external_id text,
+  extraction_status text not null default 'none',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique(user_id, local_id)
+  unique(user_id, local_id),
+  check (source_type in ('rss', 'youtube')),
+  check (extraction_status in ('none', 'queued', 'processing', 'ready', 'failed'))
 );
 
 create table if not exists public.episode_states (
@@ -65,6 +75,21 @@ create table if not exists public.episode_states (
   check (inbox_state in ('new', 'dismissed', 'archived')),
   check (inbox_position is null or queue_position is null)
 );
+
+alter table public.subscriptions add column if not exists source_type text not null default 'rss';
+alter table public.subscriptions add column if not exists source_url text;
+alter table public.subscriptions add column if not exists external_id text;
+alter table public.subscriptions drop constraint if exists subscriptions_source_type_check;
+alter table public.subscriptions add constraint subscriptions_source_type_check check (source_type in ('rss', 'youtube-channel', 'youtube-playlist', 'youtube-ad-hoc'));
+
+alter table public.episodes add column if not exists source_type text not null default 'rss';
+alter table public.episodes add column if not exists source_url text;
+alter table public.episodes add column if not exists external_id text;
+alter table public.episodes add column if not exists extraction_status text not null default 'none';
+alter table public.episodes drop constraint if exists episodes_source_type_check;
+alter table public.episodes add constraint episodes_source_type_check check (source_type in ('rss', 'youtube'));
+alter table public.episodes drop constraint if exists episodes_extraction_status_check;
+alter table public.episodes add constraint episodes_extraction_status_check check (extraction_status in ('none', 'queued', 'processing', 'ready', 'failed'));
 
 alter table public.episode_states add column if not exists inbox_position integer;
 alter table public.episode_states add column if not exists last_played_at timestamptz;
@@ -190,7 +215,9 @@ create policy "tombstones are owned by user" on public.sync_tombstones for all u
 create policy "public clips are readable" on public.public_clips for select using (true);
 
 create index if not exists idx_subscriptions_user_updated on public.subscriptions(user_id, updated_at desc);
+create index if not exists idx_subscriptions_user_source on public.subscriptions(user_id, source_type, external_id);
 create index if not exists idx_episodes_user_podcast on public.episodes(user_id, podcast_local_id, published_at desc);
+create index if not exists idx_episodes_user_source on public.episodes(user_id, source_type, external_id);
 create index if not exists idx_episode_states_queue on public.episode_states(user_id, queue_position) where queue_position is not null;
 create index if not exists idx_episode_states_inbox on public.episode_states(user_id, inbox_position) where inbox_position is not null;
 create index if not exists idx_podcast_preferences_user_updated on public.podcast_preferences(user_id, updated_at desc);
@@ -286,6 +313,29 @@ create table if not exists public.smart_skip_jobs (
   check (status in ('queued', 'leased', 'processing', 'ready', 'failed', 'cancelled'))
 );
 
+create table if not exists public.smart_skip_external_tasks (
+  id text primary key,
+  job_id text not null references public.smart_skip_jobs(id) on delete cascade,
+  kind text not null,
+  provider text not null,
+  external_id text not null,
+  status text not null,
+  input_file_id text,
+  output_file_id text,
+  error_file_id text,
+  result_json jsonb,
+  error text,
+  submitted_at timestamptz,
+  last_checked_at timestamptz,
+  next_check_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(job_id, kind),
+  unique(provider, external_id),
+  check (kind in ('segmenter_batch')),
+  check (status in ('submitted', 'validating', 'in_progress', 'finalizing', 'completed', 'failed', 'expired', 'cancelled'))
+);
+
 alter table public.smart_skip_jobs add column if not exists locked_at timestamptz;
 alter table public.smart_skip_jobs add column if not exists locked_until timestamptz;
 alter table public.smart_skip_jobs add column if not exists worker_id text;
@@ -298,4 +348,5 @@ drop table if exists public.smart_skip_feedback;
 create index if not exists idx_smart_skip_maps_episode on public.smart_skip_segment_maps(episode_local_id, updated_at desc);
 create index if not exists idx_smart_skip_jobs_status_priority on public.smart_skip_jobs(status, priority desc, created_at asc);
 create index if not exists idx_smart_skip_jobs_locked_until on public.smart_skip_jobs(locked_until) where status in ('leased', 'processing');
+create index if not exists idx_smart_skip_external_tasks_next_check on public.smart_skip_external_tasks(next_check_at) where status in ('submitted', 'validating', 'in_progress', 'finalizing');
 create index if not exists idx_smart_skip_segments_map_start on public.smart_skip_segments(segment_map_id, start_ms);

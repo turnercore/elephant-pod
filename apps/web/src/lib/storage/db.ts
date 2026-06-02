@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { AppSettings, CachedPodcast, Clip, Episode, EpisodeState, ListeningStats, Podcast, PodcastPreference, SilenceMap, SyncMeta, SyncTombstone } from '@/types/domain';
+import type { AppSettings, ArtworkCacheEntry, CachedPodcast, Clip, Episode, EpisodeState, ListeningStats, Podcast, PodcastPreference, SilenceMap, SmartSkipMapCacheEntry, SyncMeta, SyncTombstone } from '@/types/domain';
 import { defaultSettings, defaultStateFor, demoEpisodes, demoPodcasts } from '../sampleData';
 import { nowIso } from '../dates';
 
@@ -16,6 +16,8 @@ export class ElephantPodDatabase extends Dexie {
   podcastPreferences!: Table<PodcastPreference, string>;
   listeningStats!: Table<ListeningStats, string>;
   silenceMaps!: Table<SilenceMap, string>;
+  artworkCache!: Table<ArtworkCacheEntry, string>;
+  smartSkipMaps!: Table<SmartSkipMapCacheEntry, string>;
 
   constructor() {
     super('elephant-pod');
@@ -168,6 +170,36 @@ export class ElephantPodDatabase extends Dexie {
       listeningStats: 'id, updatedAt',
       silenceMaps: 'id, episodeId, audioUrl, status, updatedAt, lastRequestedAt, lastCheckedAt'
     });
+    this.version(10).stores({
+      feeds: 'id, feedUrl, title, sourceType, sourceUrl, externalId, updatedAt',
+      episodes: 'id, podcastId, podcastTitle, publishedAt, title, guid, sourceType, sourceUrl, externalId, extractionStatus, updatedAt',
+      states: 'episodeId, played, inboxState, inboxPosition, queuePosition, downloaded, downloadedAt, updatedAt',
+      clips: 'id, episodeId, createdAt, updatedAt, renderStatus',
+      settings: 'id, updatedAt',
+      syncMeta: 'id, deviceId, updatedAt',
+      tombstones: 'id, tableName, localId, deletedAt, pushedAt',
+      podcastCache: 'id, feedUrl, title, sourceType, sourceUrl, externalId, cachedAt, cacheExpiresAt, updatedAt',
+      cachedEpisodes: 'id, podcastId, podcastTitle, publishedAt, title, guid, sourceType, sourceUrl, externalId, extractionStatus, updatedAt',
+      podcastPreferences: 'podcastId, updatedAt',
+      listeningStats: 'id, updatedAt',
+      silenceMaps: 'id, episodeId, audioUrl, status, updatedAt, lastRequestedAt, lastCheckedAt'
+    });
+    this.version(11).stores({
+      feeds: 'id, feedUrl, title, sourceType, sourceUrl, externalId, updatedAt',
+      episodes: 'id, podcastId, podcastTitle, publishedAt, title, guid, sourceType, sourceUrl, externalId, extractionStatus, updatedAt',
+      states: 'episodeId, played, inboxState, inboxPosition, queuePosition, downloaded, downloadedAt, updatedAt',
+      clips: 'id, episodeId, createdAt, updatedAt, renderStatus',
+      settings: 'id, updatedAt',
+      syncMeta: 'id, deviceId, updatedAt',
+      tombstones: 'id, tableName, localId, deletedAt, pushedAt',
+      podcastCache: 'id, feedUrl, title, sourceType, sourceUrl, externalId, cachedAt, cacheExpiresAt, updatedAt',
+      cachedEpisodes: 'id, podcastId, podcastTitle, publishedAt, title, guid, sourceType, sourceUrl, externalId, extractionStatus, updatedAt',
+      podcastPreferences: 'podcastId, updatedAt',
+      listeningStats: 'id, updatedAt',
+      silenceMaps: 'id, episodeId, audioUrl, status, updatedAt, lastRequestedAt, lastCheckedAt',
+      artworkCache: 'url, cachedAt, updatedAt',
+      smartSkipMaps: 'id, episodeId, audioUrl, cachedAt, updatedAt'
+    });
   }
 }
 
@@ -185,6 +217,9 @@ export async function ensureSeedData(): Promise<void> {
     settings.autoDeleteAfterListen === undefined ||
     settings.nativeAudioPreferred === undefined ||
     settings.smartSkipEnabled === undefined ||
+    settings.smartSkipCommercials === undefined ||
+    settings.smartSkipIncludeSoftMatches === undefined ||
+    settings.smartSkipSoftSkips === undefined ||
     !settings.inboxSortDirection
   ) {
     await db.settings.put({
@@ -195,6 +230,7 @@ export async function ensureSeedData(): Promise<void> {
       autoDeleteAfterListen: settings.autoDeleteAfterListen ?? defaultSettings.autoDeleteAfterListen,
       nativeAudioPreferred: settings.nativeAudioPreferred ?? defaultSettings.nativeAudioPreferred,
       smartSkipEnabled: settings.smartSkipEnabled ?? defaultSettings.smartSkipEnabled,
+      smartSkipCommercials: settings.smartSkipCommercials ?? Boolean(settings.smartSkipAds ?? settings.smartSkipSponsors ?? settings.smartSkipNetworkPromos ?? defaultSettings.smartSkipCommercials),
       smartSkipAds: settings.smartSkipAds ?? defaultSettings.smartSkipAds,
       smartSkipSponsors: settings.smartSkipSponsors ?? defaultSettings.smartSkipSponsors,
       smartSkipIntros: settings.smartSkipIntros ?? defaultSettings.smartSkipIntros,
@@ -202,6 +238,8 @@ export async function ensureSeedData(): Promise<void> {
       smartSkipNetworkPromos: settings.smartSkipNetworkPromos ?? defaultSettings.smartSkipNetworkPromos,
       smartSkipSelfPromos: settings.smartSkipSelfPromos ?? defaultSettings.smartSkipSelfPromos,
       smartSkipSilence: settings.smartSkipSilence ?? defaultSettings.smartSkipSilence,
+      smartSkipIncludeSoftMatches: settings.smartSkipIncludeSoftMatches ?? settings.smartSkipSoftSkips ?? defaultSettings.smartSkipIncludeSoftMatches,
+      smartSkipSoftSkips: settings.smartSkipSoftSkips ?? defaultSettings.smartSkipSoftSkips,
       smartSkipSoftPrompt: settings.smartSkipSoftPrompt ?? defaultSettings.smartSkipSoftPrompt,
       smartSkipUseServerMedia: settings.smartSkipUseServerMedia ?? defaultSettings.smartSkipUseServerMedia,
       inboxSortDirection: settings.inboxSortDirection || defaultSettings.inboxSortDirection,

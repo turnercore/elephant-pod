@@ -1,6 +1,6 @@
 import type { Express, RequestHandler } from 'express';
 import type { SmartSkipConfig } from './config.js';
-import { createOrGetSmartSkipJob } from './jobs.js';
+import { createOrGetSmartSkipJob, getSmartSkipJobTimings, processSmartSkipJob } from './jobs.js';
 import { getJob, getLatestSegmentMap } from './storage.js';
 
 export function registerSmartSkipRoutes(app: Express, config: SmartSkipConfig, authMiddleware?: RequestHandler): void {
@@ -14,6 +14,34 @@ export function registerSmartSkipRoutes(app: Express, config: SmartSkipConfig, a
         status: job.status === 'queued' ? 'queued' : job.status,
         segmentMap: segmentMap?.status === 'ready' ? segmentMap : null,
         error: job.error
+      });
+    } catch (error) {
+      res.status(422).json({ error: error instanceof Error ? error.message : 'Invalid Smart Skip request.' });
+    }
+  });
+
+  app.post('/api/smart-skip/process-now', ...maybeAuth, async (req, res) => {
+    try {
+      const { job, segmentMap } = await createOrGetSmartSkipJob(req.body, config);
+      const force = req.query.force === 'true' || req.query.force === '1';
+      if (!force && (segmentMap?.status === 'ready' || job.status === 'ready')) {
+        res.json({
+          jobId: job.id,
+          status: 'ready',
+          segmentMap: segmentMap?.status === 'ready' ? segmentMap : await getLatestSegmentMap(job.episodeLocalId)
+        });
+        return;
+      }
+
+      const finished = await processSmartSkipJob(job, { ...config, segmenterBatchEnabled: false }, `ssk_manual_${process.pid}`);
+      const latestMap = await getLatestSegmentMap(job.episodeLocalId, job.request.audioUrl);
+      res.status(finished.status === 'ready' ? 200 : 422).json({
+        jobId: finished.id,
+        status: finished.status,
+        stage: finished.stage,
+        timings: getSmartSkipJobTimings(finished.id),
+        segmentMap: latestMap?.status === 'ready' ? latestMap : null,
+        error: finished.error ?? null
       });
     } catch (error) {
       res.status(422).json({ error: error instanceof Error ? error.message : 'Invalid Smart Skip request.' });

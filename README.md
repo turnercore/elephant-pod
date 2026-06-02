@@ -23,6 +23,7 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - Public clip publishing with ffmpeg-rendered MP3 files and source time-range fallback.
 - Server-side silence-shortening render jobs through ffmpeg.
 - Signed-in server-owned Smart Skip V1 metadata jobs for transcript-backed ad/sponsor/promo segment maps.
+- Signed-in YouTube video/playlist/channel source import through an optional server-side MeTube instance, with audio extraction only after a user requests an episode.
 - Optional account-based features through a server-owned auth+sync contract: magic-link auth, automatic signed-in sync for subscriptions/episodes/episode state/clips/settings/tombstones, and optional PodcastIndex discovery.
 - Screen-reader labels on icon-first controls.
 - Tauri v2 config for desktop/mobile packaging.
@@ -69,13 +70,14 @@ Set these in the app server environment (example in `.env.example`):
 - `PODCASTINDEX_API_KEY`
 - `PODCASTINDEX_API_SECRET`
 - `PODCASTINDEX_USER_AGENT`
+- `METUBE_BASE_URL`, `METUBE_AUDIO_PUBLIC_BASE_URL`, optional `METUBE_API_TOKEN`, `METUBE_AUDIO_FORMAT`, and `METUBE_AUDIO_QUALITY` for signed-in YouTube audio import. When `METUBE_BASE_URL` is unset, YouTube import is disabled in the Add Podcast omnibar.
 - `GOTRUE_EXTERNAL_GITHUB_ENABLED`
 - `GOTRUE_EXTERNAL_GITHUB_CLIENT_ID`
 - `GOTRUE_EXTERNAL_GITHUB_SECRET`
 - `GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI`
 - `SITE_URL` and `API_EXTERNAL_URL` for Supabase auth redirects/hosting expectations
 - `SILENCE_THRESHOLD_DB`, `SILENCE_MINIMUM_SEC`, `SILENCE_RETAINED_SEC`, and `SILENCE_ANALYZER_VERSION` for signed-in server silence-map analysis defaults
-- `SMART_SKIP_ENABLED`, `SMART_SKIP_REQUIRE_AUTH`, `SMART_SKIP_WHISPER_BASE_URL`, `SMART_SKIP_SEGMENTER_BASE_URL`, and related `SMART_SKIP_*` limits for signed-in Smart Skip processing
+- `SMART_SKIP_ENABLED`, `SMART_SKIP_REQUIRE_AUTH`, `SMART_SKIP_WHISPER_BASE_URL`, `SMART_SKIP_WHISPER_FORMAT`, `SMART_SKIP_SEGMENTER_BASE_URL`, and related `SMART_SKIP_*` limits for signed-in Smart Skip processing
 
 Security assumptions:
 
@@ -84,6 +86,7 @@ Security assumptions:
 - Server should validate and forward bearer tokens for logged-in sync/discovery calls.
 - Tauri local mode works with zero server keys present; accounts and sync/discovery stay disabled until sign-in.
 - Smart Skip benefits require a configured app server and a signed-in session. Local/offline playback does not request or apply Smart Skip metadata.
+- YouTube source import requires a configured app server, a signed-in session, and `METUBE_BASE_URL`. Source creation and refresh fetch metadata only. MeTube/yt-dlp extraction stays server-side and only runs after a user explicitly imports audio for an episode; clients receive stable app-server media URLs.
 - Server boots with `dotenv` support, so a repository-root `.env` is loaded automatically during local dev.
 
 ### Server setup
@@ -166,12 +169,18 @@ cd infra
 SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
 ```
 
-The profile starts `whisper-worker` on `/v1/transcribe` and `codex-segmenter` on `/v1/segment`. The checked-in Whisper worker defaults to deterministic mock mode for local validation only. The segmenter can run in real mode with `MOCK_SEGMENTER=false` and `OPENAI_API_KEY`; it uses `gpt-5.4-mini` by default. Real Smart Skip processing requires a live `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; the likely Superzima layout is app server plus segmenter on Superzima, with Whisper running on an Aero X16, Mac, or other GPU-capable host.
+The profile starts `whisper-worker` on `/v1/transcribe` and `openai-batch-segmenter` on `/v1/segment` plus `/v1/segment-batches`. The checked-in Whisper worker defaults to deterministic mock mode for local validation only. For OpenAI-compatible Whisper servers that expose multipart `/v1/audio/transcriptions`, set `SMART_SKIP_WHISPER_FORMAT=openai` and usually send `SMART_SKIP_WHISPER_MODEL=whisper-1` even if the server runs another model internally. The segmenter can run in real mode with `MOCK_SEGMENTER=false`, `SEGMENTER_BACKEND=openai_batch`, and `OPENAI_API_KEY`; it uses `gpt-5.4-mini` by default. `SEGMENTER_BACKEND` currently supports `none` and `openai_batch`; `none` disables real segmenting in the segmenter service. The app server submits real segmenting work through the generic segmenter HTTP contract and rechecks pending batches every 12 hours (`SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS=12`). For QA only, authenticated callers can post the normal Smart Skip request body to `POST /api/smart-skip/process-now`; this bypasses batch submission and waits for immediate `/v1/segment` resolution. Real Smart Skip processing requires a live `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; the likely Superzima layout is app server plus segmenter on Superzima, with Whisper running on an Aero X16, Mac, or other GPU-capable host.
 
 For an existing database, apply the Smart Skip V1 migration before enabling real workers:
 
 ```bash
 psql "$DATABASE_URL" -f infra/postgres/migrations/20260601_smart_skip_v1.sql
+```
+
+For existing databases that should sync YouTube source metadata, apply:
+
+```bash
+psql "$DATABASE_URL" -f infra/postgres/migrations/20260602_youtube_sources.sql
 ```
 
 A fresh database mounts `postgres/init.sql` to create the Elephant Pod sync tables and clip registry.

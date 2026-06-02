@@ -25,16 +25,19 @@ export function useSmartSkipMap(episode: EpisodeWithState | null, settings: AppS
 }
 
 export function resolveSmartSkipSettings(settings: AppSettings, preference?: PodcastPreference): ResolvedSmartSkipSettings {
-  const enabled = Boolean(settings.smartSkipEnabled && (preference?.smartSkipEnabled ?? true));
+  const enabled = Boolean(preference?.smartSkipEnabled ?? settings.smartSkipEnabled);
+  const globalCommercials = settings.smartSkipCommercials ?? (settings.smartSkipAds || settings.smartSkipSponsors || settings.smartSkipNetworkPromos);
+  const preferenceCommercials = preference?.smartSkipCommercials ?? preference?.smartSkipAds ?? preference?.smartSkipSponsors ?? preference?.smartSkipNetworkPromos;
+  const commercials = Boolean(preferenceCommercials ?? globalCommercials);
+  const includeSoftMatches = Boolean(preference?.smartSkipIncludeSoftMatches ?? preference?.smartSkipSoftSkips ?? settings.smartSkipIncludeSoftMatches ?? settings.smartSkipSoftSkips);
   return {
     enabled,
-    ads: Boolean(settings.smartSkipAds && (preference?.smartSkipAds ?? true)),
-    sponsors: Boolean(settings.smartSkipSponsors && (preference?.smartSkipSponsors ?? true)),
-    intros: Boolean(settings.smartSkipIntros && (preference?.smartSkipIntro ?? true)),
-    outros: Boolean(settings.smartSkipOutros && (preference?.smartSkipOutro ?? true)),
-    networkPromos: Boolean(settings.smartSkipNetworkPromos && (preference?.smartSkipNetworkPromos ?? true)),
-    selfPromos: Boolean(settings.smartSkipSelfPromos && (preference?.smartSkipSelfPromos ?? true)),
-    silence: Boolean(settings.smartSkipSilence),
+    commercials,
+    intros: Boolean(preference?.smartSkipIntro ?? settings.smartSkipIntros),
+    outros: Boolean(preference?.smartSkipOutro ?? settings.smartSkipOutros),
+    selfPromos: Boolean(preference?.smartSkipSelfPromos ?? settings.smartSkipSelfPromos),
+    silence: Boolean(preference?.smartSkipSilence ?? settings.smartSkipSilence),
+    includeSoftMatches,
     softPrompt: Boolean(settings.smartSkipSoftPrompt)
   };
 }

@@ -51,3 +51,15 @@ Tailscale and set the app server env to:
 SMART_SKIP_WHISPER_BASE_URL=http://<laptop-tailscale-name-or-ip>:8001
 MOCK_WHISPER=false
 ```
+
+If the real service is OpenAI-compatible instead of this repo's JSON
+`/v1/transcribe` contract, point the app server at that service and use:
+
+```bash
+SMART_SKIP_WHISPER_FORMAT=openai
+SMART_SKIP_WHISPER_MODEL=whisper-1
+```
+
+That mode uploads the episode audio as multipart form data to
+`/v1/audio/transcriptions` with `response_format=verbose_json` and word
+timestamps enabled.

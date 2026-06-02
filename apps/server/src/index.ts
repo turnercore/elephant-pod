@@ -17,6 +17,7 @@ import { readSmartSkipConfig } from './smartSkip/config.js';
 import { startSmartSkipQueue } from './smartSkip/jobs.js';
 import { registerSmartSkipRoutes } from './smartSkip/routes.js';
 import { startSmartSkipScheduler } from './smartSkip/scheduler.js';
+import { handleYoutubeAudio, handleYoutubeExtract, handleYoutubeFeed, handleYoutubeImport, handleYoutubeRefresh, isYoutubeImportConfigured } from './youtubeImport.js';
 
 loadDotenv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 loadDotenv();
@@ -38,6 +39,14 @@ app.use(morgan('tiny'));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'elephant-pod', time: new Date().toISOString(), ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', smartSkip: { enabled: smartSkipConfig.enabled } });
+});
+
+app.get('/api/capabilities', (_req, res) => {
+  res.json({
+    youtubeImport: {
+      enabled: isYoutubeImportConfigured()
+    }
+  });
 });
 
 app.get('/api/auth/config', (_req, res) => {
@@ -68,6 +77,8 @@ app.get('/api/rss/parse', async (req, res) => {
     res.status(422).json({ error: error instanceof Error ? error.message : 'Unable to parse feed.' });
   }
 });
+
+app.get('/api/youtube/feed.xml', (req, res) => void handleYoutubeFeed(req, res, { publicUrl, dataDir: mediaDataDir }));
 
 app.post('/api/clips', async (req, res) => {
   try {
@@ -203,6 +214,20 @@ app.get('/media/silence/:id.mp3', (req, res) => {
   });
 });
 
+app.get('/media/youtube/:id.mp3', (req, res) => {
+  void handleYoutubeAudio(req, res).catch((error: unknown) => {
+    if (!res.headersSent) res.status(502).json({ error: error instanceof Error ? error.message : 'YouTube audio lookup failed.' });
+  });
+});
+
+app.get('/media/youtube-thumbnails/:file', (req, res) => {
+  const fileName = path.basename(String(req.params.file));
+  const file = path.join(mediaDataDir, 'youtube-thumbnails', fileName);
+  res.sendFile(file, (error) => {
+    if (error && !res.headersSent) res.status(404).json({ error: 'YouTube thumbnail not found.' });
+  });
+});
+
 registerSmartSkipRoutes(app, smartSkipConfig, requireBearerAuth());
 startSmartSkipQueue(smartSkipConfig);
 startSmartSkipScheduler(smartSkipConfig, () => {
@@ -212,6 +237,9 @@ startSmartSkipScheduler(smartSkipConfig, () => {
 app.post('/api/sync', requireBearerAuth(), syncHandler);
 app.get('/api/podcast-index/search', requireBearerAuth(), podcastIndexSearchHandler);
 app.get('/api/podcast-index/browse', requireBearerAuth(), podcastIndexBrowseHandler);
+app.post('/api/youtube/import', requireBearerAuth(), (req, res) => void handleYoutubeImport(req, res, { publicUrl, dataDir: mediaDataDir }));
+app.post('/api/youtube/sources/:id/refresh', requireBearerAuth(), (req, res) => void handleYoutubeRefresh(req, res, { publicUrl, dataDir: mediaDataDir }));
+app.post('/api/youtube/episodes/:id/extract', requireBearerAuth(), (req, res) => void handleYoutubeExtract(req, res));
 
 const webDist = process.env.WEB_DIST;
 if (webDist) {

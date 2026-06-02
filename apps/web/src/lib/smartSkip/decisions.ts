@@ -12,7 +12,7 @@ export function findAutoSkipTarget(input: {
   const durationMs = input.durationSec > 0 ? Math.round(input.durationSec * 1000) : input.segmentMap.durationMs;
   for (const segment of input.segmentMap.segments) {
     if (input.suppressedSegmentIds.has(segment.id)) continue;
-    if (segment.action !== 'auto_skip') continue;
+    if (segment.action !== 'auto_skip' && !(segment.action === 'soft_skip' && input.settings.includeSoftMatches)) continue;
     if (!isTypeEnabled(segment.type, input.settings)) continue;
     if (nowMs < segment.startMs || nowMs >= segment.endMs - 50) continue;
     const seekToSec = Math.max(input.currentTimeSec, segment.endMs / 1000);
@@ -27,11 +27,11 @@ export function resolveSegmentTypeSetting(type: SmartSkipSegmentType, settings: 
 }
 
 function isTypeEnabled(type: SmartSkipSegmentType, settings: ResolvedSmartSkipSettings): boolean {
-  if (type === 'ad') return settings.ads;
-  if (type === 'sponsorship') return settings.sponsors;
+  if (type === 'ad') return settings.commercials;
+  if (type === 'sponsorship') return settings.commercials;
+  if (type === 'network_promo') return settings.commercials;
   if (type === 'intro') return settings.intros;
   if (type === 'outro') return settings.outros;
-  if (type === 'network_promo') return settings.networkPromos;
   if (type === 'self_promo') return settings.selfPromos;
   if (type === 'silence') return settings.silence;
   return false;

@@ -3,7 +3,7 @@ import type { EpisodeWithState } from '@/types/domain';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Panel } from '@/components/ui/Panel';
-import { formatDate, formatDuration } from '@/lib/dates';
+import { formatDuration, formatEpisodeReleaseDate } from '@/lib/dates';
 
 export function EpisodeDetailPage({
   episode,
@@ -68,7 +68,7 @@ export function EpisodeDetailPage({
                 <span className="block truncate text-sm font-black text-yellow">{episode.podcastTitle}</span>
               </span>
             </button>
-            <p className="mt-2 text-sm text-bone">{formatDate(episode.publishedAt)} · {formatDuration(episode.durationSec)}</p>
+            <p className="mt-2 text-sm text-bone">{formatEpisodeReleaseDate(episode.publishedAt)} · {formatDuration(episode.durationSec)}</p>
             {episode.state.progressSec > 0 && !episode.state.played ? (
               <p className="mt-2 text-sm text-bone">Progress: {formatDuration(episode.state.progressSec)} / {formatDuration(episode.durationSec)}</p>
             ) : null}

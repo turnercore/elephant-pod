@@ -56,6 +56,13 @@ export function requireBearerAuth() {
       return;
     }
 
+    const apiTokenContext = getApiTokenAuthContext(token);
+    if (apiTokenContext) {
+      res.locals.serverAuthContext = apiTokenContext;
+      next();
+      return;
+    }
+
     const { client, error } = ensureServerAuthClient();
     if (!client) {
       res.status(503).json({ error });
@@ -76,6 +83,24 @@ export function requireBearerAuth() {
     };
     next();
   };
+}
+
+function getApiTokenAuthContext(token: string): ServerAuthContext | null {
+  const configured = readStringEnv('SERVER_API_TOKEN') || readStringEnv('ADMIN_API_TOKEN');
+  if (!configured || configured !== token) return null;
+  return {
+    userId: 'server-api-token',
+    email: null,
+    username: 'Server API Token',
+    accessToken: token
+  };
+}
+
+function readStringEnv(name: string): string | undefined {
+  const value = process.env[name];
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 export async function getAuthSession(req: Request, res: Response) {

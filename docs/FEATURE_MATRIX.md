@@ -14,15 +14,17 @@
 | Auto-download | Partial native-ready | Queued auto-download is on by default in Tauri/native builds. Browser auto-download only attempts same-origin media; manual browser downloads can still try Cache Storage where hosts allow CORS. |
 | Episode triage | Implemented | Inbox -> queue/dismiss/archive. |
 | Silence shortening | Server-map partial | Signed-in server ffmpeg analysis creates silence maps. Long silences are shortened to a retained duration; browser Web Audio analysis is disabled for remote podcast streams. |
-| Smart Skip V1 | Partial | Signed-in server route, durable job leasing, storage, worker contract, OpenAI-backed segmenter, UI settings, auto-skip, session-only undo, and pure tests exist. Real Whisper deployment and proactive active-user discovery are follow-ups. |
+| Smart Skip V1 | Partial | Signed-in server route, durable job leasing, external Batch task storage, worker contract, OpenAI-backed segmenter, UI settings, auto-skip, local downloaded-episode map cache, session-only undo, and pure tests exist. Real Whisper deployment and proactive active-user discovery are follow-ups. |
 | Listening stats | Implemented local | Tracks real listening time, per-podcast totals, speed-up savings, and silence-skip savings in local profile stats. |
 | RSS-first/no lock-in | Implemented | Add RSS URL, OPML import/export, JSON backup. |
 | Episode artwork | Implemented | RSS item-level `<itunes:image>` and `media:thumbnail` artwork is preserved; episode views fall back to show artwork when item art is absent. |
-| Search (local catalog) | Implemented | Local search over on-device titles/show/description without account. |
+| Library filter | Implemented | Library has local subscribed-show filtering by title, author, tags, description, and feed/source URL. |
+| Add Podcast omnibar | Implemented | Add flow accepts RSS URLs, PodcastIndex search terms, and YouTube URLs. Already-subscribed results show a check and open the show page. |
 | Search (PodcastIndex discovery) | Logged-in only | Server-mediated discovery for new feeds using PodcastIndex credentials. |
+| YouTube source import | Optional server feature | Signed-in manual URL import creates synthetic RSS-style podcasts without downloading audio. Episode audio extraction is user-triggered through MeTube. |
 | Browser/web runtime sign-in gate | Implemented | Non-Tauri browser builds require a valid server GitHub session before app use. |
 | Tauri/native local-only runtime | Implemented | Native builds can run without server connection or sign-in and keep local/native storage behavior. |
-| Offline downloads/streaming | Partial native-ready | Streaming works; native filesystem commands are present but need Tauri/mobile validation. |
+| Offline downloads/streaming | Partial native-ready | Downloaded episodes are the offline surface: offline mode filters library/inbox/queue to downloaded items, uses local audio, caches artwork for downloaded episodes and parent shows, and re-syncs local state when connectivity returns. Native filesystem commands are present but need Tauri/mobile validation. |
 | Played/unplayed tracking | Implemented | Filter and sync schema. |
 | Mark all as played in show | Implemented | Library action. |
 | Sorting newest/oldest | Implemented | Library filters plus configurable Inbox newest/oldest triage ordering. |
