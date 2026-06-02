@@ -21,7 +21,7 @@
 | Library filter | Implemented | Library has local subscribed-show filtering by title, author, tags, description, and feed/source URL. |
 | Add Podcast omnibar | Implemented | Add flow accepts RSS URLs, PodcastIndex search terms, and YouTube URLs. Already-subscribed results show a check and open the show page. |
 | Search (PodcastIndex discovery) | Logged-in only | Server-mediated discovery for new feeds using PodcastIndex credentials. |
-| YouTube source import | Optional server feature | Signed-in manual URL import creates synthetic RSS-style podcasts without downloading audio. Episode audio extraction is user-triggered through MeTube. |
+| YouTube source import | Optional server feature | Signed-in manual URL import creates and maintains synthetic RSS-style podcasts. Episode audio extraction is user-triggered and cached by the app server through yt-dlp. |
 | Browser/web runtime sign-in gate | Implemented | Non-Tauri browser builds require a valid server GitHub session before app use. |
 | Tauri/native local-only runtime | Implemented | Native builds can run without server connection or sign-in and keep local/native storage behavior. |
 | Offline downloads/streaming | Partial native-ready | Downloaded episodes are the offline surface: offline mode filters library/inbox/queue to downloaded items, uses local audio, caches artwork for downloaded episodes and parent shows, and re-syncs local state when connectivity returns. Native filesystem commands are present but need Tauri/mobile validation. |

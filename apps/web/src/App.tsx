@@ -19,7 +19,7 @@ import { prefetchServerSilenceMaps } from '@/lib/audio/silenceMaps';
 import { requestSmartSkipProcessing } from '@/lib/smartSkip/api';
 import { nowIso } from '@/lib/dates';
 import { fetchFeedThroughServer } from '@/lib/rss';
-import { extractYoutubeEpisode, fetchServerCapabilities, importYoutubeSource } from '@/lib/youtubeImport';
+import { enrichYoutubeEpisode, extractYoutubeEpisode, fetchServerCapabilities, importYoutubeSource } from '@/lib/youtubeImport';
 import { exportOpml, importOpml } from '@/lib/opml';
 import { deleteEpisodeFromCache, downloadEpisodeToCache } from '@/lib/storage/cache';
 import { cacheArtworkForOfflineEpisodes, hydrateArtworkForLibrary, revokeArtworkObjectUrls } from '@/lib/storage/artwork';
@@ -100,6 +100,7 @@ export default function App() {
   const onlineSyncRef = useRef<string | null>(null);
   const artworkObjectUrlsRef = useRef<string[]>([]);
   const offlineBundlePrefetchRef = useRef<Set<string>>(new Set());
+  const youtubeEnrichmentRef = useRef<Set<string>>(new Set());
 
   const hostedWebRuntime = isHostedWebRuntime();
   const runtimeServerUrl = resolveBrowserServerUrl(settings?.serverUrl || getBrowserRuntimeServerUrl());
@@ -394,6 +395,24 @@ export default function App() {
     () => selectedEpisode ? visibleCachedPodcasts.find((podcast) => podcast.id === selectedEpisode.podcastId) || visibleFeeds.find((podcast) => podcast.id === selectedEpisode.podcastId) : null,
     [selectedEpisode, visibleCachedPodcasts, visibleFeeds]
   );
+
+  useEffect(() => {
+    if (!selectedEpisode || selectedEpisode.sourceType !== 'youtube') return;
+    if (!runtimeServerUrl || !serverAccessToken || !youtubeImportEnabled) return;
+    const sourceUrl = selectedEpisode.sourceUrl || selectedEpisode.websiteUrl;
+    if (!sourceUrl || youtubeEnrichmentRef.current.has(selectedEpisode.id)) return;
+    youtubeEnrichmentRef.current.add(selectedEpisode.id);
+    void enrichYoutubeEpisode(runtimeServerUrl, serverAccessToken, selectedEpisode.id, sourceUrl)
+      .then(async (patch) => {
+        if (!Object.keys(patch).length) return;
+        await updateEpisodeMetadata(selectedEpisode.id, patch);
+        await refreshLocalState();
+      })
+      .catch(() => {
+        youtubeEnrichmentRef.current.delete(selectedEpisode.id);
+      });
+  }, [refreshLocalState, runtimeServerUrl, selectedEpisode, serverAccessToken, youtubeImportEnabled]);
+
   const episodeBadgesById = useMemo(() => {
     if (!settings) return {};
     const preferences = new Map(podcastPreferences.map((preference) => [preference.podcastId, preference]));
@@ -714,7 +733,18 @@ export default function App() {
         setStatus('YouTube audio is ready.');
         return true;
       }
-      setStatus('YouTube audio import queued. Try playing again after it finishes.');
+      setStatus('Server is preparing YouTube audio...');
+      for (let attempt = 0; attempt < 18; attempt += 1) {
+        await sleep(5000);
+        const next = await extractYoutubeEpisode(runtimeServerUrl, serverAccessToken, episode.id, sourceUrl);
+        await updateEpisodeMetadata(episode.id, { extractionStatus: next.audioReady ? 'ready' : next.extractionStatus });
+        if (next.audioReady) {
+          await refreshLocalState();
+          setStatus('YouTube audio is ready.');
+          return true;
+        }
+      }
+      setStatus('YouTube audio is still processing on the server. Try again shortly.');
       return false;
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'YouTube audio import failed.');
@@ -1242,6 +1272,10 @@ function getBrowserRuntimeServerUrl() {
   if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
   if (typeof window !== 'undefined' && window.location.port !== '5173') return window.location.origin;
   return 'http://localhost:8787';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function downloadFile(fileName: string, content: string, type: string) {

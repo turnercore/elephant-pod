@@ -17,7 +17,7 @@ import { readSmartSkipConfig } from './smartSkip/config.js';
 import { startSmartSkipQueue } from './smartSkip/jobs.js';
 import { registerSmartSkipRoutes } from './smartSkip/routes.js';
 import { startSmartSkipScheduler } from './smartSkip/scheduler.js';
-import { handleYoutubeAudio, handleYoutubeExtract, handleYoutubeFeed, handleYoutubeImport, handleYoutubeRefresh, isYoutubeImportConfigured } from './youtubeImport.js';
+import { handleYoutubeAudio, handleYoutubeEnrich, handleYoutubeExtract, handleYoutubeFeed, handleYoutubeImport, handleYoutubeRefresh, isYoutubeImportConfigured } from './youtubeImport.js';
 
 loadDotenv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 loadDotenv();
@@ -239,7 +239,8 @@ app.get('/api/podcast-index/search', requireBearerAuth(), podcastIndexSearchHand
 app.get('/api/podcast-index/browse', requireBearerAuth(), podcastIndexBrowseHandler);
 app.post('/api/youtube/import', requireBearerAuth(), (req, res) => void handleYoutubeImport(req, res, { publicUrl, dataDir: mediaDataDir }));
 app.post('/api/youtube/sources/:id/refresh', requireBearerAuth(), (req, res) => void handleYoutubeRefresh(req, res, { publicUrl, dataDir: mediaDataDir }));
-app.post('/api/youtube/episodes/:id/extract', requireBearerAuth(), (req, res) => void handleYoutubeExtract(req, res));
+app.post('/api/youtube/episodes/:id/enrich', requireBearerAuth(), (req, res) => void handleYoutubeEnrich(req, res, { publicUrl, dataDir: mediaDataDir }));
+app.post('/api/youtube/episodes/:id/extract', requireBearerAuth(), (req, res) => void handleYoutubeExtract(req, res, { publicUrl, dataDir: mediaDataDir }));
 
 const webDist = process.env.WEB_DIST;
 if (webDist) {

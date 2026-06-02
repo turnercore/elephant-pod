@@ -23,7 +23,7 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - Public clip publishing with ffmpeg-rendered MP3 files and source time-range fallback.
 - Server-side silence-shortening render jobs through ffmpeg.
 - Signed-in server-owned Smart Skip V1 metadata jobs for transcript-backed ad/sponsor/promo segment maps.
-- Signed-in YouTube video/playlist/channel source import through an optional server-side MeTube instance, with audio extraction only after a user requests an episode.
+- Signed-in YouTube video/playlist/channel source import through server-side yt-dlp, with audio extraction only after a user requests an episode.
 - Optional account-based features through a server-owned auth+sync contract: magic-link auth, automatic signed-in sync for subscriptions/episodes/episode state/clips/settings/tombstones, and optional PodcastIndex discovery.
 - Screen-reader labels on icon-first controls.
 - Tauri v2 config for desktop/mobile packaging.
@@ -70,7 +70,8 @@ Set these in the app server environment (example in `.env.example`):
 - `PODCASTINDEX_API_KEY`
 - `PODCASTINDEX_API_SECRET`
 - `PODCASTINDEX_USER_AGENT`
-- `METUBE_BASE_URL`, `METUBE_AUDIO_PUBLIC_BASE_URL`, optional `METUBE_API_TOKEN`, `METUBE_AUDIO_FORMAT`, and `METUBE_AUDIO_QUALITY` for signed-in YouTube audio import. When `METUBE_BASE_URL` is unset, YouTube import is disabled in the Add Podcast omnibar.
+- `YOUTUBE_IMPORT_ENABLED=false` disables signed-in YouTube import. The server container includes `yt-dlp` by default.
+- `YTDLP_PATH`, `YOUTUBE_METADATA_MAX_ENTRIES`, and `YOUTUBE_AUDIO_QUALITY` optionally tune server-side YouTube metadata crawling and audio caching. The default metadata crawl limit is 500 entries and cached audio is stored as MP3 for stable RSS enclosures.
 - `GOTRUE_EXTERNAL_GITHUB_ENABLED`
 - `GOTRUE_EXTERNAL_GITHUB_CLIENT_ID`
 - `GOTRUE_EXTERNAL_GITHUB_SECRET`
@@ -86,7 +87,7 @@ Security assumptions:
 - Server should validate and forward bearer tokens for logged-in sync/discovery calls.
 - Tauri local mode works with zero server keys present; accounts and sync/discovery stay disabled until sign-in.
 - Smart Skip benefits require a configured app server and a signed-in session. Local/offline playback does not request or apply Smart Skip metadata.
-- YouTube source import requires a configured app server, a signed-in session, and `METUBE_BASE_URL`. Source creation and refresh fetch metadata only. MeTube/yt-dlp extraction stays server-side and only runs after a user explicitly imports audio for an episode; clients receive stable app-server media URLs.
+- YouTube source import requires a configured app server and a signed-in session. Source creation and refresh fetch metadata only. The server uses `yt-dlp --flat-playlist` for broad channel/playlist metadata, stores/maintains a canonical synthetic RSS feed, then enriches a single YouTube episode when a user opens it. Audio extraction stays server-side and only runs after a user explicitly imports/plays/downloads an episode; completed audio is cached under the server media store and served through stable app-server media URLs.
 - Server boots with `dotenv` support, so a repository-root `.env` is loaded automatically during local dev.
 
 ### Server setup

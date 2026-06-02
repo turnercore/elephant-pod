@@ -1,15 +1,15 @@
 import type { Request, Response } from 'express';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Readable } from 'node:stream';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { XMLParser } from 'fast-xml-parser';
 import { z } from 'zod';
 
 type PodcastSourceType = 'youtube-channel' | 'youtube-playlist' | 'youtube-ad-hoc';
 type YoutubeSourceKind = 'video' | 'playlist' | 'channel' | 'unknown';
-type YoutubeImportOptions = { publicUrl: string; dataDir?: string };
+type YoutubeImportOptions = { publicUrl: string; dataDir?: string; ytDlpRunner?: YtDlpRunner; forceRefresh?: boolean };
+type YtDlpRunner = (url: string) => Promise<Record<string, unknown>[]>;
 
 type ParsedYoutubeImport = {
   podcast: {
@@ -60,6 +60,10 @@ const extractSchema = z.object({
   sourceUrl: z.string().url()
 });
 
+const enrichSchema = z.object({
+  sourceUrl: z.string().url()
+});
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -68,14 +72,16 @@ const parser = new XMLParser({
   trimValues: true
 });
 const maxThumbnailBytes = 1_000_000;
+const defaultYoutubeMetadataLimit = 500;
+const youtubeAudioJobs = new Map<string, Promise<void>>();
 
 export function isYoutubeImportConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.METUBE_BASE_URL?.trim());
+  return !['false', '0', 'off'].includes(String(env.YOUTUBE_IMPORT_ENABLED ?? 'true').toLowerCase());
 }
 
 export async function handleYoutubeImport(req: Request, res: Response, options: YoutubeImportOptions) {
   if (!isYoutubeImportConfigured()) {
-    res.status(503).json({ error: 'YouTube import is disabled because METUBE_BASE_URL is not configured.' });
+    res.status(503).json({ error: 'YouTube import is disabled on this server.' });
     return;
   }
 
@@ -95,7 +101,7 @@ export async function handleYoutubeImport(req: Request, res: Response, options: 
 
 export async function handleYoutubeRefresh(req: Request, res: Response, options: YoutubeImportOptions) {
   if (!isYoutubeImportConfigured()) {
-    res.status(503).json({ error: 'YouTube import is disabled because METUBE_BASE_URL is not configured.' });
+    res.status(503).json({ error: 'YouTube import is disabled on this server.' });
     return;
   }
   const url = typeof req.body?.url === 'string' ? req.body.url : '';
@@ -104,16 +110,16 @@ export async function handleYoutubeRefresh(req: Request, res: Response, options:
     return;
   }
   try {
-    const imported = await importYoutubeMetadata(url, options);
+    const imported = await importYoutubeMetadata(url, { ...options, forceRefresh: true });
     res.status(200).json(imported);
   } catch (error) {
     res.status(502).json({ error: error instanceof Error ? error.message : 'YouTube refresh failed.' });
   }
 }
 
-export async function handleYoutubeExtract(req: Request, res: Response) {
+export async function handleYoutubeExtract(req: Request, res: Response, options: YoutubeImportOptions) {
   if (!isYoutubeImportConfigured()) {
-    res.status(503).json({ error: 'YouTube audio extraction is disabled because METUBE_BASE_URL is not configured.' });
+    res.status(503).json({ error: 'YouTube audio extraction is disabled on this server.' });
     return;
   }
   const parsed = extractSchema.safeParse(req.body);
@@ -124,21 +130,44 @@ export async function handleYoutubeExtract(req: Request, res: Response) {
   try {
     const sourceUrl = normalizeUrl(parsed.data.sourceUrl);
     const kind = classifyYoutubeUrl(sourceUrl);
-    if (!kind) throw new Error('Only YouTube episode URLs can be extracted.');
+    if (kind !== 'video') throw new Error('Only YouTube episode URLs can be extracted.');
     if (isYoutubeShortsUrl(sourceUrl)) throw new Error('YouTube Shorts are not imported as podcast episodes.');
-    const before = await getMetubeHistory().catch(() => []);
-    const existing = collectRelevantHistoryRows(before, sourceUrl)[0];
-    if (!existing || statusFromRow(existing) === 'failed') await addToMetube(sourceUrl, 'video');
-    const after = await getMetubeHistory().catch(() => before);
-    const match = collectRelevantHistoryRows(after, sourceUrl)[0] || existing;
+    const episodeId = String(req.params.id);
+    if (await youtubeAudioFileExists(episodeId, options)) {
+      await updateStoredEpisodeEnrichment(episodeId, { extractionStatus: 'ready', updatedAt: new Date().toISOString() }, options);
+      res.status(200).json({ episodeId, sourceUrl, extractionStatus: 'ready', audioReady: true });
+      return;
+    }
+    const job = queueYoutubeAudioDownload(episodeId, sourceUrl, options);
     res.status(202).json({
-      episodeId: String(req.params.id),
+      episodeId,
       sourceUrl,
-      extractionStatus: match ? statusFromRow(match) : 'queued',
-      audioReady: Boolean(match && resolveMetubeAudioUrl(match))
+      extractionStatus: 'processing',
+      audioReady: false
     });
+    void job;
   } catch (error) {
     res.status(502).json({ error: error instanceof Error ? error.message : 'YouTube extraction failed.' });
+  }
+}
+
+export async function handleYoutubeEnrich(req: Request, res: Response, options: YoutubeImportOptions) {
+  const parsed = enrichSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'A valid YouTube episode source URL is required.', details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const sourceUrl = normalizeUrl(parsed.data.sourceUrl);
+    if (isYoutubeShortsUrl(sourceUrl)) throw new Error('YouTube Shorts are not imported as podcast episodes.');
+    const patch = await enrichYoutubeEpisodeMetadata(sourceUrl, options);
+    if (options.dataDir) {
+      await cacheEpisodeEnrichment(patch.id, patch, options);
+      await updateStoredEpisodeEnrichment(patch.id, patch, options);
+    }
+    res.status(200).json({ episodeId: patch.id, patch });
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : 'YouTube episode enrichment failed.' });
   }
 }
 
@@ -163,29 +192,21 @@ export async function handleYoutubeAudio(req: Request, res: Response) {
     return;
   }
   const episodeId = String(req.params.id);
-  const history = await getMetubeHistory();
-  const match = findHistoryByEpisodeId(history, episodeId);
-  if (!match) {
+  const options = { publicUrl: '', dataDir: resolveMediaDataDir() };
+  const file = youtubeAudioPath(episodeId, options);
+  if (await youtubeAudioFileExists(episodeId, options)) {
+    res.sendFile(file, (error) => {
+      if (error && !res.headersSent) res.status(404).json({ error: 'YouTube audio file is not available.' });
+    });
+    return;
+  }
+  const sourceUrl = await findStoredEpisodeSourceUrl(episodeId, options);
+  if (!sourceUrl) {
     res.status(404).json({ error: 'YouTube audio extraction is not ready yet.' });
     return;
   }
-  const audioUrl = resolveMetubeAudioUrl(match);
-  if (!audioUrl) {
-    res.status(404).json({ error: 'YouTube audio file URL is not available yet.' });
-    return;
-  }
-  const upstream = await fetch(audioUrl, { headers: metubeHeaders() });
-  if (!upstream.ok || !upstream.body) {
-    res.status(upstream.status || 502).json({ error: `YouTube audio proxy failed with ${upstream.status || 502}.` });
-    return;
-  }
-  res.status(200);
-  res.setHeader('content-type', upstream.headers.get('content-type') || 'audio/mpeg');
-  const contentLength = upstream.headers.get('content-length');
-  const acceptRanges = upstream.headers.get('accept-ranges');
-  if (contentLength) res.setHeader('content-length', contentLength);
-  if (acceptRanges) res.setHeader('accept-ranges', acceptRanges);
-  Readable.fromWeb(upstream.body as NodeReadableStream<Uint8Array>).pipe(res);
+  queueYoutubeAudioDownload(episodeId, sourceUrl, options);
+  res.status(202).json({ error: 'YouTube audio is being prepared on the server.', episodeId, extractionStatus: 'processing' });
 }
 
 export async function importYoutubeMetadata(sourceUrl: string, options: YoutubeImportOptions, fetchImpl: typeof fetch = fetch): Promise<ParsedYoutubeImport> {
@@ -193,48 +214,22 @@ export async function importYoutubeMetadata(sourceUrl: string, options: YoutubeI
   const kind = classifyYoutubeUrl(normalizedUrl);
   if (!kind) throw new Error('Only YouTube video, playlist, channel, and podcast playlist URLs are supported.');
   if (isYoutubeShortsUrl(normalizedUrl)) throw new Error('YouTube Shorts are not imported as podcast episodes.');
+  if (!options.forceRefresh && kind !== 'video') {
+    const canonicalSourceUrl = await resolveCanonicalYoutubeSourceUrl(normalizedUrl, kind, fetchImpl).catch(() => null);
+    const stored = canonicalSourceUrl ? await readStoredYoutubeImport(canonicalSourceUrl, options) : null;
+    if (stored) {
+      return refreshStoredExtractionStatuses(stored, options);
+    }
+  }
 
-  const metadata = await fetchYoutubeMetadata(normalizedUrl, kind, fetchImpl);
-  const history = isYoutubeImportConfigured() ? await getMetubeHistory(fetchImpl).catch(() => []) : [];
-  const imported = buildImportResult(normalizedUrl, kind, metadata, history, options.publicUrl);
-  return cacheImportThumbnails(imported, options, fetchImpl);
-}
-
-export async function importFromMetube(sourceUrl: string, options: YoutubeImportOptions, fetchImpl: typeof fetch = fetch): Promise<ParsedYoutubeImport> {
-  return importYoutubeMetadata(sourceUrl, options, fetchImpl);
-}
-
-function getMetubeBaseUrl(): string {
-  const raw = process.env.METUBE_BASE_URL?.trim();
-  if (!raw) throw new Error('METUBE_BASE_URL is not configured.');
-  return raw.replace(/\/$/, '');
-}
-
-async function addToMetube(url: string, kind: YoutubeSourceKind, fetchImpl: typeof fetch = fetch) {
-  const response = await fetchImpl(`${getMetubeBaseUrl()}/add`, {
-    method: 'POST',
-    headers: metubeHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({
-      url,
-      quality: process.env.METUBE_AUDIO_QUALITY || 'audio',
-      format: process.env.METUBE_AUDIO_FORMAT || 'mp3',
-      playlist_strict_mode: kind === 'playlist',
-      auto_start: true
-    })
-  });
-  if (!response.ok) throw new Error(`MeTube add failed with ${response.status}.`);
-  const payload = await response.json().catch(() => null) as { status?: string; msg?: string } | null;
-  if (payload?.status === 'error') throw new Error(payload.msg || 'MeTube rejected the import.');
-}
-
-async function getMetubeHistory(fetchImpl: typeof fetch = fetch): Promise<Record<string, unknown>[]> {
-  const response = await fetchImpl(`${getMetubeBaseUrl()}/history`, { headers: metubeHeaders() });
-  if (!response.ok) throw new Error(`MeTube history failed with ${response.status}.`);
-  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
-  const done = asArray(payload?.done);
-  const queue = asArray(payload?.queue);
-  const pending = asArray(payload?.pending);
-  return [...done, ...queue, ...pending].filter(isRecord);
+  const metadata = await fetchYoutubeMetadata(normalizedUrl, kind, options, fetchImpl);
+  const imported = buildImportResult(normalizedUrl, kind, metadata, options.publicUrl);
+  const enriched = await mergeCachedEpisodeEnrichment(imported, options);
+  const withStored = await mergeStoredYoutubeImport(enriched, options);
+  const cached = await cacheImportThumbnails(withStored, options, fetchImpl);
+  const withStatuses = await refreshStoredExtractionStatuses(cached, options);
+  await writeStoredYoutubeImport(withStatuses, options);
+  return withStatuses;
 }
 
 type YoutubeMetadata = {
@@ -248,18 +243,22 @@ type YoutubeMetadata = {
   entries: Record<string, unknown>[];
 };
 
-async function fetchYoutubeMetadata(sourceUrl: string, kind: YoutubeSourceKind, fetchImpl: typeof fetch): Promise<YoutubeMetadata> {
+async function fetchYoutubeMetadata(sourceUrl: string, kind: YoutubeSourceKind, options: YoutubeImportOptions, fetchImpl: typeof fetch): Promise<YoutubeMetadata> {
   if (kind === 'playlist') {
     const playlistId = new URL(sourceUrl).searchParams.get('list') || sourceUrl.split('/').filter(Boolean).pop();
     if (!playlistId) throw new Error('Could not find the YouTube playlist id.');
     const metadata = parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`, fetchImpl), { playlistId });
-    return omitYoutubeShorts({ ...metadata, canonicalSourceUrl: canonicalPlaylistUrl(playlistId) }, fetchImpl);
+    const canonicalSourceUrl = canonicalPlaylistUrl(playlistId);
+    const expanded = await expandWithYtDlpFlatMetadata({ ...metadata, canonicalSourceUrl }, canonicalSourceUrl, options);
+    return omitYoutubeShorts(expanded, fetchImpl);
   }
 
   if (kind === 'channel') {
     const channelId = await resolveChannelId(sourceUrl, fetchImpl);
     const metadata = parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, fetchImpl), { channelId });
-    return omitYoutubeShorts({ ...metadata, canonicalSourceUrl: canonicalChannelUrl(channelId) }, fetchImpl);
+    const canonicalSourceUrl = canonicalChannelUrl(channelId);
+    const expanded = await expandWithYtDlpFlatMetadata({ ...metadata, canonicalSourceUrl }, canonicalSourceUrl, options);
+    return omitYoutubeShorts(expanded, fetchImpl);
   }
 
   const oembed = await fetchJson(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(sourceUrl)}`, fetchImpl).catch(() => ({}));
@@ -287,6 +286,18 @@ async function fetchYoutubeMetadata(sourceUrl: string, kind: YoutubeSourceKind, 
   };
 }
 
+async function resolveCanonicalYoutubeSourceUrl(sourceUrl: string, kind: YoutubeSourceKind, fetchImpl: typeof fetch): Promise<string> {
+  if (kind === 'playlist') {
+    const playlistId = new URL(sourceUrl).searchParams.get('list') || sourceUrl.split('/').filter(Boolean).pop();
+    if (!playlistId) throw new Error('Could not find the YouTube playlist id.');
+    return canonicalPlaylistUrl(playlistId);
+  }
+  if (kind === 'channel') {
+    return canonicalChannelUrl(await resolveChannelId(sourceUrl, fetchImpl));
+  }
+  return sourceUrl;
+}
+
 async function fetchChannelMetadata(channelId: string, fetchImpl: typeof fetch): Promise<YoutubeMetadata | null> {
   try {
     return parseYoutubeFeed(await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, fetchImpl), { channelId });
@@ -295,7 +306,379 @@ async function fetchChannelMetadata(channelId: string, fetchImpl: typeof fetch):
   }
 }
 
-function buildImportResult(sourceUrl: string, kind: YoutubeSourceKind, metadata: YoutubeMetadata, historyRows: Record<string, unknown>[], publicUrl: string): ParsedYoutubeImport {
+async function expandWithYtDlpFlatMetadata(metadata: YoutubeMetadata, sourceUrl: string, options: YoutubeImportOptions): Promise<YoutubeMetadata> {
+  const runner = options.ytDlpRunner || runYtDlpFlatPlaylist;
+  const rows = await runner(sourceUrl).catch(() => []);
+  if (!rows.length) return metadata;
+  const rssByVideoId = new Map<string, Record<string, unknown>>();
+  for (const entry of metadata.entries) {
+    const key = firstString(entry.videoId, entry.video_id, entry.id, entry.url);
+    if (key) rssByVideoId.set(key, entry);
+  }
+  const entries = uniqueByExternalId(rows.map((row) => {
+    const videoId = firstString(row.id, row.video_id, row.videoId, row.url);
+    const rss = videoId ? rssByVideoId.get(videoId) : undefined;
+    return normalizeYtDlpFlatEntry(row, rss);
+  }));
+  if (!entries.length) return metadata;
+  return { ...metadata, entries };
+}
+
+async function runYtDlpFlatPlaylist(sourceUrl: string): Promise<Record<string, unknown>[]> {
+  const executable = process.env.YTDLP_PATH?.trim() || 'yt-dlp';
+  const limit = Math.max(1, Number(process.env.YOUTUBE_METADATA_MAX_ENTRIES || defaultYoutubeMetadataLimit) || defaultYoutubeMetadataLimit);
+  const args = [
+    '--flat-playlist',
+    '--dump-json',
+    '--ignore-errors',
+    '--no-warnings',
+    '--playlist-items',
+    `1:${limit}`,
+    sourceUrl
+  ];
+  const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', resolve);
+  });
+  const rows = parseYtDlpJsonLines(stdout);
+  if (rows.length) return rows;
+  if (exitCode && exitCode !== 0) throw new Error(stderr.trim() || `yt-dlp metadata crawl failed with ${exitCode}.`);
+  return [];
+}
+
+function parseYtDlpJsonLines(output: string): Record<string, unknown>[] {
+  const rows = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        return isRecord(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter((row): row is Record<string, unknown> => Boolean(row));
+  return rows.flatMap((row) => {
+    const entries = asArray(row.entries).filter(isRecord);
+    return entries.length ? entries : [row];
+  });
+}
+
+function normalizeYtDlpFlatEntry(row: Record<string, unknown>, rss?: Record<string, unknown>): Record<string, unknown> {
+  const videoId = firstString(row.id, row.video_id, row.videoId, rss?.id, rss?.videoId);
+  const sourceUrl = firstString(row.url, row.webpage_url, row.webpageUrl, row.original_url, rss?.url) || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : undefined);
+  return {
+    ...rss,
+    ...row,
+    id: videoId || stableId(sourceUrl || JSON.stringify(row), 'yt_ep'),
+    videoId,
+    url: sourceUrl,
+    title: firstString(row.title, rss?.title),
+    description: firstString(row.description, row.summary, rss?.description, rss?.summary),
+    thumbnail: smallYoutubeThumbnail(videoId) || firstString(row.thumbnail, row.thumbnail_url, rss?.thumbnail, rss?.thumbnail_url),
+    publishedAt: normalizeYtDlpDate(firstString(row.timestamp, row.release_timestamp, row.upload_date, row.modified_date, rss?.publishedAt, rss?.published)),
+    duration: positiveNumber(row.duration, row.durationSec, rss?.duration, rss?.durationSec),
+    channel: firstString(row.channel, row.uploader, rss?.channel)
+  };
+}
+
+async function enrichYoutubeEpisodeMetadata(sourceUrl: string, options: YoutubeImportOptions): Promise<Partial<ParsedYoutubeImport['episodes'][number]> & { id: string }> {
+  const runner = options.ytDlpRunner || runYtDlpEpisode;
+  const rows = await runner(sourceUrl);
+  const row = rows[0];
+  if (!row) throw new Error('yt-dlp returned no episode metadata.');
+  const normalized = normalizeYtDlpFlatEntry(row);
+  const episodeSourceUrl = firstString(normalized.url, sourceUrl) || sourceUrl;
+  const externalEpisodeId = firstString(normalized.id, normalized.video_id, normalized.videoId) || stableId(episodeSourceUrl, 'yt_ep');
+  const episodeId = stableId(`youtube:${externalEpisodeId}:${episodeSourceUrl}`, 'ep');
+  return {
+    id: episodeId,
+    title: firstString(normalized.title),
+    description: firstString(normalized.description, row.full_description),
+    websiteUrl: episodeSourceUrl,
+    imageUrl: smallYoutubeThumbnail(externalEpisodeId) || firstString(normalized.thumbnail, row.thumbnail, row.thumbnail_url),
+    publishedAt: firstString(normalized.publishedAt),
+    durationSec: positiveNumber(normalized.duration, row.duration, row.durationSec),
+    sourceUrl: episodeSourceUrl,
+    externalId: externalEpisodeId,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+async function runYtDlpEpisode(sourceUrl: string): Promise<Record<string, unknown>[]> {
+  const executable = process.env.YTDLP_PATH?.trim() || 'yt-dlp';
+  const args = [
+    '--dump-json',
+    '--skip-download',
+    '--ignore-errors',
+    '--no-warnings',
+    sourceUrl
+  ];
+  const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', resolve);
+  });
+  const rows = parseYtDlpJsonLines(stdout);
+  if (rows.length) return rows;
+  if (exitCode && exitCode !== 0) throw new Error(stderr.trim() || `yt-dlp episode enrichment failed with ${exitCode}.`);
+  return [];
+}
+
+function queueYoutubeAudioDownload(episodeId: string, sourceUrl: string, options: YoutubeImportOptions): Promise<void> {
+  const existing = youtubeAudioJobs.get(episodeId);
+  if (existing) return existing;
+  const job = downloadYoutubeAudio(episodeId, sourceUrl, options)
+    .then(async () => {
+      await updateStoredEpisodeEnrichment(episodeId, { extractionStatus: 'ready', updatedAt: new Date().toISOString() }, options);
+    })
+    .finally(() => {
+      youtubeAudioJobs.delete(episodeId);
+    });
+  youtubeAudioJobs.set(episodeId, job);
+  return job;
+}
+
+async function downloadYoutubeAudio(episodeId: string, sourceUrl: string, options: YoutubeImportOptions): Promise<void> {
+  const executable = process.env.YTDLP_PATH?.trim() || 'yt-dlp';
+  const outputPath = youtubeAudioPath(episodeId, options);
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const args = [
+    '--no-playlist',
+    '--extract-audio',
+    '--audio-format',
+    'mp3',
+    '--audio-quality',
+    process.env.YOUTUBE_AUDIO_QUALITY || '0',
+    '--output',
+    outputPath.replace(/\.mp3$/, '.%(ext)s'),
+    sourceUrl
+  ];
+  const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', resolve);
+  });
+  if (exitCode && exitCode !== 0) throw new Error(stderr.trim() || `yt-dlp audio download failed with ${exitCode}.`);
+  if (!(await youtubeAudioFileExists(episodeId, options))) throw new Error('yt-dlp finished but the expected audio file was not written.');
+}
+
+async function youtubeAudioFileExists(episodeId: string, options: YoutubeImportOptions): Promise<boolean> {
+  try {
+    const stat = await fs.stat(youtubeAudioPath(episodeId, options));
+    return stat.isFile() && stat.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+function youtubeAudioPath(episodeId: string, options: YoutubeImportOptions): string {
+  return path.join(options.dataDir || resolveMediaDataDir(), 'youtube-audio', `${safeFileId(episodeId)}.mp3`);
+}
+
+function resolveMediaDataDir(): string {
+  const raw = process.env.MEDIA_STORE_DIR || path.join(process.cwd(), '.data', 'media');
+  return path.isAbsolute(raw) ? raw : path.join(process.cwd(), raw);
+}
+
+async function findStoredEpisodeSourceUrl(episodeId: string, options: YoutubeImportOptions): Promise<string | null> {
+  if (!options.dataDir) return null;
+  const dir = path.join(options.dataDir, 'youtube-feeds');
+  let files: string[] = [];
+  try {
+    files = await fs.readdir(dir);
+  } catch {
+    return null;
+  }
+  for (const fileName of files.filter((file) => file.endsWith('.json'))) {
+    try {
+      const raw = await fs.readFile(path.join(dir, fileName), 'utf8');
+      const parsed = JSON.parse(raw) as ParsedYoutubeImport;
+      const episode = parsed.episodes.find((item) => item.id === episodeId);
+      if (episode?.sourceUrl) return episode.sourceUrl;
+      if (episode?.websiteUrl) return episode.websiteUrl;
+    } catch {
+      // Ignore corrupt source files; the explicit extract endpoint can still recover with a source URL.
+    }
+  }
+  return null;
+}
+
+async function mergeCachedEpisodeEnrichment(imported: ParsedYoutubeImport, options: YoutubeImportOptions): Promise<ParsedYoutubeImport> {
+  if (!options.dataDir) return imported;
+  const episodes = [];
+  for (const episode of imported.episodes) {
+    const cached = await readEpisodeEnrichment(episode.id, options);
+    episodes.push(cached ? { ...episode, ...cached, id: episode.id, podcastId: episode.podcastId, podcastTitle: episode.podcastTitle, audioUrl: episode.audioUrl, sourceType: 'youtube' as const } : episode);
+  }
+  return { ...imported, episodes };
+}
+
+async function mergeStoredYoutubeImport(imported: ParsedYoutubeImport, options: YoutubeImportOptions): Promise<ParsedYoutubeImport> {
+  const stored = await readStoredYoutubeImport(imported.podcast.sourceUrl, options);
+  if (!stored) return imported;
+  const currentById = new Map(imported.episodes.map((episode) => [episode.id, episode]));
+  const storedById = new Map(stored.episodes.map((episode) => [episode.id, episode]));
+  const episodeIds = new Set([...storedById.keys(), ...currentById.keys()]);
+  const episodes = [...episodeIds]
+    .map((episodeId) => mergeYoutubeEpisode(storedById.get(episodeId), currentById.get(episodeId)))
+    .filter((episode): episode is ParsedYoutubeImport['episodes'][number] => Boolean(episode))
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  return {
+    podcast: {
+      ...stored.podcast,
+      ...imported.podcast,
+      description: imported.podcast.description || stored.podcast.description,
+      imageUrl: imported.podcast.imageUrl || stored.podcast.imageUrl,
+      tags: [...new Set([...(stored.podcast.tags || []), ...(imported.podcast.tags || [])])],
+      createdAt: stored.podcast.createdAt || imported.podcast.createdAt
+    },
+    episodes
+  };
+}
+
+function mergeYoutubeEpisode(stored?: ParsedYoutubeImport['episodes'][number], current?: ParsedYoutubeImport['episodes'][number]): ParsedYoutubeImport['episodes'][number] | null {
+  if (!stored) return current || null;
+  if (!current) return stored;
+  return {
+    ...stored,
+    ...current,
+    title: current.title || stored.title,
+    description: richerText(current.description, stored.description),
+    imageUrl: current.imageUrl || stored.imageUrl,
+    publishedAt: current.publishedAt || stored.publishedAt,
+    durationSec: current.durationSec || stored.durationSec,
+    enclosureLength: current.enclosureLength || stored.enclosureLength,
+    extractionStatus: current.extractionStatus === 'ready' || stored.extractionStatus === 'ready' ? 'ready' : current.extractionStatus || stored.extractionStatus,
+    createdAt: stored.createdAt || current.createdAt,
+    updatedAt: current.updatedAt || stored.updatedAt
+  };
+}
+
+function richerText(current?: string, stored?: string): string | undefined {
+  if (!current) return stored;
+  if (!stored) return current;
+  return current.length >= stored.length ? current : stored;
+}
+
+async function refreshStoredExtractionStatuses(imported: ParsedYoutubeImport, options: YoutubeImportOptions): Promise<ParsedYoutubeImport> {
+  return {
+    ...imported,
+    episodes: await Promise.all(imported.episodes.map(async (episode) => {
+      if (!(await youtubeAudioFileExists(episode.id, options))) return episode;
+      return {
+        ...episode,
+        extractionStatus: 'ready'
+      };
+    }))
+  };
+}
+
+async function readStoredYoutubeImport(sourceUrl: string, options: YoutubeImportOptions): Promise<ParsedYoutubeImport | null> {
+  if (!options.dataDir) return null;
+  try {
+    const raw = await fs.readFile(storedYoutubeImportPath(sourceUrl, options), 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed) || !isRecord(parsed.podcast) || !Array.isArray(parsed.episodes)) return null;
+    return parsed as ParsedYoutubeImport;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStoredYoutubeImport(imported: ParsedYoutubeImport, options: YoutubeImportOptions): Promise<void> {
+  if (!options.dataDir || !imported.podcast.sourceUrl) return;
+  const file = storedYoutubeImportPath(imported.podcast.sourceUrl, options);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify(imported, null, 2));
+}
+
+function storedYoutubeImportPath(sourceUrl: string, options: YoutubeImportOptions): string {
+  return path.join(options.dataDir || '', 'youtube-feeds', `${stableId(sourceUrl, 'ysrc')}.json`);
+}
+
+async function cacheEpisodeEnrichment(episodeId: string, patch: Partial<ParsedYoutubeImport['episodes'][number]>, options: YoutubeImportOptions): Promise<void> {
+  if (!options.dataDir) return;
+  const dir = path.join(options.dataDir, 'youtube-enriched');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, `${safeFileId(episodeId)}.json`), JSON.stringify(patch, null, 2));
+}
+
+async function updateStoredEpisodeEnrichment(episodeId: string, patch: Partial<ParsedYoutubeImport['episodes'][number]>, options: YoutubeImportOptions): Promise<void> {
+  if (!options.dataDir) return;
+  const dir = path.join(options.dataDir, 'youtube-feeds');
+  let files: string[] = [];
+  try {
+    files = await fs.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const fileName of files.filter((file) => file.endsWith('.json'))) {
+    const file = path.join(dir, fileName);
+    try {
+      const raw = await fs.readFile(file, 'utf8');
+      const parsed = JSON.parse(raw) as ParsedYoutubeImport;
+      const episodeIndex = parsed.episodes.findIndex((episode) => episode.id === episodeId);
+      if (episodeIndex === -1) continue;
+      parsed.episodes[episodeIndex] = mergeYoutubeEpisode(parsed.episodes[episodeIndex], patch as ParsedYoutubeImport['episodes'][number]) || parsed.episodes[episodeIndex];
+      await fs.writeFile(file, JSON.stringify(parsed, null, 2));
+    } catch {
+      // Keep enrichment best-effort; a corrupt feed file should not block the episode page.
+    }
+  }
+}
+
+async function readEpisodeEnrichment(episodeId: string, options: YoutubeImportOptions): Promise<Partial<ParsedYoutubeImport['episodes'][number]> | null> {
+  if (!options.dataDir) return null;
+  try {
+    const raw = await fs.readFile(path.join(options.dataDir, 'youtube-enriched', `${safeFileId(episodeId)}.json`), 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    return isRecord(parsed) ? parsed as Partial<ParsedYoutubeImport['episodes'][number]> : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeFileId(input: string): string {
+  return input.replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
+function normalizeYtDlpDate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (/^\d{8}$/.test(value)) return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00Z`;
+  if (/^\d+$/.test(value)) return new Date(Number(value) * 1000).toISOString();
+  return value;
+}
+
+function buildImportResult(sourceUrl: string, kind: YoutubeSourceKind, metadata: YoutubeMetadata, publicUrl: string): ParsedYoutubeImport {
   const now = new Date().toISOString();
   const externalSourceId = metadata.playlistId || metadata.channelId || stableId(sourceUrl, 'yt_src');
   const sourceType: PodcastSourceType = kind === 'channel' ? 'youtube-channel' : kind === 'playlist' ? 'youtube-playlist' : 'youtube-ad-hoc';
@@ -326,8 +709,6 @@ function buildImportResult(sourceUrl: string, kind: YoutubeSourceKind, metadata:
       const externalEpisodeId = firstString(row.id, row.video_id, row.videoId) || stableId(episodeSourceUrl, 'yt_ep');
       const episodeId = stableId(`youtube:${externalEpisodeId}:${episodeSourceUrl}`, 'ep');
       const title = firstString(row.title, row.name, row.filename, row.file) || (kind === 'video' ? 'YouTube episode' : `YouTube episode ${index + 1}`);
-      const historyRow = findHistoryByEpisodeId(historyRows, episodeId);
-      const ready = Boolean(historyRow && resolveMetubeAudioUrl(historyRow));
       return {
         id: episodeId,
         podcastId,
@@ -346,7 +727,7 @@ function buildImportResult(sourceUrl: string, kind: YoutubeSourceKind, metadata:
         sourceType: 'youtube' as const,
         sourceUrl: episodeSourceUrl,
         externalId: externalEpisodeId,
-        extractionStatus: ready ? 'ready' as const : historyRow ? statusFromRow(historyRow) : 'none' as const,
+        extractionStatus: 'none' as const,
         createdAt: now,
         updatedAt: now
       };
@@ -387,13 +768,14 @@ function parseYoutubeFeed(xml: string, source: { channelId?: string; playlistId?
 
 async function omitYoutubeShorts(metadata: YoutubeMetadata, fetchImpl: typeof fetch): Promise<YoutubeMetadata> {
   const entries = [];
+  const allowHtmlProbe = metadata.entries.length <= 25;
   for (const entry of metadata.entries) {
-    if (!(await isYoutubeShortEntry(entry, fetchImpl))) entries.push(entry);
+    if (!(await isYoutubeShortEntry(entry, fetchImpl, allowHtmlProbe))) entries.push(entry);
   }
   return { ...metadata, entries };
 }
 
-async function isYoutubeShortEntry(entry: Record<string, unknown>, fetchImpl: typeof fetch): Promise<boolean> {
+async function isYoutubeShortEntry(entry: Record<string, unknown>, fetchImpl: typeof fetch, allowHtmlProbe = true): Promise<boolean> {
   const sourceUrl = firstString(entry.url, entry.webpage_url, entry.webpageUrl, entry.original_url);
   if (sourceUrl && isYoutubeShortsUrl(sourceUrl)) return true;
   const duration = positiveNumber(entry.duration, entry.durationSec);
@@ -401,6 +783,7 @@ async function isYoutubeShortEntry(entry: Record<string, unknown>, fetchImpl: ty
   const title = firstString(entry.title, entry.name) || '';
   const description = firstString(entry.description, entry.summary) || '';
   if (/(^|\s)#shorts?\b/i.test(`${title} ${description}`)) return true;
+  if (!allowHtmlProbe) return false;
   if (!sourceUrl) return false;
   const videoId = firstString(entry.videoId, entry.video_id, entry.id) || videoIdFromUrl(sourceUrl);
   if (!videoId) return false;
@@ -477,25 +860,6 @@ function thumbnailExtension(contentType: string | null, sourceUrl: string): stri
 function smallYoutubeThumbnail(videoId: string | undefined): string | undefined {
   if (!videoId || !/^[A-Za-z0-9_-]{6,}$/.test(videoId)) return undefined;
   return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/mqdefault.jpg`;
-}
-
-function collectRelevantHistoryRows(rows: Record<string, unknown>[], sourceUrl: string): Record<string, unknown>[] {
-  const normalized = normalizeUrl(sourceUrl);
-  const sourceList = sourceUrlList(sourceUrl);
-  const source = new URL(normalized);
-  const sourcePlaylistId = source.searchParams.get('list');
-  return rows.filter((row) => {
-    if (sourcePlaylistId && firstString(row.playlist_id, row.playlistId) === sourcePlaylistId) return true;
-    const candidates = sourceListFromRow(row);
-    return candidates.some((candidate) => {
-      if (candidate === normalized || sourceList.has(candidate)) return true;
-      if (sourcePlaylistId) {
-        const candidateUrl = new URL(candidate);
-        return candidateUrl.searchParams.get('list') === sourcePlaylistId;
-      }
-      return false;
-    });
-  });
 }
 
 async function resolveChannelId(sourceUrl: string, fetchImpl: typeof fetch): Promise<string> {
@@ -593,51 +957,12 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function findHistoryByEpisodeId(rows: Record<string, unknown>[], episodeId: string): Record<string, unknown> | null {
-  return rows.find((row) => {
-    for (const candidate of sourceListFromRow(row)) {
-      const externalEpisodeId = firstString(row.id, row.video_id, row.videoId) || stableId(candidate, 'yt_ep');
-      if (stableId(`youtube:${externalEpisodeId}:${candidate}`, 'ep') === episodeId) return true;
-    }
-    return false;
-  }) || null;
-}
-
-function sourceListFromRow(row: Record<string, unknown>): string[] {
-  return [row.url, row.webpage_url, row.webpageUrl, row.original_url]
-    .map(firstString)
-    .filter((value): value is string => Boolean(value))
-    .map(safeNormalizeUrl)
-    .filter((value): value is string => Boolean(value));
-}
-
-function sourceUrlList(sourceUrl: string): Set<string> {
-  const normalized = normalizeUrl(sourceUrl);
-  const url = new URL(normalized);
-  const list = new Set([normalized]);
-  const videoId = url.searchParams.get('v');
-  if (videoId) list.add(normalizeUrl(`https://www.youtube.com/watch?v=${videoId}`));
-  const playlistId = url.searchParams.get('list');
-  if (playlistId) list.add(normalizeUrl(`https://www.youtube.com/playlist?list=${playlistId}`));
-  return list;
-}
-
 function canonicalChannelUrl(channelId: string): string {
   return `https://www.youtube.com/channel/${encodeURIComponent(channelId)}`;
 }
 
 function canonicalPlaylistUrl(playlistId: string): string {
   return `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
-}
-
-function resolveMetubeAudioUrl(row: Record<string, unknown>): string | null {
-  const direct = firstString(row.download_url, row.downloadUrl, row.url_public, row.public_url, row.audio_url);
-  if (direct && /^https?:\/\//.test(direct)) return direct;
-  const filename = firstString(row.filename, row.file, row.name, row.title);
-  const folder = firstString(row.folder);
-  const base = (process.env.METUBE_AUDIO_PUBLIC_BASE_URL || process.env.METUBE_PUBLIC_AUDIO_URL || '').trim().replace(/\/$/, '');
-  if (base && filename) return `${base}/${encodeDownloadPath(folder ? `${folder}/${filename}` : filename)}`;
-  return null;
 }
 
 function classifyYoutubeUrl(input: string): YoutubeSourceKind | null {
@@ -667,36 +992,12 @@ function normalizeUrl(input: string): string {
   return url.toString();
 }
 
-function safeNormalizeUrl(input: string): string | null {
-  try {
-    return normalizeUrl(input);
-  } catch {
-    return null;
-  }
-}
-
 function stableId(input: string, prefix: string): string {
   return `${prefix}_${crypto.createHash('sha1').update(input).digest('hex').slice(0, 18)}`;
 }
 
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function metubeHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const token = process.env.METUBE_API_TOKEN?.trim();
-  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
-}
-
-function encodeDownloadPath(path: string): string {
-  return path.split('/').map((segment) => encodeURIComponent(segment)).join('/');
-}
-
-function statusFromRow(row: Record<string, unknown>): 'queued' | 'processing' | 'ready' | 'failed' {
-  const status = firstString(row.status, row.state)?.toLowerCase();
-  if (status?.includes('fail') || status?.includes('error')) return 'failed';
-  if (status?.includes('download') || status?.includes('process')) return 'processing';
-  return 'queued';
 }
 
 function youtubeSourceTitle(kind: YoutubeSourceKind): string {

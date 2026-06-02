@@ -1,4 +1,4 @@
-import type { ParsedFeedResult } from '@/types/domain';
+import type { Episode, ParsedFeedResult } from '@/types/domain';
 import { normalizeServerUrl } from './sync/serverAuth';
 
 export interface ServerCapabilities {
@@ -59,4 +59,24 @@ export async function extractYoutubeEpisode(serverUrl: string, accessToken: stri
     throw new Error(body?.error || `YouTube extraction failed: ${response.status}`);
   }
   return (await response.json()) as YoutubeExtractionResult;
+}
+
+export async function enrichYoutubeEpisode(serverUrl: string, accessToken: string, episodeId: string, sourceUrl: string): Promise<Partial<Episode>> {
+  const base = normalizeServerUrl(serverUrl);
+  if (!base) throw new Error('Server URL is not configured.');
+  const response = await fetch(`${base}/api/youtube/episodes/${encodeURIComponent(episodeId)}/enrich`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json'
+    },
+    body: JSON.stringify({ sourceUrl })
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error || `YouTube enrichment failed: ${response.status}`);
+  }
+  const payload = await response.json() as { patch?: Partial<Episode> };
+  return payload.patch || {};
 }

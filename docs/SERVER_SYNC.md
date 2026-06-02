@@ -25,7 +25,7 @@ Server responsibilities:
 - Validate bearer tokens from the app session.
 - Use local Postgres for sync tables, public clip registry, and server-owned metadata.
 - Serve optional PodcastIndex discovery for logged-in users.
-- Serve optional YouTube import for logged-in users when `METUBE_BASE_URL` is configured.
+- Serve optional YouTube import for logged-in users when server-side YouTube import is enabled.
 - Expose auth/sync endpoints (`/api/auth/*`, `/api/sync`) for client-mediated sign-in and merge.
 
 Auth/sync contract endpoints:
@@ -89,19 +89,22 @@ Smart Skip maps are server-owned cache data. They require signed-in server route
 
 ## YouTube import
 
-`POST /api/youtube/import` and `POST /api/youtube/sources/:id/refresh` require `Authorization: Bearer <token>` and a configured MeTube instance. `GET /api/capabilities` exposes only whether import is enabled; it does not expose MeTube URLs or tokens to the client.
+`POST /api/youtube/import` and `POST /api/youtube/sources/:id/refresh` require `Authorization: Bearer <token>` and server-side YouTube import enabled. `GET /api/capabilities` exposes only whether import is enabled; it does not expose server paths or tool configuration to the client.
 
-YouTube source import is metadata-first. It creates a fake podcast feed and normal local-first podcast/episode rows without queueing audio extraction. The app server exposes the fake RSS-style feed as `/api/youtube/feed.xml?url=...` so other podcast clients can consume it.
+YouTube source import is metadata-first. It creates or updates a canonical server-owned synthetic podcast feed and normal local-first podcast/episode rows without queueing audio extraction. The app server exposes the fake RSS-style feed as `/api/youtube/feed.xml?url=...` so other podcast clients can consume it. Later users importing the same canonical YouTube source reuse the stored feed immediately.
 
 Server-only env:
 
-- `METUBE_BASE_URL`
-- `METUBE_AUDIO_PUBLIC_BASE_URL`
-- `METUBE_API_TOKEN`
-- `METUBE_AUDIO_FORMAT`
-- `METUBE_AUDIO_QUALITY`
+- `YOUTUBE_IMPORT_ENABLED`
+- `YTDLP_PATH`
+- `YOUTUBE_METADATA_MAX_ENTRIES`
+- `YOUTUBE_AUDIO_QUALITY`
 
-The app server fetches lightweight YouTube text/image metadata during source import and refresh. It does not queue yt-dlp audio extraction during feed creation or daily metadata refresh. Audio extraction is user-triggered through `POST /api/youtube/episodes/:id/extract`, which calls MeTube's HTTP API. Until extraction is ready, episode controls show an import action instead of trying to play unavailable audio. Final playback uses stable `/media/youtube/:episodeId.mp3` URLs that redirect to completed MeTube audio. Downloaded audio files and native file paths remain device-local after a client chooses to download an episode.
+The app server fetches lightweight YouTube text/image metadata during source import and refresh. For playlist and channel sources, it uses `yt-dlp --flat-playlist --dump-json` when available so synthetic feeds are not limited to YouTube's short RSS window. `YOUTUBE_METADATA_MAX_ENTRIES` defaults to 500. Large flat crawls use metadata-only Shorts filtering to avoid one HTML request per episode.
+
+Opening a YouTube episode page triggers `POST /api/youtube/episodes/:id/enrich`, which runs a single-episode `yt-dlp --dump-json --skip-download` metadata enrichment and stores the result under the server media data directory. Later fake RSS generation merges that cached enrichment so title, description, duration, image, and published date improvements persist for other clients.
+
+The server does not queue audio extraction during feed creation, refresh, or episode enrichment. Audio extraction is user-triggered through `POST /api/youtube/episodes/:id/extract` or an RSS client requesting `/media/youtube/:episodeId.mp3`. The server runs yt-dlp, stores the MP3 under the media data directory, marks the stored synthetic feed episode ready, and then serves that stable enclosure URL like a normal podcast media URL. If the file has not been cached yet, the server returns a processing response while the download is in progress. Downloaded files on client devices and native file paths remain device-local after a client chooses to download an episode.
 
 ## Silence maps
 

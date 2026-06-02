@@ -23,7 +23,7 @@ Express app server
   - ffmpeg rendered clip files
   - ffmpeg silence-shortening jobs
   - authenticated API boundary for Supabase sync and PodcastIndex discovery
-  - optional MeTube-backed YouTube audio import
+  - optional yt-dlp-backed YouTube source and audio import
 
 Self-hosted Supabase
   - optional accounts/auth
@@ -92,9 +92,9 @@ The server is required for the hosted browser build because that runtime is acco
 - Rendered MP3 clip files via ffmpeg.
 - Signed-in silence-map analysis jobs via ffmpeg.
 - Signed-in Smart Skip metadata jobs for media versions, transcripts, segment maps, segments, durable leasing, and worker orchestration.
-- Sync/search/import mediation layer (server validates auth and calls Supabase/PodcastIndex/MeTube)
+- Sync/search/import mediation layer (server validates auth and calls Supabase/PodcastIndex/yt-dlp-backed YouTube tooling)
 
-YouTube import is optional and disabled unless `METUBE_BASE_URL` is configured. Elephant Pod owns YouTube sources as synthetic podcast rows (`youtube-channel`, `youtube-playlist`, or `youtube-ad-hoc`) plus normal episode rows and a fake RSS-style feed URL. Source import and refresh fetch metadata only. MeTube/yt-dlp extracts audio only after a user explicitly imports audio for an episode; final episode playback uses stable app-server `/media/youtube/:id.mp3` URLs that redirect to completed server audio.
+YouTube import is optional and can be disabled with `YOUTUBE_IMPORT_ENABLED=false`. Elephant Pod owns YouTube sources as canonical synthetic podcast feeds (`youtube-channel`, `youtube-playlist`, or `youtube-ad-hoc`) plus normal episode rows and a fake RSS-style feed URL. Source import and refresh fetch metadata only. Playlist/channel metadata uses server-side `yt-dlp --flat-playlist` so synthetic feeds can include more than YouTube RSS exposes. Opening an episode runs single-episode metadata enrichment and stores it in the server media cache for future fake RSS generation. Audio extraction runs only after a user explicitly imports, plays, downloads, or requests the RSS enclosure for an episode; final episode playback uses stable app-server `/media/youtube/:id.mp3` URLs backed by cached server audio.
 
 Future server jobs should include:
 
