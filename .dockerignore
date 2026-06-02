@@ -1,0 +1,12 @@
+.git
+.DS_Store
+node_modules
+**/node_modules
+apps/web/dist
+apps/server/dist
+dist
+coverage
+src-tauri/target
+**/.turbo
+**/.cache
+npm-debug.log*
