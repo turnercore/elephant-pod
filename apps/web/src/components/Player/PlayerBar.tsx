@@ -349,8 +349,8 @@ function CollapsedPlayer({
   onOpenQueue: () => void;
 }) {
   return (
-      <div className="grid gap-2">
-      <div className="grid grid-cols-[56px_1fr] items-center gap-3">
+    <div className="grid gap-2">
+      <div className="grid grid-cols-[56px_1fr_auto] items-center gap-3">
         <button
           type="button"
           onClick={current ? onToggle : undefined}
@@ -372,28 +372,28 @@ function CollapsedPlayer({
             {current ? current.podcastTitle : 'Choose an episode.'}
           </button>
         </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          <IconButton label={`Skip back ${settings.skipBackSec} seconds`} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-9 w-9">
+            <Rewind size={16} aria-hidden />
+          </IconButton>
+          <IconButton label={`Skip forward ${settings.skipForwardSec} seconds`} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-9 w-9">
+            <FastForward size={16} aria-hidden />
+          </IconButton>
+          <button
+            type="button"
+            aria-label="Open queue"
+            data-tooltip="Open queue"
+            onClick={onOpenQueue}
+            className="eh-tooltip flex h-9 min-w-11 items-center justify-center gap-1 rounded-eh border border-bone/15 bg-surface/70 px-2 text-sm font-black text-cream transition hover:border-yellow/50 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow"
+          >
+            <ArrowUpToLine size={16} aria-hidden />
+            <span>{queueCount}</span>
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-[1fr_auto] items-center gap-3">
         <ProgressBar progress={progress} duration={duration} onSeek={onSeek} />
         {current ? <span className="min-w-[3.5rem] text-right text-[11px] font-black tabular-nums text-bone">{formatRemainingLabel(remaining)}</span> : null}
-      </div>
-      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-        <IconButton label={`Skip back ${settings.skipBackSec} seconds`} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-9 w-full">
-          <Rewind size={16} aria-hidden />
-        </IconButton>
-        <IconButton label={`Skip forward ${settings.skipForwardSec} seconds`} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-9 w-full">
-          <FastForward size={16} aria-hidden />
-        </IconButton>
-        <button
-          type="button"
-          aria-label="Open queue"
-          data-tooltip="Open queue"
-          onClick={onOpenQueue}
-          className="eh-tooltip flex h-9 min-w-14 items-center justify-center gap-1 rounded-eh border border-bone/15 bg-surface/70 px-2 text-sm font-black text-cream transition hover:border-yellow/50 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow"
-        >
-          <ArrowUpToLine size={16} aria-hidden />
-          <span>{queueCount}</span>
-        </button>
       </div>
     </div>
   );

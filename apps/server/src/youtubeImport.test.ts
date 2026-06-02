@@ -128,6 +128,52 @@ describe('importYoutubeMetadata', () => {
     assert.equal(imported.episodes[1].publishedAt, '2026-06-02T00:00:00Z');
   });
 
+  it('imports a direct video as its canonical channel feed when the channel is known', async () => {
+    const fetchMock = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.startsWith('https://www.youtube.com/oembed')) {
+        return jsonResponse({
+          title: 'Requested video',
+          author_name: 'Channel Name',
+          thumbnail_url: 'https://img.example/video.jpg'
+        });
+      }
+      if (url === 'https://www.youtube.com/watch?v=abc123') {
+        return textResponse('<html><meta property="og:description" content="Episode description"><script>{"channelId":"UCVIDEO"}</script></html>');
+      }
+      if (url === 'https://www.youtube.com/feeds/videos.xml?channel_id=UCVIDEO') {
+        return textResponse(`<?xml version="1.0"?>
+          <feed>
+            <title>Channel Name</title>
+            <author><name>Channel Name</name></author>
+            <entry>
+              <yt:videoId>abc123</yt:videoId>
+              <yt:channelId>UCVIDEO</yt:channelId>
+              <title>Requested video from RSS</title>
+              <link href="https://www.youtube.com/watch?v=abc123" />
+              <published>2026-06-01T00:00:00Z</published>
+            </entry>
+          </feed>`);
+      }
+      if (url.endsWith('/history')) return jsonResponse({ done: [] });
+      throw new Error(`Unexpected URL ${url}`);
+    };
+    const ytDlpRunner = async (url: string) => {
+      assert.equal(url, 'https://www.youtube.com/channel/UCVIDEO');
+      return [
+        { id: 'abc123', title: 'Requested video', url: 'https://www.youtube.com/watch?v=abc123', upload_date: '20260601', duration: 900 },
+        { id: 'next456', title: 'Next channel video', url: 'https://www.youtube.com/watch?v=next456', upload_date: '20260602', duration: 1200 }
+      ];
+    };
+
+    const imported = await importYoutubeMetadata('https://www.youtube.com/watch?v=abc123', { publicUrl: 'https://pod.example', ytDlpRunner }, fetchMock as typeof fetch);
+
+    assert.equal(imported.podcast.sourceType, 'youtube-channel');
+    assert.equal(imported.podcast.sourceUrl, 'https://www.youtube.com/channel/UCVIDEO');
+    assert.equal(imported.episodes.length, 2);
+    assert.equal(imported.episodes[0].durationSec, 900);
+  });
+
   it('stores synthetic feeds and reuses them for later imports', async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'elephant-pod-youtube-feed-'));
     let ytDlpCalls = 0;
@@ -165,6 +211,52 @@ describe('importYoutubeMetadata', () => {
       assert.equal(first.episodes.length, 2);
       assert.equal(second.episodes.length, 2);
       assert.equal(second.episodes[1].title, 'Flat Episode 2');
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('dedupes a direct video against an existing stored channel feed', async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'elephant-pod-youtube-video-dedupe-'));
+    let ytDlpCalls = 0;
+    try {
+      const fetchMock = async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.startsWith('https://www.youtube.com/oembed')) {
+          return jsonResponse({ title: 'Video', author_name: 'Channel Name' });
+        }
+        if (url === 'https://www.youtube.com/watch?v=abc123' || url === 'https://www.youtube.com/channel/UCVIDEO') {
+          return textResponse('<html><link type="application/rss+xml" href="https://www.youtube.com/feeds/videos.xml?channel_id=UCVIDEO"><script>{"channelId":"UCVIDEO"}</script></html>');
+        }
+        if (url === 'https://www.youtube.com/feeds/videos.xml?channel_id=UCVIDEO') {
+          return textResponse(`<?xml version="1.0"?>
+            <feed>
+              <title>Channel Name</title>
+              <author><name>Channel Name</name></author>
+              <entry>
+                <yt:videoId>abc123</yt:videoId>
+                <yt:channelId>UCVIDEO</yt:channelId>
+                <title>Video</title>
+                <link href="https://www.youtube.com/watch?v=abc123" />
+                <published>2026-06-01T00:00:00Z</published>
+              </entry>
+            </feed>`);
+        }
+        if (url.endsWith('/history')) return jsonResponse({ done: [] });
+        throw new Error(`Unexpected URL ${url}`);
+      };
+      const ytDlpRunner = async () => {
+        ytDlpCalls += 1;
+        return [{ id: 'abc123', title: 'Video', url: 'https://www.youtube.com/watch?v=abc123', upload_date: '20260601', duration: 900 }];
+      };
+
+      const channel = await importYoutubeMetadata('https://www.youtube.com/channel/UCVIDEO', { publicUrl: 'https://pod.example', dataDir, ytDlpRunner }, fetchMock as typeof fetch);
+      const video = await importYoutubeMetadata('https://www.youtube.com/watch?v=abc123', { publicUrl: 'https://pod.example', dataDir, ytDlpRunner }, fetchMock as typeof fetch);
+
+      assert.equal(ytDlpCalls, 1);
+      assert.equal(video.podcast.id, channel.podcast.id);
+      assert.equal(video.podcast.sourceUrl, channel.podcast.sourceUrl);
+      assert.equal(video.episodes.length, 1);
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }

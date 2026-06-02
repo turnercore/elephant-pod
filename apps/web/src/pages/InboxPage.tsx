@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
 import { IconButton } from '@/components/ui/IconButton';
 import { Panel } from '@/components/ui/Panel';
 import { formatDuration, formatEpisodeReleaseDate } from '@/lib/dates';
@@ -11,6 +12,7 @@ interface InboxPageProps {
   episodes: EpisodeWithState[];
   onRefreshFeeds: () => void;
   getPodcastImageUrl?: (podcastId: string) => string | undefined;
+  episodeBadgesById?: Record<string, string[]>;
   handlers: {
     onPlay: (episode: EpisodeWithState) => void;
     onPlayNext?: (episode: EpisodeWithState) => void;
@@ -22,7 +24,7 @@ interface InboxPageProps {
   };
 }
 
-export function InboxPage({ episodes, onRefreshFeeds, getPodcastImageUrl, handlers }: InboxPageProps) {
+export function InboxPage({ episodes, onRefreshFeeds, getPodcastImageUrl, episodeBadgesById = {}, handlers }: InboxPageProps) {
   return (
     <Panel
       title="Inbox"
@@ -37,7 +39,7 @@ export function InboxPage({ episodes, onRefreshFeeds, getPodcastImageUrl, handle
         {episodes.length ? (
           <div className="grid gap-3">
             {episodes.map((episode) => (
-              <InboxTriageRow key={episode.id} episode={episode} podcastImageUrl={getPodcastImageUrl?.(episode.podcastId)} handlers={handlers} />
+              <InboxTriageRow key={episode.id} episode={episode} podcastImageUrl={getPodcastImageUrl?.(episode.podcastId)} processedBadges={episodeBadgesById[episode.id]} handlers={handlers} />
             ))}
           </div>
         ) : (
@@ -50,7 +52,7 @@ export function InboxPage({ episodes, onRefreshFeeds, getPodcastImageUrl, handle
   );
 }
 
-function InboxTriageRow({ episode, podcastImageUrl, handlers }: { episode: EpisodeWithState; podcastImageUrl?: string; handlers: InboxPageProps['handlers'] }) {
+function InboxTriageRow({ episode, podcastImageUrl, processedBadges = [], handlers }: { episode: EpisodeWithState; podcastImageUrl?: string; processedBadges?: string[]; handlers: InboxPageProps['handlers'] }) {
   const startX = useRef<number | null>(null);
   const [revealed, setRevealed] = useState(false);
   const artworkUrl = episode.imageUrl || podcastImageUrl;
@@ -90,6 +92,13 @@ function InboxTriageRow({ episode, podcastImageUrl, handlers }: { episode: Episo
         <button type="button" onClick={() => handlers.onOpenEpisode?.(episode)} className="grid min-w-0 grid-cols-[64px_1fr] gap-3 text-left" aria-label={`Open ${episode.title}`}>
           {artworkUrl ? <img src={artworkUrl} alt="" className="h-16 w-16 rounded-eh border border-bone/15 object-cover" /> : <div className="h-16 w-16 rounded-eh border border-bone/15 bg-canvas" />}
           <span className="min-w-0">
+            {processedBadges.length ? (
+              <span className="mb-1 flex flex-wrap gap-1.5">
+                {processedBadges.map((badge) => (
+                  <Badge key={badge} tone={badge === 'Smart Skip' ? 'teal' : 'mauve'}>{badge}</Badge>
+                ))}
+              </span>
+            ) : null}
             <span className="block truncate text-xs font-black uppercase tracking-[0.05em] text-yellow">{episode.podcastTitle}</span>
             <span className="mt-1 block line-clamp-2 text-sm font-black leading-snug text-cream">{episode.title}</span>
             <span className="mt-1 block truncate text-xs text-bone">{formatEpisodeReleaseDate(episode.publishedAt)} · {formatDuration(episode.durationSec)}</span>

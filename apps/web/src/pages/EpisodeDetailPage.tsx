@@ -17,7 +17,8 @@ export function EpisodeDetailPage({
   onCancelDeleteDownload,
   onTogglePlayed,
   downloading,
-  confirmingDeleteDownload
+  confirmingDeleteDownload,
+  processedBadges = []
 }: {
   episode: EpisodeWithState;
   podcastImageUrl?: string;
@@ -31,6 +32,7 @@ export function EpisodeDetailPage({
   onTogglePlayed: (episode: EpisodeWithState) => void;
   downloading?: boolean;
   confirmingDeleteDownload?: boolean;
+  processedBadges?: string[];
 }) {
   const episodeArtworkUrl = episode.imageUrl;
   const artworkUrl = episodeArtworkUrl || podcastImageUrl;
@@ -66,6 +68,9 @@ export function EpisodeDetailPage({
               {episode.state.inboxState === 'new' ? <Badge tone="mauve">Inbox #{episode.state.inboxPosition}</Badge> : null}
               {episode.state.queuePosition ? <Badge tone="teal">Queue #{episode.state.queuePosition}</Badge> : null}
               {episode.state.downloaded ? <Badge tone="teal">Offline</Badge> : null}
+              {processedBadges.map((badge) => (
+                <Badge key={badge} tone={badge === 'Smart Skip' ? 'teal' : 'mauve'}>{badge}</Badge>
+              ))}
             </div>
             <button type="button" onClick={() => onOpenPodcast(episode.podcastId)} className="mt-3 flex max-w-xl items-center gap-3 rounded-eh border border-bone/15 bg-surface/70 p-2 text-left transition hover:border-yellow/45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow" aria-label={`Open ${episode.podcastTitle}`}>
               {podcastImageUrl ? <img src={podcastImageUrl} alt="" className="h-12 w-12 shrink-0 rounded-[12px] border border-bone/15 object-cover" /> : null}

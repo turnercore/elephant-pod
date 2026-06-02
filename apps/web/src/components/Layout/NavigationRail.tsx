@@ -11,11 +11,11 @@ import { BrandMark } from './BrandMark';
 
 const items: Array<{ key: SectionKey; label: string; icon: typeof Inbox }> = [
   { key: 'inbox', label: 'Inbox', icon: Inbox },
-  { key: 'search', label: 'Search', icon: Search }
+  { key: 'search', label: 'Search', icon: Search },
+  { key: 'library', label: 'Library', icon: Archive }
 ];
 
 const footerItems: Array<{ key: SectionKey; label: string; icon: typeof Inbox }> = [
-  { key: 'library', label: 'Library', icon: Archive },
   { key: 'history', label: 'History', icon: Clock3 },
   { key: 'downloads', label: 'Downloads', icon: Download },
   { key: 'settings', label: 'Settings', icon: Settings }
@@ -49,7 +49,7 @@ export function NavigationRail({
   return (
     <aside
       className={cn(
-        'relative hidden h-full w-[76px] shrink-0 flex-col items-center gap-4 border-r border-bone/15 bg-canvas/70 p-3 transition-[width] duration-200 md:flex md:items-stretch',
+        'scrollbar-soft relative hidden h-full w-[76px] shrink-0 flex-col items-center gap-4 overflow-y-auto border-r border-bone/15 bg-canvas/70 p-3 transition-[width] duration-200 md:row-span-2 md:flex md:items-stretch',
         collapsed ? 'md:w-[76px]' : 'md:w-[230px]'
       )}
     >
@@ -69,7 +69,7 @@ export function NavigationRail({
       <div className="md:hidden">
         <BrandMark />
       </div>
-      <nav className="mt-3 grid gap-2" aria-label="Primary">
+      <nav className="eh-sidebar-primary mt-3 grid gap-2" aria-label="Primary">
         {items.map((item) => {
           const Icon = item.icon;
           const activeItem = active === item.key;
@@ -81,29 +81,47 @@ export function NavigationRail({
               aria-current={activeItem ? 'page' : undefined}
               onClick={() => onSelect(item.key)}
               className={cn(
-                'flex h-11 items-center justify-center gap-3 rounded-eh border border-transparent px-3 text-sm font-black uppercase tracking-[0.06em] text-bone transition hover:border-yellow/30 hover:text-yellow',
+                'eh-sidebar-primary-item flex h-11 items-center justify-center gap-3 rounded-eh border border-transparent px-3 text-sm font-black uppercase tracking-[0.06em] text-bone transition hover:border-yellow/30 hover:text-yellow',
                 collapsed ? 'md:justify-center md:px-0' : 'md:justify-start',
                 activeItem && 'border-yellow/60 bg-yellow text-canvas hover:text-canvas'
               )}
             >
               <Icon size={20} aria-hidden />
-              <span className={cn('hidden md:inline', collapsed && 'md:hidden')}>{item.label}</span>
+              <span className={cn('eh-sidebar-primary-label hidden md:inline', collapsed && 'md:hidden')}>{item.label}</span>
             </button>
           );
         })}
       </nav>
-      <div className="mt-auto hidden md:block">
+      <div className="eh-sidebar-footer hidden md:block">
         <div className="relative grid gap-2">
-          <div className={cn('grid gap-2', collapsed ? 'grid-cols-1' : 'grid-cols-4')}>
+          <nav className={cn('eh-sidebar-secondary grid gap-2', collapsed ? 'grid-cols-1' : 'grid-cols-1')} aria-label="Library and settings">
             {footerItems.map((item) => {
               const Icon = item.icon;
+              const activeItem = active === item.key;
               return (
-                <IconButton key={item.key} label={item.label} active={active === item.key} onClick={() => onSelect(item.key)}>
+                <button
+                  key={item.key}
+                  aria-label={item.label}
+                  title={item.label}
+                  aria-current={activeItem ? 'page' : undefined}
+                  onClick={() => onSelect(item.key)}
+                  className={cn(
+                    'eh-sidebar-secondary-item eh-tooltip flex h-10 min-w-0 items-center justify-start gap-3 rounded-eh border border-bone/15 bg-surface/70 px-3 text-sm font-black uppercase tracking-[0.05em] text-cream transition hover:border-yellow/50 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow',
+                    collapsed && 'md:grid md:w-10 md:place-items-center md:px-0',
+                    activeItem && 'border-yellow bg-yellow text-canvas hover:text-canvas'
+                  )}
+                  data-tooltip={item.label}
+                >
                   <Icon size={18} aria-hidden />
-                </IconButton>
+                  <span className={cn('eh-sidebar-secondary-label truncate', collapsed && 'md:hidden')}>{item.label}</span>
+                </button>
               );
             })}
-          </div>
+          </nav>
+        </div>
+      </div>
+      <div className="mt-auto hidden md:block">
+        <div className="relative grid gap-2">
           <button
             type="button"
             onClick={() => setProfileOpen((open) => !open)}

@@ -31,6 +31,7 @@ import {
   addEpisodeToQueueNext,
   cacheParsedPodcast,
   getSettings,
+  getEpisodeWithState,
   addListeningSample,
   getListeningStats,
   getPodcastPreference,
@@ -566,17 +567,18 @@ export default function App() {
   const browserNeedsSignIn = hostedWebRuntime && Boolean(settings) && !isTauriRuntime() && (!serverSession || isServerSessionExpired(serverSession));
 
   async function handlePlay(episode: EpisodeWithState) {
-    if (!(await ensureYoutubeAudioReady(episode))) return;
-    if (audio.current?.id === episode.id) {
+    const playableEpisode = await ensureYoutubeAudioReady(episode);
+    if (!playableEpisode) return;
+    if (audio.current?.id === playableEpisode.id) {
       const willResume = !audio.isPlaying;
       await audio.toggle();
-      if (willResume) await updateEpisodeState(episode.id, { lastPlayedAt: nowIso() });
+      if (willResume) await updateEpisodeState(playableEpisode.id, { lastPlayedAt: nowIso() });
       await refreshLocalState();
       return;
     }
-    await handleDisplaceCurrentIfNeeded(episode);
-    await playEpisodeAtQueueTop(episode.id);
-    await audio.playEpisode(withPlaybackArtwork(episode));
+    await handleDisplaceCurrentIfNeeded(playableEpisode);
+    await playEpisodeAtQueueTop(playableEpisode.id);
+    await audio.playEpisode(withPlaybackArtwork(playableEpisode));
     await refreshLocalState();
   }
 
@@ -679,12 +681,13 @@ export default function App() {
       }
       return;
     }
-    if (!(await ensureYoutubeAudioReady(episode))) return;
+    const downloadableEpisode = await ensureYoutubeAudioReady(episode);
+    if (!downloadableEpisode) return;
     setConfirmDeleteDownloadEpisodeId(null);
-    setDownloadingEpisodeIds((ids) => new Set(ids).add(episode.id));
+    setDownloadingEpisodeIds((ids) => new Set(ids).add(downloadableEpisode.id));
     try {
-      const result = await downloadEpisodeToCache(episode);
-      await updateEpisodeState(episode.id, {
+      const result = await downloadEpisodeToCache(downloadableEpisode);
+      await updateEpisodeState(downloadableEpisode.id, {
         downloaded: true,
         downloadedAt: nowIso(),
         downloadPath: result.path,
@@ -692,37 +695,37 @@ export default function App() {
         downloadBackend: result.backend,
         downloadSource: 'manual'
       });
-      const downloadedEpisode = { ...episode, state: { ...episode.state, downloaded: true } };
+      const downloadedEpisode = { ...downloadableEpisode, state: { ...downloadableEpisode.state, downloaded: true } };
       void cacheArtworkForOfflineEpisodes([downloadedEpisode], [...feeds, ...cachedPodcasts]);
       if (canUseServerSilence) void prefetchServerSilenceMaps([downloadedEpisode], runtimeServerUrl, serverAccessToken);
       if (canUseServerSmartSkip) void requestSmartSkipProcessing(downloadedEpisode, runtimeServerUrl, serverAccessToken, 'queue');
-      setStatus(`Downloaded ${episode.title} ${result.backend === 'tauri-filesystem' ? 'to native storage' : 'to browser cache'}.`);
+      setStatus(`Downloaded ${downloadableEpisode.title} ${result.backend === 'tauri-filesystem' ? 'to native storage' : 'to browser cache'}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Download failed. Host may block browser downloads, or native storage may be unavailable.');
     } finally {
       setDownloadingEpisodeIds((ids) => {
         const next = new Set(ids);
-        next.delete(episode.id);
+        next.delete(downloadableEpisode.id);
         return next;
       });
     }
     await refreshLocalState();
   }
 
-  async function ensureYoutubeAudioReady(episode: EpisodeWithState): Promise<boolean> {
-    if (episode.sourceType !== 'youtube' || episode.extractionStatus === 'ready') return true;
+  async function ensureYoutubeAudioReady(episode: EpisodeWithState): Promise<EpisodeWithState | null> {
+    if (episode.sourceType !== 'youtube' || episode.extractionStatus === 'ready') return episode;
     if (!runtimeServerUrl || !serverAccessToken) {
       setStatus('Sign in to import YouTube audio.');
-      return false;
+      return null;
     }
     if (!youtubeImportEnabled) {
       setStatus('YouTube audio import is disabled on this server.');
-      return false;
+      return null;
     }
     const sourceUrl = episode.sourceUrl || episode.websiteUrl;
     if (!sourceUrl) {
       setStatus('This YouTube episode is missing its source URL.');
-      return false;
+      return null;
     }
     try {
       setStatus('Queuing YouTube audio import...');
@@ -731,7 +734,7 @@ export default function App() {
       await refreshLocalState();
       if (result.audioReady) {
         setStatus('YouTube audio is ready.');
-        return true;
+        return (await getEpisodeWithState(episode.id)) || { ...episode, extractionStatus: 'ready' };
       }
       setStatus('Server is preparing YouTube audio...');
       for (let attempt = 0; attempt < 18; attempt += 1) {
@@ -741,14 +744,14 @@ export default function App() {
         if (next.audioReady) {
           await refreshLocalState();
           setStatus('YouTube audio is ready.');
-          return true;
+          return (await getEpisodeWithState(episode.id)) || { ...episode, extractionStatus: 'ready' };
         }
       }
       setStatus('YouTube audio is still processing on the server. Try again shortly.');
-      return false;
+      return null;
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'YouTube audio import failed.');
-      return false;
+      return null;
     }
   }
 
@@ -1039,6 +1042,7 @@ export default function App() {
           onTogglePlayed={(episode) => void handleTogglePlayed(episode)}
           downloading={downloadingEpisodeIds.has(selectedEpisode.id)}
           confirmingDeleteDownload={confirmDeleteDownloadEpisodeId === selectedEpisode.id}
+          processedBadges={episodeBadgesById[selectedEpisode.id]}
         />
       );
     }
@@ -1067,7 +1071,7 @@ export default function App() {
 
     switch (active) {
       case 'inbox':
-        return <InboxPage episodes={inboxEpisodes} onRefreshFeeds={handleRefreshFeeds} getPodcastImageUrl={getPodcastImageUrl} handlers={handlers} />;
+        return <InboxPage episodes={inboxEpisodes} onRefreshFeeds={handleRefreshFeeds} getPodcastImageUrl={getPodcastImageUrl} episodeBadgesById={episodeBadgesById} handlers={handlers} />;
       case 'queue':
         return <QueuePage episodes={queueEpisodes} onPlay={handlePlay} onMove={handleMoveQueue} onRemove={handleRemoveQueue} />;
       case 'library':

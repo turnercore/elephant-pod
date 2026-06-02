@@ -214,7 +214,7 @@ export async function importYoutubeMetadata(sourceUrl: string, options: YoutubeI
   const kind = classifyYoutubeUrl(normalizedUrl);
   if (!kind) throw new Error('Only YouTube video, playlist, channel, and podcast playlist URLs are supported.');
   if (isYoutubeShortsUrl(normalizedUrl)) throw new Error('YouTube Shorts are not imported as podcast episodes.');
-  if (!options.forceRefresh && kind !== 'video') {
+  if (!options.forceRefresh) {
     const canonicalSourceUrl = await resolveCanonicalYoutubeSourceUrl(normalizedUrl, kind, fetchImpl).catch(() => null);
     const stored = canonicalSourceUrl ? await readStoredYoutubeImport(canonicalSourceUrl, options) : null;
     if (stored) {
@@ -276,6 +276,14 @@ async function fetchYoutubeMetadata(sourceUrl: string, kind: YoutubeSourceKind, 
     channelId
   };
   if (await isYoutubeShortEntry(videoEntry, fetchImpl)) throw new Error('YouTube Shorts are not imported as podcast episodes.');
+  if (channelId) {
+    const canonicalSourceUrl = canonicalChannelUrl(channelId);
+    const channelMetadata = await fetchChannelMetadata(channelId, fetchImpl);
+    if (channelMetadata) {
+      const expanded = await expandWithYtDlpFlatMetadata({ ...channelMetadata, canonicalSourceUrl, channelId }, canonicalSourceUrl, options);
+      return omitYoutubeShorts(ensureMetadataIncludesEntry(expanded, videoEntry), fetchImpl);
+    }
+  }
   return {
     title: firstString((oembed as Record<string, unknown>).author_name) || 'YouTube Channel',
     author: firstString((oembed as Record<string, unknown>).author_name),
@@ -294,6 +302,11 @@ async function resolveCanonicalYoutubeSourceUrl(sourceUrl: string, kind: Youtube
   }
   if (kind === 'channel') {
     return canonicalChannelUrl(await resolveChannelId(sourceUrl, fetchImpl));
+  }
+  if (kind === 'video') {
+    const html = await fetchText(sourceUrl, fetchImpl).catch(() => '');
+    const channelId = firstString(match(html, /"channelId":"([^"]+)"/), match(html, /"externalId":"([^"]+)"/));
+    return channelId ? canonicalChannelUrl(channelId) : sourceUrl;
   }
   return sourceUrl;
 }
@@ -322,6 +335,14 @@ async function expandWithYtDlpFlatMetadata(metadata: YoutubeMetadata, sourceUrl:
   }));
   if (!entries.length) return metadata;
   return { ...metadata, entries };
+}
+
+function ensureMetadataIncludesEntry(metadata: YoutubeMetadata, entry: Record<string, unknown>): YoutubeMetadata {
+  const entryId = firstString(entry.id, entry.videoId, entry.video_id, entry.url);
+  if (!entryId) return metadata;
+  const existing = metadata.entries.some((candidate) => firstString(candidate.id, candidate.videoId, candidate.video_id, candidate.url) === entryId);
+  if (existing) return metadata;
+  return { ...metadata, entries: uniqueByExternalId([entry, ...metadata.entries]) };
 }
 
 async function runYtDlpFlatPlaylist(sourceUrl: string): Promise<Record<string, unknown>[]> {
@@ -681,7 +702,7 @@ function normalizeYtDlpDate(value: string | undefined): string | undefined {
 function buildImportResult(sourceUrl: string, kind: YoutubeSourceKind, metadata: YoutubeMetadata, publicUrl: string): ParsedYoutubeImport {
   const now = new Date().toISOString();
   const externalSourceId = metadata.playlistId || metadata.channelId || stableId(sourceUrl, 'yt_src');
-  const sourceType: PodcastSourceType = kind === 'channel' ? 'youtube-channel' : kind === 'playlist' ? 'youtube-playlist' : 'youtube-ad-hoc';
+  const sourceType: PodcastSourceType = kind === 'channel' || (kind === 'video' && metadata.channelId) ? 'youtube-channel' : kind === 'playlist' ? 'youtube-playlist' : 'youtube-ad-hoc';
   const canonicalSourceUrl = metadata.canonicalSourceUrl || sourceUrl;
   const podcastTitle = metadata.title || youtubeSourceTitle(kind);
   const podcastId = stableId(`${sourceType}:${externalSourceId}:${canonicalSourceUrl}`, 'feed');
@@ -692,7 +713,7 @@ function buildImportResult(sourceUrl: string, kind: YoutubeSourceKind, metadata:
       id: podcastId,
       title: podcastTitle,
       author: metadata.author,
-      description: metadata.description || `Synthetic podcast feed for a YouTube ${kind === 'video' ? 'channel' : kind}.`,
+      description: metadata.description || `Synthetic podcast feed for a YouTube ${sourceType === 'youtube-channel' ? 'channel' : kind}.`,
       imageUrl: metadata.imageUrl,
       feedUrl,
       websiteUrl: canonicalSourceUrl,

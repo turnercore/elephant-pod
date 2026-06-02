@@ -85,7 +85,7 @@ Smart Skip maps are server-owned cache data. They require signed-in server route
 - PodcastIndex discovery/search is only available when authenticated and runs through server routes.
 - YouTube import is only available when authenticated and when `/api/capabilities` reports `youtubeImport.enabled=true`.
 - The server never searches YouTube for plain text queries. Users must paste a YouTube video, playlist, channel, or podcast URL.
-- YouTube video URLs create one synthetic episode quickly under the parent channel. YouTube playlist, channel, and podcast playlist URLs create refreshable synthetic podcasts. A real RSS feed remains the preferred import path when available.
+- YouTube video URLs resolve to the parent channel's canonical synthetic podcast when the channel can be identified, and the requested video is merged into that feed if it is not already present. YouTube playlist, channel, and podcast playlist URLs create refreshable synthetic podcasts. A real RSS feed remains the preferred import path when available.
 
 ## YouTube import
 
