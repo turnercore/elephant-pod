@@ -1,7 +1,7 @@
 {
   "name": "@elephant-pod/web",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -18,9 +18,9 @@
     "clsx": "^2.1.1",
     "dexie": "^4.0.11",
     "fast-xml-parser": "^5.2.0",
-    "react-icons": "^5.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-icons": "^5.5.0",
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
@@ -30,8 +30,8 @@
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vite": "^6.0.6",
-    "tsx": "^4.19.2"
+    "vite": "^6.0.6"
   }
 }

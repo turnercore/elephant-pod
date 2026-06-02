@@ -5,7 +5,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { Panel } from '@/components/ui/Panel';
-import { formatDate, formatDuration } from '@/lib/dates';
+import { formatDuration, formatEpisodeReleaseDate } from '@/lib/dates';
 
 interface InboxPageProps {
   episodes: EpisodeWithState[];
@@ -92,7 +92,7 @@ function InboxTriageRow({ episode, podcastImageUrl, handlers }: { episode: Episo
           <span className="min-w-0">
             <span className="block truncate text-xs font-black uppercase tracking-[0.05em] text-yellow">{episode.podcastTitle}</span>
             <span className="mt-1 block line-clamp-2 text-sm font-black leading-snug text-cream">{episode.title}</span>
-            <span className="mt-1 block truncate text-xs text-bone">{formatDate(episode.publishedAt)} · {formatDuration(episode.durationSec)}</span>
+            <span className="mt-1 block truncate text-xs text-bone">{formatEpisodeReleaseDate(episode.publishedAt)} · {formatDuration(episode.durationSec)}</span>
             {episode.description ? <span className="mt-2 block line-clamp-2 text-sm leading-5 text-bone/90">{stripHtml(episode.description)}</span> : null}
           </span>
         </button>

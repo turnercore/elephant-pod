@@ -8,8 +8,8 @@ describe('resolveSmartSkipSettings', () => {
     const preference: PodcastPreference = {
       podcastId: 'show-1',
       smartSkipIntro: true,
-      smartSkipSponsors: false,
-      smartSkipSoftSkips: true,
+      smartSkipCommercials: false,
+      smartSkipIncludeSoftMatches: true,
       sortDirection: 'newest',
       addNewEpisodesToInbox: true,
       updatedAt: new Date().toISOString()
@@ -19,16 +19,16 @@ describe('resolveSmartSkipSettings', () => {
       {
         ...settingsFixture,
         smartSkipIntros: false,
-        smartSkipSponsors: true,
-        smartSkipSoftSkips: false
+        smartSkipCommercials: true,
+        smartSkipIncludeSoftMatches: false
       },
       preference
     );
 
     assert.equal(resolved.intros, true);
-    assert.equal(resolved.sponsors, false);
-    assert.equal(resolved.softSkips, true);
-    assert.equal(resolved.ads, settingsFixture.smartSkipAds);
+    assert.equal(resolved.commercials, false);
+    assert.equal(resolved.includeSoftMatches, true);
+    assert.equal(resolved.selfPromos, settingsFixture.smartSkipSelfPromos);
   });
 });
 
@@ -53,6 +53,7 @@ const settingsFixture: AppSettings = {
   silenceMinMs: 350,
   silenceBoostRate: 2.15,
   smartSkipEnabled: true,
+  smartSkipCommercials: true,
   smartSkipAds: true,
   smartSkipSponsors: true,
   smartSkipIntros: false,
@@ -60,6 +61,7 @@ const settingsFixture: AppSettings = {
   smartSkipNetworkPromos: true,
   smartSkipSelfPromos: false,
   smartSkipSilence: false,
+  smartSkipIncludeSoftMatches: false,
   smartSkipSoftSkips: false,
   smartSkipSoftPrompt: true,
   smartSkipUseServerMedia: true,

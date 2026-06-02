@@ -71,6 +71,8 @@ The server routes are:
 
 Processing always follows the same V1 path: ffmpeg silence boundaries, a Whisper-compatible `/v1/transcribe` service, a segmenter service, deterministic boundary refinement, and SegmentMap storage. In this iteration the segmenter backend is `openai_batch`; the app server only depends on the segmenter HTTP contract. The server records the external batch ID, releases the job with `next_attempt_at`, and later resumes refinement/storage after `/v1/segment-batches/:id` reports completion. The local compose workers are integration mocks unless `MOCK_SEGMENTER=false` and `OPENAI_API_KEY` are set; production needs real Whisper and segmenter endpoints. Playback still goes through `useAudioController.seek`; Smart Skip does not create a second audio engine.
 
+Playback settings resolve from global app defaults first, then nullable per-show overrides. Per-show Smart Skip preferences can independently override enablement, sponsors/ads, self-promo, intros, outros, silence, and whether soft matches are included. `ad`, `sponsorship`, and `network_promo` segments all use the sponsors/ads toggle. `auto_skip` segments are skipped when their category is enabled. `soft_skip` segments are only skipped when "Include soft matches" is enabled; otherwise they remain labeled metadata and are not jumped automatically.
+
 ## iOS target behavior
 
 - `AVAudioSession` playback category.

@@ -26,16 +26,18 @@ export function useSmartSkipMap(episode: EpisodeWithState | null, settings: AppS
 
 export function resolveSmartSkipSettings(settings: AppSettings, preference?: PodcastPreference): ResolvedSmartSkipSettings {
   const enabled = Boolean(preference?.smartSkipEnabled ?? settings.smartSkipEnabled);
+  const globalCommercials = settings.smartSkipCommercials ?? (settings.smartSkipAds || settings.smartSkipSponsors || settings.smartSkipNetworkPromos);
+  const preferenceCommercials = preference?.smartSkipCommercials ?? preference?.smartSkipAds ?? preference?.smartSkipSponsors ?? preference?.smartSkipNetworkPromos;
+  const commercials = Boolean(preferenceCommercials ?? globalCommercials);
+  const includeSoftMatches = Boolean(preference?.smartSkipIncludeSoftMatches ?? preference?.smartSkipSoftSkips ?? settings.smartSkipIncludeSoftMatches ?? settings.smartSkipSoftSkips);
   return {
     enabled,
-    ads: Boolean(preference?.smartSkipAds ?? settings.smartSkipAds),
-    sponsors: Boolean(preference?.smartSkipSponsors ?? settings.smartSkipSponsors),
+    commercials,
     intros: Boolean(preference?.smartSkipIntro ?? settings.smartSkipIntros),
     outros: Boolean(preference?.smartSkipOutro ?? settings.smartSkipOutros),
-    networkPromos: Boolean(preference?.smartSkipNetworkPromos ?? settings.smartSkipNetworkPromos),
     selfPromos: Boolean(preference?.smartSkipSelfPromos ?? settings.smartSkipSelfPromos),
     silence: Boolean(preference?.smartSkipSilence ?? settings.smartSkipSilence),
-    softSkips: Boolean(preference?.smartSkipSoftSkips ?? settings.smartSkipSoftSkips),
+    includeSoftMatches,
     softPrompt: Boolean(settings.smartSkipSoftPrompt)
   };
 }

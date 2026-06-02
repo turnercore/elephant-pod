@@ -5,14 +5,12 @@ import type { ResolvedSmartSkipSettings, SmartSkipSegmentMap } from '../types';
 
 const settings: ResolvedSmartSkipSettings = {
   enabled: true,
-  ads: true,
-  sponsors: true,
+  commercials: true,
   intros: false,
   outros: false,
-  networkPromos: true,
   selfPromos: false,
   silence: false,
-  softSkips: false,
+  includeSoftMatches: false,
   softPrompt: true
 };
 
@@ -26,6 +24,7 @@ const map: SmartSkipSegmentMap = {
   segments: [
     { id: 'ad1', type: 'ad', startMs: 10_000, endMs: 20_000, confidence: 0.99, action: 'auto_skip', source: 'codex_segmenter', label: 'Ad' },
     { id: 'soft1', type: 'sponsorship', startMs: 25_000, endMs: 35_000, confidence: 0.9, action: 'soft_skip', source: 'codex_segmenter', label: 'Maybe sponsor' },
+    { id: 'network1', type: 'network_promo', startMs: 40_000, endMs: 45_000, confidence: 0.99, action: 'auto_skip', source: 'codex_segmenter', label: 'Network promo' },
     { id: 'intro1', type: 'intro', startMs: 0, endMs: 5_000, confidence: 0.99, action: 'auto_skip', source: 'codex_segmenter', label: 'Intro' }
   ]
 };
@@ -35,10 +34,12 @@ describe('findAutoSkipTarget', () => {
     assert.equal(findAutoSkipTarget({ currentTimeSec: 12, durationSec: 60, segmentMap: map, settings: { ...settings, enabled: false }, suppressedSegmentIds: new Set() }), null);
   });
 
-  it('skips ads when settings allow and seeks to endMs', () => {
+  it('skips sponsor/ad category segments when settings allow and seeks to endMs', () => {
     const target = findAutoSkipTarget({ currentTimeSec: 12, durationSec: 60, segmentMap: map, settings, suppressedSegmentIds: new Set() });
     assert.equal(target?.segment.id, 'ad1');
     assert.equal(target?.seekToSec, 20);
+    const networkTarget = findAutoSkipTarget({ currentTimeSec: 41, durationSec: 60, segmentMap: map, settings, suppressedSegmentIds: new Set() });
+    assert.equal(networkTarget?.segment.id, 'network1');
   });
 
   it('does not skip disabled or suppressed segments', () => {
@@ -48,7 +49,7 @@ describe('findAutoSkipTarget', () => {
 
   it('skips soft segments only when soft skips are enabled', () => {
     assert.equal(findAutoSkipTarget({ currentTimeSec: 26, durationSec: 60, segmentMap: map, settings, suppressedSegmentIds: new Set() }), null);
-    const target = findAutoSkipTarget({ currentTimeSec: 26, durationSec: 60, segmentMap: map, settings: { ...settings, softSkips: true }, suppressedSegmentIds: new Set() });
+    const target = findAutoSkipTarget({ currentTimeSec: 26, durationSec: 60, segmentMap: map, settings: { ...settings, includeSoftMatches: true }, suppressedSegmentIds: new Set() });
     assert.equal(target?.segment.id, 'soft1');
     assert.equal(target?.seekToSec, 35);
   });

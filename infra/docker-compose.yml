@@ -43,6 +43,11 @@ services:
       GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI}
       CLIP_RENDER_ENABLED: "true"
       SILENCE_RENDER_ENABLED: "true"
+      METUBE_BASE_URL: ${METUBE_BASE_URL}
+      METUBE_AUDIO_PUBLIC_BASE_URL: ${METUBE_AUDIO_PUBLIC_BASE_URL}
+      METUBE_API_TOKEN: ${METUBE_API_TOKEN}
+      METUBE_AUDIO_FORMAT: ${METUBE_AUDIO_FORMAT:-mp3}
+      METUBE_AUDIO_QUALITY: ${METUBE_AUDIO_QUALITY:-audio}
       # Local compose defaults point at mock workers for integration checks.
       # Production must override these to real Whisper and segmenter endpoints.
       SMART_SKIP_ENABLED: ${SMART_SKIP_ENABLED:-false}

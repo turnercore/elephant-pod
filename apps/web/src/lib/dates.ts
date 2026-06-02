@@ -11,6 +11,28 @@ export function formatDate(value?: string): string {
   }
 }
 
+export function formatEpisodeReleaseDate(value?: string): string {
+  if (!value) return 'Unknown';
+  const date = new Date(value);
+  const time = date.getTime();
+  if (Number.isNaN(time)) return value;
+
+  const diffMs = Date.now() - time;
+  if (diffMs < 0) return formatDate(value);
+
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min${minutes === 1 ? '' : 's'} ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+
+  return formatDate(value);
+}
+
 export function formatDuration(seconds?: number): string {
   if (!seconds || Number.isNaN(seconds)) return '—';
   const total = Math.max(0, Math.floor(seconds));

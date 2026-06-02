@@ -121,14 +121,12 @@ export function SettingsPanel({
         <SettingsSection title="Smart Skip">
           <Switch label="Smart Skip" checked={settings.smartSkipEnabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipEnabled: checked })} description="Uses signed-in server transcript and segment processing." />
           <div className="grid gap-2 md:grid-cols-2">
-            <Switch label="Skip ads" checked={settings.smartSkipAds} onCheckedChange={(checked) => onChange({ ...settings, smartSkipAds: checked })} />
-            <Switch label="Skip sponsors" checked={settings.smartSkipSponsors} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSponsors: checked })} />
-            <Switch label="Skip network promos" checked={settings.smartSkipNetworkPromos} onCheckedChange={(checked) => onChange({ ...settings, smartSkipNetworkPromos: checked })} />
-            <Switch label="Skip self promos" checked={settings.smartSkipSelfPromos} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSelfPromos: checked })} />
+            <Switch label="Skip sponsors/ads" checked={Boolean(settings.smartSkipCommercials)} onCheckedChange={(checked) => onChange({ ...settings, smartSkipCommercials: checked })} />
+            <Switch label="Skip self-promo" checked={settings.smartSkipSelfPromos} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSelfPromos: checked })} />
             <Switch label="Skip intros" checked={settings.smartSkipIntros} onCheckedChange={(checked) => onChange({ ...settings, smartSkipIntros: checked })} />
             <Switch label="Skip outros" checked={settings.smartSkipOutros} onCheckedChange={(checked) => onChange({ ...settings, smartSkipOutros: checked })} />
-            <Switch label="Skip Smart Skip silence" checked={settings.smartSkipSilence} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSilence: checked })} />
-            <Switch label="Skip soft matches" checked={settings.smartSkipSoftSkips} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSoftSkips: checked })} />
+            <Switch label="Skip silence" checked={settings.smartSkipSilence} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSilence: checked })} />
+            <Switch label="Include soft matches" checked={Boolean(settings.smartSkipIncludeSoftMatches)} onCheckedChange={(checked) => onChange({ ...settings, smartSkipIncludeSoftMatches: checked })} />
           </div>
         </SettingsSection>
       ) : null}

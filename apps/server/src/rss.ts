@@ -92,6 +92,8 @@ export async function parseRemoteFeed(feedUrl: string) {
     feedUrl,
     websiteUrl: text(channel.link),
     tags: [],
+    sourceType: 'rss',
+    sourceUrl: feedUrl,
     createdAt: timestamp,
     updatedAt: timestamp,
     lastRefreshedAt: timestamp
@@ -122,6 +124,9 @@ export async function parseRemoteFeed(feedUrl: string) {
       chapters: [],
       guid,
       enclosureLength: Number(enclosure?.['@_length'] || 0) || undefined,
+      sourceType: 'rss',
+      sourceUrl: feedUrl,
+      extractionStatus: 'none',
       createdAt: timestamp,
       updatedAt: timestamp
     };

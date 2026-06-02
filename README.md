@@ -23,6 +23,7 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - Public clip publishing with ffmpeg-rendered MP3 files and source time-range fallback.
 - Server-side silence-shortening render jobs through ffmpeg.
 - Signed-in server-owned Smart Skip V1 metadata jobs for transcript-backed ad/sponsor/promo segment maps.
+- Signed-in YouTube video/playlist/channel source import through an optional server-side MeTube instance, with audio extraction only after a user requests an episode.
 - Optional account-based features through a server-owned auth+sync contract: magic-link auth, automatic signed-in sync for subscriptions/episodes/episode state/clips/settings/tombstones, and optional PodcastIndex discovery.
 - Screen-reader labels on icon-first controls.
 - Tauri v2 config for desktop/mobile packaging.
@@ -69,6 +70,7 @@ Set these in the app server environment (example in `.env.example`):
 - `PODCASTINDEX_API_KEY`
 - `PODCASTINDEX_API_SECRET`
 - `PODCASTINDEX_USER_AGENT`
+- `METUBE_BASE_URL`, `METUBE_AUDIO_PUBLIC_BASE_URL`, optional `METUBE_API_TOKEN`, `METUBE_AUDIO_FORMAT`, and `METUBE_AUDIO_QUALITY` for signed-in YouTube audio import. When `METUBE_BASE_URL` is unset, YouTube import is disabled in the Add Podcast omnibar.
 - `GOTRUE_EXTERNAL_GITHUB_ENABLED`
 - `GOTRUE_EXTERNAL_GITHUB_CLIENT_ID`
 - `GOTRUE_EXTERNAL_GITHUB_SECRET`
@@ -84,6 +86,7 @@ Security assumptions:
 - Server should validate and forward bearer tokens for logged-in sync/discovery calls.
 - Tauri local mode works with zero server keys present; accounts and sync/discovery stay disabled until sign-in.
 - Smart Skip benefits require a configured app server and a signed-in session. Local/offline playback does not request or apply Smart Skip metadata.
+- YouTube source import requires a configured app server, a signed-in session, and `METUBE_BASE_URL`. Source creation and refresh fetch metadata only. MeTube/yt-dlp extraction stays server-side and only runs after a user explicitly imports audio for an episode; clients receive stable app-server media URLs.
 - Server boots with `dotenv` support, so a repository-root `.env` is loaded automatically during local dev.
 
 ### Server setup
@@ -172,6 +175,12 @@ For an existing database, apply the Smart Skip V1 migration before enabling real
 
 ```bash
 psql "$DATABASE_URL" -f infra/postgres/migrations/20260601_smart_skip_v1.sql
+```
+
+For existing databases that should sync YouTube source metadata, apply:
+
+```bash
+psql "$DATABASE_URL" -f infra/postgres/migrations/20260602_youtube_sources.sql
 ```
 
 A fresh database mounts `postgres/init.sql` to create the Elephant Pod sync tables and clip registry.

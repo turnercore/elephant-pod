@@ -18,6 +18,9 @@ const clipRenderStatusEnum = z.enum([
 
 const tombstoneTableEnum = z.enum(['subscriptions', 'episodes', 'episode_states', 'clips']);
 const optionalUrlSchema = z.preprocess((value) => (value === '' ? undefined : value), z.string().url().optional());
+const podcastSourceTypeSchema = z.enum(['rss', 'youtube-channel', 'youtube-playlist', 'youtube-ad-hoc']);
+const episodeSourceTypeSchema = z.enum(['rss', 'youtube']);
+const extractionStatusSchema = z.enum(['none', 'queued', 'processing', 'ready', 'failed']);
 
 const syncFeedSchema = z.object({
   id: z.string().min(1),
@@ -28,6 +31,9 @@ const syncFeedSchema = z.object({
   feedUrl: z.string().url(),
   websiteUrl: optionalUrlSchema,
   tags: z.array(z.string()).default([]),
+  sourceType: podcastSourceTypeSchema.optional(),
+  sourceUrl: optionalUrlSchema,
+  externalId: z.string().optional(),
   lastRefreshedAt: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional()
@@ -48,6 +54,10 @@ const syncEpisodeSchema = z.object({
   chapters: z.array(z.unknown()).default([]),
   guid: z.string().min(1),
   enclosureLength: z.number().nonnegative().optional(),
+  sourceType: episodeSourceTypeSchema.optional(),
+  sourceUrl: optionalUrlSchema,
+  externalId: z.string().optional(),
+  extractionStatus: extractionStatusSchema.optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional()
 });
@@ -109,6 +119,17 @@ const syncPodcastPreferenceSchema = z.object({
   skipIntroSec: z.number().int().nonnegative().default(0),
   skipOutroSec: z.number().int().nonnegative().default(0),
   silenceShortening: z.boolean().optional(),
+  smartSkipEnabled: z.boolean().optional(),
+  smartSkipCommercials: z.boolean().optional(),
+  smartSkipAds: z.boolean().optional(),
+  smartSkipSponsors: z.boolean().optional(),
+  smartSkipIntro: z.boolean().optional(),
+  smartSkipOutro: z.boolean().optional(),
+  smartSkipNetworkPromos: z.boolean().optional(),
+  smartSkipSelfPromos: z.boolean().optional(),
+  smartSkipSilence: z.boolean().optional(),
+  smartSkipIncludeSoftMatches: z.boolean().optional(),
+  smartSkipSoftSkips: z.boolean().optional(),
   sortDirection: z.enum(['newest', 'oldest']).default('newest'),
   addNewEpisodesToInbox: z.boolean().default(true),
   updatedAt: z.string().optional()
@@ -170,6 +191,9 @@ type RemoteSubscription = {
   feed_url: string;
   website_url: string | null;
   tags: string[] | null;
+  source_type: 'rss' | 'youtube-channel' | 'youtube-playlist' | 'youtube-ad-hoc' | null;
+  source_url: string | null;
+  external_id: string | null;
   last_refreshed_at: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -190,6 +214,10 @@ type RemoteEpisode = {
   chapters: unknown[] | null;
   guid: string;
   enclosure_length: number | null;
+  source_type: 'rss' | 'youtube' | null;
+  source_url: string | null;
+  external_id: string | null;
+  extraction_status: 'none' | 'queued' | 'processing' | 'ready' | 'failed' | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -218,6 +246,17 @@ type RemotePodcastPreference = {
   skip_intro_sec: number | null;
   skip_outro_sec: number | null;
   silence_shortening: boolean | null;
+  smart_skip_enabled: boolean | null;
+  smart_skip_commercials: boolean | null;
+  smart_skip_ads: boolean | null;
+  smart_skip_sponsors: boolean | null;
+  smart_skip_intro: boolean | null;
+  smart_skip_outro: boolean | null;
+  smart_skip_network_promos: boolean | null;
+  smart_skip_self_promos: boolean | null;
+  smart_skip_silence: boolean | null;
+  smart_skip_include_soft_matches: boolean | null;
+  smart_skip_soft_skips: boolean | null;
   sort_direction: 'newest' | 'oldest';
   add_new_episodes_to_inbox: boolean;
   updated_at: string | null;
@@ -520,6 +559,9 @@ function toRemoteFeed(userId: string, feed: SyncFeed) {
     feed_url: feed.feedUrl,
     website_url: feed.websiteUrl,
     tags: feed.tags,
+    source_type: feed.sourceType || 'rss',
+    source_url: feed.sourceUrl,
+    external_id: feed.externalId,
     last_refreshed_at: feed.lastRefreshedAt,
     created_at: feed.createdAt || now,
     updated_at: feed.updatedAt || now
@@ -544,6 +586,10 @@ function toRemoteEpisode(userId: string, episode: SyncEpisode) {
     chapters: episode.chapters,
     guid: episode.guid,
     enclosure_length: episode.enclosureLength,
+    source_type: episode.sourceType || 'rss',
+    source_url: episode.sourceUrl,
+    external_id: episode.externalId,
+    extraction_status: episode.extractionStatus || 'none',
     created_at: episode.createdAt || now,
     updated_at: episode.updatedAt || now
   };
@@ -580,6 +626,13 @@ function toRemotePodcastPreference(userId: string, preference: SyncPodcastPrefer
     skip_intro_sec: preference.skipIntroSec,
     skip_outro_sec: preference.skipOutroSec,
     silence_shortening: preference.silenceShortening,
+    smart_skip_enabled: preference.smartSkipEnabled,
+    smart_skip_commercials: preference.smartSkipCommercials,
+    smart_skip_intro: preference.smartSkipIntro,
+    smart_skip_outro: preference.smartSkipOutro,
+    smart_skip_self_promos: preference.smartSkipSelfPromos,
+    smart_skip_silence: preference.smartSkipSilence,
+    smart_skip_include_soft_matches: preference.smartSkipIncludeSoftMatches,
     sort_direction: preference.sortDirection,
     add_new_episodes_to_inbox: preference.addNewEpisodesToInbox,
     updated_at: preference.updatedAt || now
@@ -620,6 +673,9 @@ function fromRemoteFeed(row: RemoteSubscription): SyncFeed {
     feedUrl: row.feed_url,
     websiteUrl: row.website_url || undefined,
     tags: row.tags || [],
+    sourceType: row.source_type || 'rss',
+    sourceUrl: row.source_url || undefined,
+    externalId: row.external_id || undefined,
     lastRefreshedAt: row.last_refreshed_at || undefined,
     createdAt: row.created_at || row.updated_at || nowIso(),
     updatedAt: row.updated_at || nowIso()
@@ -642,6 +698,10 @@ function fromRemoteEpisode(row: RemoteEpisode): SyncEpisode {
     chapters: row.chapters || [],
     guid: row.guid,
     enclosureLength: row.enclosure_length ?? undefined,
+    sourceType: row.source_type || 'rss',
+    sourceUrl: row.source_url || undefined,
+    externalId: row.external_id || undefined,
+    extractionStatus: row.extraction_status || 'none',
     createdAt: row.created_at || row.updated_at || nowIso(),
     updatedAt: row.updated_at || nowIso()
   };
@@ -674,6 +734,13 @@ function fromRemotePodcastPreference(row: RemotePodcastPreference): SyncPodcastP
     skipIntroSec: row.skip_intro_sec ?? 0,
     skipOutroSec: row.skip_outro_sec ?? 0,
     silenceShortening: row.silence_shortening ?? undefined,
+    smartSkipEnabled: row.smart_skip_enabled ?? undefined,
+    smartSkipCommercials: row.smart_skip_commercials ?? row.smart_skip_ads ?? row.smart_skip_sponsors ?? row.smart_skip_network_promos ?? undefined,
+    smartSkipIntro: row.smart_skip_intro ?? undefined,
+    smartSkipOutro: row.smart_skip_outro ?? undefined,
+    smartSkipSelfPromos: row.smart_skip_self_promos ?? undefined,
+    smartSkipSilence: row.smart_skip_silence ?? undefined,
+    smartSkipIncludeSoftMatches: row.smart_skip_include_soft_matches ?? row.smart_skip_soft_skips ?? undefined,
     sortDirection: row.sort_direction || 'newest',
     addNewEpisodesToInbox: row.add_new_episodes_to_inbox,
     updatedAt: row.updated_at || nowIso()

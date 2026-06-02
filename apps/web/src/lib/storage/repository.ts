@@ -212,6 +212,21 @@ export async function updateEpisodeState(episodeId: string, patch: Partial<Episo
   await db.states.put(next);
 }
 
+export async function updateEpisodeMetadata(episodeId: string, patch: Partial<Episode>): Promise<void> {
+  const timestamp = nowIso();
+  await db.transaction('rw', [db.episodes, db.cachedEpisodes], async () => {
+    const [episode, cachedEpisode] = await Promise.all([db.episodes.get(episodeId), db.cachedEpisodes.get(episodeId)]);
+    if (episode) await db.episodes.put({ ...episode, ...patch, updatedAt: timestamp });
+    if (cachedEpisode) await db.cachedEpisodes.put({ ...cachedEpisode, ...patch, updatedAt: timestamp });
+  });
+}
+
+export async function updateEpisodesMetadata(patches: Array<{ episodeId: string; patch: Partial<Episode> }>): Promise<void> {
+  for (const item of patches) {
+    await updateEpisodeMetadata(item.episodeId, item.patch);
+  }
+}
+
 export async function queueEpisode(episodeId: string): Promise<void> {
   await addEpisodeToQueueEnd(episodeId);
 }
@@ -457,6 +472,9 @@ function toSubscribedPodcast(podcast: CachedPodcast, timestamp: string): Podcast
     feedUrl: podcast.feedUrl,
     websiteUrl: podcast.websiteUrl,
     tags: podcast.tags || podcast.categories || [],
+    sourceType: podcast.sourceType,
+    sourceUrl: podcast.sourceUrl,
+    externalId: podcast.externalId,
     createdAt: podcast.createdAt || timestamp,
     updatedAt: timestamp,
     lastRefreshedAt: timestamp
