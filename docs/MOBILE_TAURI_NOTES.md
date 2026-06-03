@@ -30,6 +30,8 @@ Native playback should use local filesystem URLs for downloaded episodes. The we
 
 Desktop Tauri downloaded playback uses the HTML audio fallback, so it depends on Tauri v2's asset protocol. Keep `tauri/protocol-asset` enabled and keep `app.security.assetProtocol.scope` limited to `$APPDATA/downloads/**`; widening that scope would expose more local files to the WebView than the podcast player needs.
 
+Native download manifests store file paths for quick lookup, but mobile updates can leave absolute paths stale. The download commands must repair path lookups by scanning the current `$APPDATA/downloads` directory for files prefixed with the episode id, and delete should remove matching files even when the manifest entry points at an old container path.
+
 ## iOS entitlements/config
 
 - Enable Audio, AirPlay, and Picture in Picture background mode.

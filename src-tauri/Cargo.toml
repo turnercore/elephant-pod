@@ -1,6 +1,6 @@
 [package]
 name = "elephant-pod"
-version = "0.2.0"
+version = "0.2.1"
 description = "Elephant Pod podcast player"
 authors = ["Elephant Hand Games"]
 edition = "2021"

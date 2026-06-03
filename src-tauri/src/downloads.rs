@@ -95,15 +95,22 @@ pub async fn download_episode(
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn delete_downloaded_episode(app: AppHandle, episode_id: String) -> Result<bool, String> {
+    let dir = downloads_dir(&app)?;
     let mut manifest = read_manifest(&app).await?;
     let mut deleted = false;
     let mut next = Vec::new();
     for item in manifest.drain(..) {
         if item.episode_id == episode_id {
-            let _ = tokio::fs::remove_file(&item.path).await;
-            deleted = true;
+            if remove_if_exists(Path::new(&item.path)).await {
+                deleted = true;
+            }
         } else {
             next.push(item);
+        }
+    }
+    for path in matching_download_paths(&dir, &episode_id).await? {
+        if remove_if_exists(&path).await {
+            deleted = true;
         }
     }
     write_manifest(&app, &next).await?;
@@ -115,11 +122,30 @@ pub async fn downloaded_episode_path(
     app: AppHandle,
     episode_id: String,
 ) -> Result<Option<String>, String> {
-    let manifest = read_manifest(&app).await?;
-    Ok(manifest
-        .into_iter()
+    let dir = downloads_dir(&app)?;
+    let mut manifest = read_manifest(&app).await?;
+    if let Some(item) = manifest
+        .iter_mut()
         .find(|item| item.episode_id == episode_id)
-        .map(|item| item.path))
+    {
+        if Path::new(&item.path).exists() {
+            return Ok(Some(item.path.clone()));
+        }
+        if let Some(path) = matching_download_paths(&dir, &episode_id)
+            .await?
+            .into_iter()
+            .next()
+        {
+            item.path = path.to_string_lossy().to_string();
+            write_manifest(&app, &manifest).await?;
+            return Ok(Some(path.to_string_lossy().to_string()));
+        }
+    }
+    Ok(matching_download_paths(&dir, &episode_id)
+        .await?
+        .into_iter()
+        .next()
+        .map(|path| path.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
@@ -191,6 +217,37 @@ async fn write_manifest(app: &AppHandle, manifest: &[DownloadEntry]) -> Result<(
     tokio::fs::write(path, content)
         .await
         .map_err(|error| error.to_string())
+}
+
+async fn matching_download_paths(dir: &Path, episode_id: &str) -> Result<Vec<PathBuf>, String> {
+    let prefix = format!("{}__", safe_file_name(episode_id));
+    let mut matches = Vec::new();
+    if !dir.exists() {
+        return Ok(matches);
+    }
+    let mut entries = tokio::fs::read_dir(dir)
+        .await
+        .map_err(|error| error.to_string())?;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(&prefix) && !name.ends_with(".download"))
+        {
+            matches.push(path);
+        }
+    }
+    Ok(matches)
+}
+
+async fn remove_if_exists(path: &Path) -> bool {
+    tokio::fs::remove_file(path).await.is_ok()
 }
 
 fn safe_file_name(value: &str) -> String {
