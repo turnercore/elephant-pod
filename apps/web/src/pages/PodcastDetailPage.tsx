@@ -26,7 +26,6 @@ export function PodcastDetailPage({
   onMarkAllPlayed,
   onMarkAllUnplayed,
   handlers,
-  canUseSilenceShortening = false,
   canUseSmartSkip = false
 }: {
   podcast: CachedPodcast;
@@ -42,13 +41,12 @@ export function PodcastDetailPage({
   onMarkAllPlayed: () => void;
   onMarkAllUnplayed: () => void;
   handlers: EpisodeHandlers;
-  canUseSilenceShortening?: boolean;
   canUseSmartSkip?: boolean;
 }) {
   const [filter, setFilter] = useState<'all' | 'played' | 'unplayed'>('all');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
-  const [visibleCount, setVisibleCount] = useState(80);
+  const [visibleCount, setVisibleCount] = useState(() => pageSize());
   const sortedEpisodes = useMemo(() => {
     return episodes
       .filter((episode) => {
@@ -63,19 +61,21 @@ export function PodcastDetailPage({
   }, [episodes, filter, preference.sortDirection]);
 
   useEffect(() => {
-    setVisibleCount(80);
+    setVisibleCount(pageSize());
   }, [podcast.id, filter, preference.sortDirection]);
 
   const visibleEpisodes = sortedEpisodes.slice(0, visibleCount);
   const hiddenEpisodeCount = Math.max(0, sortedEpisodes.length - visibleEpisodes.length);
   const unplayedCount = episodes.filter((episode) => !episode.state.played).length;
+  const podcastSmartSkipEnabled = preference.smartSkipEnabled ?? smartSkipDefaults.smartSkipEnabled;
+  const podcastSmartSkipDisabled = !podcastSmartSkipEnabled;
 
   return (
     <Panel
       title={podcast.title}
       className="h-full"
     >
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
         <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
           <div>
             {podcast.imageUrl ? (
@@ -86,7 +86,8 @@ export function PodcastDetailPage({
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap gap-2">
-              <Badge tone={subscribed ? 'yellow' : 'mauve'}>{subscribed ? 'Subscribed' : 'Cached'}</Badge>
+              <Badge tone="mauve">In library</Badge>
+              <Badge tone={subscribed ? 'yellow' : 'sage'}>{subscribed ? 'Subscribed' : 'Not subscribed'}</Badge>
               <Badge tone="teal">{episodes.length} episodes</Badge>
               <Badge tone="sage">{unplayedCount} unplayed</Badge>
               {podcast.cachedAt ? <Badge tone="mauve">Cached {formatDate(podcast.cachedAt)}</Badge> : null}
@@ -159,16 +160,15 @@ export function PodcastDetailPage({
               </label>
               <div className="grid gap-2 text-xs font-bold uppercase tracking-[0.05em] text-bone md:col-span-2 xl:col-span-4">
                 {subscribed ? <Switch checked={preference.addNewEpisodesToInbox} onCheckedChange={(checked) => onPreferenceChange({ ...preference, addNewEpisodesToInbox: checked })} label="New episodes to Inbox" /> : null}
-                {canUseSilenceShortening ? <Switch checked={preference.silenceShortening ?? false} onCheckedChange={(checked) => onPreferenceChange({ ...preference, silenceShortening: checked })} label="Skip silence" /> : null}
                 {canUseSmartSkip ? (
                   <>
-                    <Switch checked={preference.smartSkipEnabled ?? smartSkipDefaults.smartSkipEnabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipEnabled: checked })} label="Smart Skip for this podcast" />
-                    <Switch checked={Boolean(preference.smartSkipCommercials ?? smartSkipDefaults.smartSkipCommercials)} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipCommercials: checked })} label="Skip sponsors/ads" />
-                    <Switch checked={preference.smartSkipIntro ?? smartSkipDefaults.smartSkipIntros} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipIntro: checked })} label="Skip intros" />
-                    <Switch checked={preference.smartSkipOutro ?? smartSkipDefaults.smartSkipOutros} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipOutro: checked })} label="Skip outros" />
-                    <Switch checked={preference.smartSkipSelfPromos ?? smartSkipDefaults.smartSkipSelfPromos} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSelfPromos: checked })} label="Skip self-promo" />
-                    <Switch checked={preference.smartSkipSilence ?? smartSkipDefaults.smartSkipSilence} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSilence: checked })} label="Skip silence" />
-                    <Switch checked={Boolean(preference.smartSkipIncludeSoftMatches ?? smartSkipDefaults.smartSkipIncludeSoftMatches)} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipIncludeSoftMatches: checked })} label="Include soft matches" />
+                    <Switch checked={podcastSmartSkipEnabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipEnabled: checked })} label="Smart Skip for this podcast" />
+                    <Switch checked={Boolean(preference.smartSkipCommercials ?? smartSkipDefaults.smartSkipCommercials)} disabled={podcastSmartSkipDisabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipCommercials: checked })} label="Skip sponsors/ads" />
+                    <Switch checked={preference.smartSkipIntro ?? smartSkipDefaults.smartSkipIntros} disabled={podcastSmartSkipDisabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipIntro: checked })} label="Skip intros" />
+                    <Switch checked={preference.smartSkipOutro ?? smartSkipDefaults.smartSkipOutros} disabled={podcastSmartSkipDisabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipOutro: checked })} label="Skip outros" />
+                    <Switch checked={preference.smartSkipSelfPromos ?? smartSkipDefaults.smartSkipSelfPromos} disabled={podcastSmartSkipDisabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSelfPromos: checked })} label="Skip self-promo" />
+                    <Switch checked={preference.smartSkipSilence ?? smartSkipDefaults.smartSkipSilence} disabled={podcastSmartSkipDisabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipSilence: checked })} label="Skip silence" />
+                    <Switch checked={Boolean(preference.smartSkipIncludeSoftMatches ?? smartSkipDefaults.smartSkipIncludeSoftMatches)} disabled={podcastSmartSkipDisabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipIncludeSoftMatches: checked })} label="Include soft matches" />
                   </>
                 ) : null}
               </div>
@@ -222,7 +222,7 @@ export function PodcastDetailPage({
           <EpisodeList episodes={visibleEpisodes} podcastImageUrl={podcast.imageUrl} {...handlers} />
           {hiddenEpisodeCount > 0 ? (
             <div className="mt-4 flex justify-center">
-              <Button variant="secondary" onClick={() => setVisibleCount((count) => count + 80)}>
+              <Button variant="secondary" onClick={() => setVisibleCount((count) => count + pageSize())}>
                 Load more episodes ({hiddenEpisodeCount} remaining)
               </Button>
             </div>
@@ -286,4 +286,9 @@ function ConfirmActionButton({
 
 function stripHtml(input: string): string {
   return input.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function pageSize() {
+  if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) return 25;
+  return 80;
 }

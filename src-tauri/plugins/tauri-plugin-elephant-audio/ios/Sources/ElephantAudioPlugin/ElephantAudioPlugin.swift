@@ -42,7 +42,7 @@ public class ElephantAudioPlugin: Plugin {
   @objc public func prepare(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(PrepareArgs.self)
-      guard let url = URL(string: args.url) else { invoke.reject("Invalid audio URL"); return }
+      guard let url = audioURL(args.url) else { invoke.reject("Invalid audio URL"); return }
       episodeId = args.episodeId
       title = args.title
       podcastTitle = args.podcastTitle
@@ -109,6 +109,17 @@ public class ElephantAudioPlugin: Plugin {
     } catch {
       NSLog("ElephantAudioPlugin audio session error: \(error)")
     }
+  }
+
+  private func audioURL(_ raw: String) -> URL? {
+    if raw.hasPrefix("/") {
+      return URL(fileURLWithPath: raw)
+    }
+    guard let parsed = URL(string: raw) else { return nil }
+    if parsed.scheme == "file" || parsed.scheme == "http" || parsed.scheme == "https" {
+      return parsed
+    }
+    return nil
   }
 
   private func configureRemoteCommands() {

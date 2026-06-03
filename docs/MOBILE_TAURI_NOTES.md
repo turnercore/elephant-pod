@@ -26,9 +26,14 @@ nativeStorageStats()
 nativePruneDownloads(maxBytes)
 ```
 
+Native playback should use local filesystem URLs for downloaded episodes. The webview asset URL returned by `nativeDownloadedUrl` is for HTML media fallback; iOS AVPlayer should receive a `file://` URL from the stored native download path.
+
 ## iOS entitlements/config
 
 - Enable Audio, AirPlay, and Picture in Picture background mode.
+- Keep `viewport-fit=cover` in the web entrypoint and reserve `env(safe-area-inset-top)` in the mobile navigation so icons do not overlap the Dynamic Island or system status icons.
+- Lock horizontal overflow on mobile pages. Queue, History, podcast episode lists, and other repeated rows should render as full-width rows on phone viewports, not cards that create left/right page scrolling.
+- Register the `elephant-pod://auth/callback` deep-link scheme for native GitHub auth returns. The OAuth launch uses the system browser so passkeys/WebAuthn are not trapped inside the webview.
 - Use `AVAudioSession.Category.playback` with spoken-audio mode.
 - Use `MPNowPlayingInfoCenter` for metadata.
 - Use `MPRemoteCommandCenter` for play/pause/toggle/skip.

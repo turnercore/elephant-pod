@@ -4,7 +4,7 @@ import type { AppSettings } from '@/types/domain';
 import { syncNow } from '@/lib/sync/syncEngine';
 import { clearServerSession, isServerSessionExpired, resolveBrowserServerUrl, type ServerSession } from '@/lib/sync/serverAuth';
 import { isHostedWebRuntime } from '@/lib/runtime';
-import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
 
 export function SyncPanel({
   settings,
@@ -51,43 +51,32 @@ export function SyncPanel({
   }
 
   return (
-    <div className="grid gap-4">
-      <div className="rounded-eh border border-bone/15 bg-canvas/30 p-4">
-        <div className="mb-3 flex items-center gap-2 text-yellow">
-          <Server size={18} aria-hidden />
-          <h3 className="eh-title text-sm">Optional Sync Server</h3>
-        </div>
-        <p className="text-sm leading-6 text-bone">
-          {hostedWebRuntime
-            ? 'This hosted web app uses its own server for sign-in, search, and sync.'
-            : 'Sign-in is optional. Without it, the app uses only local IndexedDB. With a configured server URL and GitHub session, subscriptions, queue, settings, progress, and played state sync automatically through the app server.'}
-        </p>
-      </div>
-      <div className="grid gap-2 rounded-eh border border-bone/15 bg-canvas/30 p-4">
-        <div className="text-sm">
-          <span className="font-bold">Server auth</span>
-          <span className="ml-2 text-bone">
-            {hasServer ? (hasSession ? 'Signed in with GitHub. Sync is active.' : sessionExpired ? 'Session expired. Sign in again to unlock sync/search.' : serverConnectionOk ? 'Server found. Sign in to unlock sync/search.' : 'Test the server before signing in.') : 'Set the server URL first.'}
+    <div className="grid gap-2 rounded-eh border border-bone/15 bg-canvas/30 p-3">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-sm">
+          <Server size={16} className="shrink-0 text-yellow" aria-hidden />
+          <span className="truncate font-bold text-cream">
+            {hasServer ? (hasSession ? 'Signed in' : sessionExpired ? 'Expired' : serverConnectionOk ? 'Server found' : 'Test server') : 'No server'}
           </span>
         </div>
-        <div className="grid gap-2 md:grid-cols-[auto_auto_auto]">
-          <Button onClick={login} variant="primary" disabled={!hasServer || hasSession || (!hostedWebRuntime && !serverConnectionOk)} aria-label={hasSession ? 'Sign in with GitHub (already signed in)' : 'Sign in with GitHub'}>
+        <div className="flex shrink-0 items-center gap-1">
+          <IconButton label={hasSession ? 'Sign in with GitHub (already signed in)' : 'Sign in with GitHub'} onClick={login} active={hasSession} disabled={!hasServer || hasSession} className="h-9 w-9">
             <Github size={16} aria-hidden />
-            Sign in with GitHub
-          </Button>
-          <Button
+          </IconButton>
+          <IconButton
+            label={hasSession ? 'Sync local data with server' : 'Sign in before syncing'}
             onClick={runSync}
             disabled={!hasServer || !hasSession}
-            aria-label={hasSession ? 'Sync local data with server' : 'Sign in before syncing'}
+            className="h-9 w-9"
           >
-            <RefreshCw size={16} aria-hidden /> Sync now
-          </Button>
-          <Button onClick={logout} disabled={!hasSession}>
-            <LogOut size={16} aria-hidden /> Sign out
-          </Button>
+            <RefreshCw size={16} aria-hidden />
+          </IconButton>
+          <IconButton label="Sign out" onClick={logout} disabled={!hasSession} className="h-9 w-9">
+            <LogOut size={16} aria-hidden />
+          </IconButton>
         </div>
       </div>
-      <p className="text-sm text-yellow" role="status">{status || derivedStatus}</p>
+      <p className="truncate text-xs text-yellow" role="status">{status || derivedStatus}</p>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { isHostedWebRuntime } from '@/lib/runtime';
+import { isTauriRuntime } from '@/lib/native/tauriBridge';
 
 const AUTH_STORAGE_KEY = 'elephant-pod-server-auth';
+const NATIVE_AUTH_CALLBACK_URL = 'elephant-pod://auth/callback';
 
 export interface ServerSession {
   accessToken: string;
@@ -36,7 +38,22 @@ const CALLBACK_NOISE_KEYS = [
 
 export function normalizeServerUrl(input?: string): string {
   if (!input) return '';
-  return input.replace(/\/$/, '');
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `${isLocalServerHost(trimmed) ? 'http' : 'https'}://${trimmed}`;
+  try {
+    const url = new URL(withScheme);
+    url.hash = '';
+    url.search = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return trimmed.replace(/\/+$/, '');
+  }
+}
+
+function isLocalServerHost(input: string): boolean {
+  const host = input.split('/')[0]?.split(':')[0]?.toLowerCase() || '';
+  return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '[::1]' || host === '::1';
 }
 
 export function resolveBrowserServerUrl(configuredUrl?: string): string {
@@ -133,35 +150,59 @@ export function consumeAuthTokenFromCallback(): ServerSession | null {
   return session;
 }
 
+export function readAuthSessionFromUrl(rawUrl: string): ServerSession | null {
+  try {
+    const url = new URL(rawUrl);
+    return sessionFromParams(url.searchParams) || sessionFromParams(new URLSearchParams(url.hash.slice(1)));
+  } catch {
+    return null;
+  }
+}
+
 export async function startGithubSignIn(serverUrl: string): Promise<void> {
   const base = normalizeServerUrl(serverUrl);
   if (!base) throw new Error('Server URL is required.');
 
-  const returnTo = `${window.location.origin}${window.location.pathname}`;
+  const returnTo = isTauriRuntime() ? NATIVE_AUTH_CALLBACK_URL : `${window.location.origin}${window.location.pathname}`;
   const startUrl = `${base}/api/auth/github/start`;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 8000);
 
   try {
     const response = await fetch(startUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ returnTo })
+      body: JSON.stringify({ returnTo }),
+      signal: controller.signal
     });
+    window.clearTimeout(timer);
 
     if (response.ok) {
       const data = await response.json();
       const authUrl = selectAuthUrl(data);
       if (authUrl) {
-        window.location.assign(authUrl);
+        await openAuthUrl(authUrl);
         return;
       }
+      throw new Error('Auth server did not return a GitHub authorization URL.');
     }
     const text = await response.text().catch(() => '');
-    if (text) throw new Error(text);
-  } catch {
-    // Fall through to a GET fallback for older server builds.
+    throw new Error(text || `Auth server responded with ${response.status}.`);
+  } catch (error) {
+    window.clearTimeout(timer);
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('GitHub sign-in timed out while contacting the app server.');
+    if (error instanceof Error) throw error;
+    throw new Error('Could not start GitHub sign-in.');
   }
+}
 
-  window.location.assign(`${startUrl}?returnTo=${encodeURIComponent(returnTo)}`);
+async function openAuthUrl(authUrl: string): Promise<void> {
+  if (isTauriRuntime()) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(authUrl);
+    return;
+  }
+  window.location.assign(authUrl);
 }
 
 export async function fetchServerSessionProfile(serverUrl: string, accessToken: string): Promise<Pick<ServerSession, 'userId' | 'email' | 'username'> | null> {

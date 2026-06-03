@@ -11,7 +11,7 @@ export function QueuePage({ episodes, onPlay, onMove, onRemove }: { episodes: Ep
       action={<Badge tone="yellow" aria-label={`${episodes.length} queued episodes`}><ListMusic size={13} aria-hidden /> {episodes.length}</Badge>}
       className="h-full"
     >
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
         <QueuePanel episodes={episodes} onPlay={onPlay} onMove={onMove} onRemove={onRemove} />
       </div>
     </Panel>

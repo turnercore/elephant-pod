@@ -169,20 +169,57 @@ function normalizeOAuthReturnTo(requestedReturnTo: string, serverPublicUrl: stri
 
   try {
     const requested = new URL(requestedReturnTo);
+    if (requested.protocol === 'tauri:' && requested.hostname === 'localhost') {
+      return requested.toString();
+    }
+    if (requested.protocol === 'elephant-pod:' && requested.hostname === 'auth') {
+      return requested.toString();
+    }
     if (!['http:', 'https:'].includes(requested.protocol)) return '';
 
     const publicBase = new URL(serverPublicUrl);
-    if (isLoopbackHostname(requested.hostname) && !isLoopbackHostname(publicBase.hostname)) {
-      requested.protocol = publicBase.protocol;
-      requested.hostname = publicBase.hostname;
-      requested.port = publicBase.port;
+    if (isLoopbackHostname(requested.hostname) || requested.origin === publicBase.origin) {
       return requested.toString();
     }
 
-    return requested.toString();
+    return '';
   } catch {
     return '';
   }
+}
+
+function renderImplicitCallbackBridge(returnTo: string) {
+  const returnToJson = JSON.stringify(returnTo);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Completing sign in...</title>
+</head>
+<body>
+  <p>Completing sign in...</p>
+  <script>
+    (function () {
+      var returnTo = ${returnToJson};
+      var hashParams = new URLSearchParams(window.location.hash.slice(1));
+      var searchParams = new URLSearchParams(window.location.search);
+      var accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+      if (!accessToken || !returnTo) {
+        document.body.textContent = 'Missing authorization code.';
+        return;
+      }
+
+      var target = new URL(returnTo);
+      ['access_token', 'refresh_token', 'expires_at', 'expires_in', 'token_type'].forEach(function (key) {
+        var value = hashParams.get(key) || searchParams.get(key);
+        if (value) target.searchParams.set(key, value);
+      });
+      window.location.replace(target.toString());
+    })();
+  </script>
+</body>
+</html>`;
 }
 
 export async function githubStartHandler(req: Request, res: Response) {
@@ -211,7 +248,10 @@ export async function githubStartHandler(req: Request, res: Response) {
 
   const serverPublicUrl = getServerCallbackBase(req);
   const requestedReturnTo = firstQueryParam(req.query.returnTo || req.body?.returnTo).trim();
-  const callbackUrl = normalizeOAuthReturnTo(requestedReturnTo, serverPublicUrl) || deriveCallbackUrl(serverPublicUrl);
+  const returnTo = normalizeOAuthReturnTo(requestedReturnTo, serverPublicUrl);
+  const callbackUrl = returnTo
+    ? `${deriveCallbackUrl(serverPublicUrl)}?returnTo=${encodeURIComponent(returnTo)}`
+    : deriveCallbackUrl(serverPublicUrl);
 
   const { data, error: startError } = await client.auth.signInWithOAuth({
     provider: 'github',
@@ -233,6 +273,7 @@ export async function githubStartHandler(req: Request, res: Response) {
     authorizationUrl: data.url,
     provider: 'github',
     callbackUrl,
+    returnTo: returnTo || null,
     method: requestedReturnTo ? 'implicit-client-callback' : 'server-callback'
   });
 }
@@ -253,9 +294,12 @@ export async function githubCallbackHandler(req: Request, res: Response) {
     error: queryError,
     access_token: accessToken,
     refresh_token: refreshToken,
+    returnTo: queryReturnTo,
     error_description: errorDescription,
     error_code: errorCode
   } = req.query;
+  const requestedReturnTo = firstQueryParam(queryReturnTo).trim();
+  const returnTo = normalizeOAuthReturnTo(requestedReturnTo, getServerCallbackBase(req));
   const callbackError = firstQueryParam(queryError);
   if (callbackError.length > 0) {
     res.status(400).json({
@@ -281,7 +325,7 @@ export async function githubCallbackHandler(req: Request, res: Response) {
         return;
       }
 
-      res.json({
+      const response = {
         provider: 'github',
         user: { id: data.user.id, email: data.user.email, username: deriveUsername(data.user) },
         session: {
@@ -291,7 +335,18 @@ export async function githubCallbackHandler(req: Request, res: Response) {
           token_type: 'bearer'
         },
         flow: 'implicit'
-      });
+      };
+      if (returnTo) {
+        res.redirect(302, buildClientReturnUrl(returnTo, response.session));
+        return;
+      }
+      res.json(response);
+      return;
+    }
+
+    if (returnTo) {
+      res.setHeader('Cache-Control', 'no-store');
+      res.type('html').send(renderImplicitCallbackBridge(returnTo));
       return;
     }
 
@@ -319,7 +374,7 @@ export async function githubCallbackHandler(req: Request, res: Response) {
     return;
   }
 
-  res.json({
+  const response = {
     provider: 'github',
     flow: 'pkce-server',
     user: {
@@ -334,5 +389,24 @@ export async function githubCallbackHandler(req: Request, res: Response) {
       expires_in: data.session.expires_in,
       expires_at: data.session.expires_at
     }
-  });
+  };
+  if (returnTo) {
+    res.redirect(302, buildClientReturnUrl(returnTo, response.session));
+    return;
+  }
+  res.json(response);
+}
+
+function buildClientReturnUrl(returnTo: string, session: { access_token: string; refresh_token?: string | null; expires_at?: number | null; expires_in?: number | null }) {
+  const url = new URL(returnTo);
+  url.searchParams.set('access_token', session.access_token);
+  if (session.refresh_token) url.searchParams.set('refresh_token', session.refresh_token);
+  if (typeof session.expires_at === 'number' && Number.isFinite(session.expires_at)) {
+    url.searchParams.set('expires_at', String(session.expires_at));
+  }
+  if (typeof session.expires_in === 'number' && Number.isFinite(session.expires_in)) {
+    url.searchParams.set('expires_in', String(session.expires_in));
+  }
+  url.searchParams.set('token_type', 'bearer');
+  return url.toString();
 }

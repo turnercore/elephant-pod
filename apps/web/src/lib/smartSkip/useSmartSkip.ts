@@ -32,11 +32,11 @@ export function resolveSmartSkipSettings(settings: AppSettings, preference?: Pod
   const includeSoftMatches = Boolean(preference?.smartSkipIncludeSoftMatches ?? preference?.smartSkipSoftSkips ?? settings.smartSkipIncludeSoftMatches ?? settings.smartSkipSoftSkips);
   return {
     enabled,
-    commercials,
-    intros: Boolean(preference?.smartSkipIntro ?? settings.smartSkipIntros),
-    outros: Boolean(preference?.smartSkipOutro ?? settings.smartSkipOutros),
-    selfPromos: Boolean(preference?.smartSkipSelfPromos ?? settings.smartSkipSelfPromos),
-    silence: Boolean(preference?.smartSkipSilence ?? settings.smartSkipSilence),
+    commercials: enabled && commercials,
+    intros: enabled && Boolean(preference?.smartSkipIntro ?? settings.smartSkipIntros),
+    outros: enabled && Boolean(preference?.smartSkipOutro ?? settings.smartSkipOutros),
+    selfPromos: enabled && Boolean(preference?.smartSkipSelfPromos ?? settings.smartSkipSelfPromos),
+    silence: enabled && Boolean(preference?.smartSkipSilence ?? settings.smartSkipSilence),
     includeSoftMatches,
     softPrompt: Boolean(settings.smartSkipSoftPrompt)
   };

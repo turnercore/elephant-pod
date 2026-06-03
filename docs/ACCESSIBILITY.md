@@ -6,6 +6,7 @@ Current baseline:
 
 - Primary nav buttons have `aria-label` and `aria-current`.
 - Icon buttons use visible tooltips/title plus `aria-label`.
+- Profile icon buttons open a menu in both signed-in and local-only states; local-only users get status text and a sign-in/setup action.
 - Player is wrapped in a footer with `aria-label="Player"`.
 - Modal clip composer uses `role="dialog"` and `aria-modal`.
 - Status messages use `role="status"`.

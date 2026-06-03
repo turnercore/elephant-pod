@@ -23,6 +23,8 @@ html,
 body,
 #root {
   min-height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -34,6 +36,7 @@ body {
   color: rgb(var(--color-cream));
   font-family: 'Noto Sans', system-ui, sans-serif;
   overflow: hidden;
+  overscroll-behavior-x: none;
 }
 
 button,
@@ -107,6 +110,11 @@ textarea:focus-visible,
   font-family: 'Delius', 'Noto Sans', system-ui, sans-serif;
 }
 
+.eh-mobile-nav {
+  padding-bottom: 0.5rem;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+}
+
 .range-track {
   accent-color: rgb(var(--color-yellow));
 }
@@ -115,8 +123,9 @@ textarea:focus-visible,
   background: linear-gradient(
     to right,
     rgb(var(--color-coral)) 0 var(--progress, 0%),
-    rgb(var(--color-canvas) / 0.8) var(--progress, 0%) 100%
+    rgb(var(--color-bone) / 0.28) var(--progress, 0%) 100%
   );
+  border: 1px solid rgb(var(--color-bone) / 0.22);
 }
 
 .player-progress::-webkit-slider-runnable-track {
@@ -160,7 +169,7 @@ textarea:focus-visible,
   content: attr(data-tooltip);
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
   z-index: 50;
   max-width: 16rem;
   width: max-content;
@@ -180,6 +189,12 @@ textarea:focus-visible,
   transition: opacity 90ms ease, transform 90ms ease;
   transition-delay: 120ms;
   white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .eh-tooltip::after {
+    display: none;
+  }
 }
 
 .eh-tooltip:hover::after,

@@ -108,6 +108,12 @@ export async function nativeDownloadedUrl(episodeId: string): Promise<string | n
   return toTauriAssetUrl(path);
 }
 
+export async function nativeDownloadedFileUrl(episodeId: string): Promise<string | null> {
+  const path = await nativeDownloadedPath(episodeId);
+  if (!path) return null;
+  return `file://${encodeURI(path)}`;
+}
+
 export async function nativeStorageStats(): Promise<NativeStorageStats | null> {
   return invokeNative<NativeStorageStats>('download_storage_stats');
 }

@@ -30,7 +30,7 @@ export function EpisodeList({
   }
 
   return (
-    <div className="grid gap-3" aria-label="Episode list">
+    <div className="grid min-w-0 gap-0 md:gap-3" aria-label="Episode list">
       {episodes.map((episode) => (
         <EpisodeCard
           key={episode.id}

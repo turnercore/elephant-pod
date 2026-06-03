@@ -20,7 +20,7 @@ export function HistoryPage({
 
   return (
     <Panel title="History" action={<Badge tone="yellow">{history.length} played</Badge>} className="h-full">
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
         {history.length ? (
           <EpisodeList episodes={history} getPodcastImageUrl={getPodcastImageUrl} {...handlers} />
         ) : (

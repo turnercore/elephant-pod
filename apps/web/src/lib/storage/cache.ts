@@ -3,6 +3,7 @@ import {
   isTauriRuntime,
   nativeDeleteEpisode,
   nativeDownloadEpisode,
+  nativeDownloadedFileUrl,
   nativeDownloadedUrl,
   nativePruneDownloads,
   nativeStorageStats,
@@ -65,6 +66,15 @@ export async function getCachedEpisodeUrl(episode: EpisodeWithState): Promise<st
   if (!response) return episode.audioUrl;
   const blob = await response.blob();
   return URL.createObjectURL(blob);
+}
+
+export async function getNativePlaybackEpisodeUrl(episode: EpisodeWithState): Promise<string> {
+  if (isTauriRuntime() && episode.state.downloaded) {
+    const fileUrl = await nativeDownloadedFileUrl(episode.id);
+    if (fileUrl) return fileUrl;
+    if (episode.state.downloadPath) return `file://${encodeURI(episode.state.downloadPath)}`;
+  }
+  return episode.audioUrl;
 }
 
 export async function estimateStorageMb(): Promise<number> {

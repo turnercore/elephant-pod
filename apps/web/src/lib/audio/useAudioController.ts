@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import type { AppSettings, EpisodeWithState, PodcastPreference } from '@/types/domain';
-import { getCachedEpisodeUrl } from '../storage/cache';
+import { getCachedEpisodeUrl, getNativePlaybackEpisodeUrl } from '../storage/cache';
 import { isTauriRuntime, listenNativeMediaCommands, nativeClearAudioSession, nativePlaybackState, nativeSetSilenceShortening } from '../native/tauriBridge';
 import { getNativeAudioStatus, pauseNativeAudio, playNativeAudio, prepareNativeAudio, seekNativeAudio, setNativeAudioRate, stopNativeAudio } from '../native/nativeAudio';
 import { ensureServerSilenceMap, getCachedReadySilenceMap } from './silenceMaps';
@@ -56,6 +56,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
 
   const effectiveSettings = useCallback(() => {
     const preference = podcastPreferences.find((item) => item.podcastId === currentRef.current?.podcastId);
+    const smartSkipSettings = resolveSmartSkipSettings(settings, preference);
     return {
       ...settings,
       playbackRate: preference?.playbackRate ?? settings.playbackRate,
@@ -65,7 +66,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       skipOutroSec: preference?.skipOutroSec ?? 0,
       silenceShortening: currentRef.current?.id && episodeSilenceOverrides[currentRef.current.id] !== undefined
         ? episodeSilenceOverrides[currentRef.current.id]
-        : preference?.silenceShortening ?? settings.silenceShortening
+        : smartSkipSettings.silence
     };
   }, [episodeSilenceOverrides, podcastPreferences, settings]);
 
@@ -194,7 +195,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
           return;
         }
 
-        const sourceUrl = await resolveEpisodeUrl(episode);
+        const sourceUrl = await getNativePlaybackEpisodeUrl(episode);
         const prepared = await prepareNativeAudio(episode, sourceUrl, startSec, resolved.playbackRate);
         if (prepared) {
           if (audio && !audio.paused) audio.pause();

@@ -31,8 +31,8 @@ Server responsibilities:
 Auth/sync contract endpoints:
 
 - `GET /api/auth/config`: validates and reports auth configuration availability.
-- `POST /api/auth/github/start`: returns a GitHub OAuth authorization URL and callback path.
-- `GET /api/auth/github/callback`: exchanges `code` when possible and returns session payload.
+- `POST /api/auth/github/start`: returns a GitHub OAuth authorization URL and callback path. Web callers pass their app URL as `returnTo`; native/Tauri callers pass `elephant-pod://auth/callback`.
+- `GET /api/auth/github/callback`: exchanges `code` when possible and returns session payload, redirects to the sanitized `returnTo` URL with session params, or serves a no-store fragment bridge when Supabase returns implicit-flow tokens in the URL hash.
 - `GET /api/auth/session`: validates bearer token and returns user info.
 - `POST /api/sync`: accepts local payload and returns merged `pulledData` + merge stats.
 
@@ -72,9 +72,11 @@ Download-related settings such as queued auto-download, inbox auto-download, del
 
 Downloaded episodes are the offline contract. When the browser reports offline, the app shows an offline banner and filters Library, Inbox, Queue, Downloads, and detail navigation to downloaded episodes and their parent podcasts. Episode state mutations still write to local IndexedDB while offline. When connectivity and a valid session return, the client runs sync again so played, progress, queue, Inbox, settings, and subscription changes can be pushed through the normal merge path.
 
+Library membership is broader than subscription membership. A podcast belongs in Library when it is subscribed, cached, downloaded, queued, in Inbox, or otherwise has retained local episode state. Subscription controls automatic feed refresh and whether new releases are added to Inbox. Unsubscribing removes only that automatic subscription; it must not remove retained downloaded, queued, inboxed, cached, or historical episodes.
+
 Listening stats are also local-only. They are profile facts on the device and can be exported in JSON backup, but they are not currently merged through Supabase/server sync.
 
-Silence maps are server-derived cache data. They are created through signed-in server endpoints, cached locally in IndexedDB, and not merged through Supabase/server sync. Downloading an episode attempts to cache the matching silence map so silence shortening can keep working offline when the map is ready.
+Silence maps are server-derived cache data. They are created through signed-in server endpoints, cached locally in IndexedDB, and not merged through Supabase/server sync. Downloading an episode attempts to cache the matching silence map so Smart Skip silence can keep working offline when the map is ready.
 
 Smart Skip maps are server-owned cache data. They require signed-in server routes, are stored in server Smart Skip tables, cached locally in IndexedDB when ready, and are not merged through Supabase/server sync. Downloading an episode attempts to cache the matching Smart Skip map so Smart Skip can keep working offline when the map is ready. Local-only Tauri playback, queueing, inbox triage, settings, and downloads must continue without server Smart Skip access.
 
@@ -136,6 +138,9 @@ Security rules:
 - Supabase and PodcastIndex credentials are server-only.
 - `DATABASE_URL` belongs only in server env and points at the local Postgres instance.
 - Browsers should only be configured with `VITE_API_BASE_URL` in build-time env.
+- Local preview origins such as `localhost:4173` are app origins, not auth server URLs; GitHub sign-in should target the configured app server, normally `localhost:8787` in local development.
+- The Settings server URL input is a draft field. Blur, Enter, or Test server commits it; bare non-local domains normalize to HTTPS.
+- Tauri GitHub sign-in opens the system browser through the native opener plugin so passkeys/WebAuthn can use the platform browser. The app receives the completed session through the registered `elephant-pod://auth/callback` deep-link scheme.
 
 ## Remaining sync hardening
 
@@ -149,6 +154,7 @@ Security rules:
 
 - Tauri/native runtime should function in local-only mode with `serverUrl` unset or unreachable:
   - RSS feed import, playback queue, OPML import/export, and backups remain usable.
+- The profile button should still open in local-only mode and show a login/setup action instead of becoming a dead end.
 - Browser/web runtime should show the sign-in gate until a valid server session is present.
 - When `serverUrl` is reachable:
   - `GET /api/health` should return `{ "ok": true }`.

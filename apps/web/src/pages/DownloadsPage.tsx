@@ -29,7 +29,7 @@ export function DownloadsPage({
       action={<Badge tone="teal"><HardDrive size={13} aria-hidden /> {usage} MB</Badge>}
       className="h-full"
     >
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 md:px-5">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto px-0 pb-6 pt-3 md:px-5 md:pt-4">
         <div className="grid gap-3 border-b border-bone/15 pb-4 md:grid-cols-3">
           <Stat icon={<Download size={18} aria-hidden />} label="Downloaded" value={String(downloaded.length)} />
           <Stat icon={<HardDrive size={18} aria-hidden />} label="Native files" value={String(nativeCount)} />

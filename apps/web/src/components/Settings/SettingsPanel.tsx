@@ -1,10 +1,11 @@
 import { LuServer as Server } from 'react-icons/lu';
 import type { AppSettings, ListeningStats, SortDirection } from '@/types/domain';
-import type { PropsWithChildren } from 'react';
+import { useEffect, useState, type KeyboardEvent, type PropsWithChildren } from 'react';
+import { normalizeServerUrl } from '@/lib/sync/serverAuth';
 import { Select, Input } from '../ui/Input';
 import { Slider } from '../ui/Slider';
 import { Switch } from '../ui/Switch';
-import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
 
 export function SettingsPanel({
   settings,
@@ -13,19 +14,38 @@ export function SettingsPanel({
   onTestServer,
   serverTestStatus,
   showServerControls = true,
-  canUseSilenceShortening = false,
   canUseSmartSkip = false
 }: {
   settings: AppSettings;
   stats?: ListeningStats | null;
   onChange: (settings: AppSettings) => void;
-  onTestServer?: () => void;
+  onTestServer?: (serverUrl?: string) => void;
   serverTestStatus?: string;
   showServerControls?: boolean;
-  canUseSilenceShortening?: boolean;
   canUseSmartSkip?: boolean;
 }) {
   const topPodcasts = Object.values(stats?.byPodcast || {}).sort((a, b) => b.listeningSec - a.listeningSec).slice(0, 3);
+  const [serverUrlDraft, setServerUrlDraft] = useState(settings.serverUrl || '');
+  const [serverUrlFocused, setServerUrlFocused] = useState(false);
+  const smartSkipDisabled = !settings.smartSkipEnabled;
+
+  useEffect(() => {
+    if (!serverUrlFocused) setServerUrlDraft(settings.serverUrl || '');
+  }, [serverUrlFocused, settings.serverUrl]);
+
+  function commitServerUrl() {
+    const normalized = serverUrlDraft.trim() ? normalizeServerUrl(serverUrlDraft) : '';
+    setServerUrlDraft(normalized);
+    if (normalized !== (settings.serverUrl || '')) onChange({ ...settings, serverUrl: normalized });
+    return normalized;
+  }
+
+  function handleServerKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    commitServerUrl();
+    event.currentTarget.blur();
+  }
 
   return (
     <div className="grid gap-5">
@@ -111,22 +131,16 @@ export function SettingsPanel({
         )}
       </SettingsSection>
 
-      {canUseSilenceShortening ? (
-        <SettingsSection title="Silence Shortening">
-          <Switch label="Silence shortening" checked={settings.silenceShortening} onCheckedChange={(checked) => onChange({ ...settings, silenceShortening: checked })} description="Uses signed-in server analysis with server-managed defaults." />
-        </SettingsSection>
-      ) : null}
-
       {canUseSmartSkip ? (
         <SettingsSection title="Smart Skip">
           <Switch label="Smart Skip" checked={settings.smartSkipEnabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipEnabled: checked })} description="Uses signed-in server transcript and segment processing." />
           <div className="grid gap-2 md:grid-cols-2">
-            <Switch label="Skip sponsors/ads" checked={Boolean(settings.smartSkipCommercials)} onCheckedChange={(checked) => onChange({ ...settings, smartSkipCommercials: checked })} />
-            <Switch label="Skip self-promo" checked={settings.smartSkipSelfPromos} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSelfPromos: checked })} />
-            <Switch label="Skip intros" checked={settings.smartSkipIntros} onCheckedChange={(checked) => onChange({ ...settings, smartSkipIntros: checked })} />
-            <Switch label="Skip outros" checked={settings.smartSkipOutros} onCheckedChange={(checked) => onChange({ ...settings, smartSkipOutros: checked })} />
-            <Switch label="Skip silence" checked={settings.smartSkipSilence} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSilence: checked })} />
-            <Switch label="Include soft matches" checked={Boolean(settings.smartSkipIncludeSoftMatches)} onCheckedChange={(checked) => onChange({ ...settings, smartSkipIncludeSoftMatches: checked })} />
+            <Switch label="Skip sponsors/ads" checked={Boolean(settings.smartSkipCommercials)} disabled={smartSkipDisabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipCommercials: checked })} />
+            <Switch label="Skip self-promo" checked={settings.smartSkipSelfPromos} disabled={smartSkipDisabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSelfPromos: checked })} />
+            <Switch label="Skip intros" checked={settings.smartSkipIntros} disabled={smartSkipDisabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipIntros: checked })} />
+            <Switch label="Skip outros" checked={settings.smartSkipOutros} disabled={smartSkipDisabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipOutros: checked })} />
+            <Switch label="Skip silence" checked={settings.smartSkipSilence} disabled={smartSkipDisabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipSilence: checked })} />
+            <Switch label="Include soft matches" checked={Boolean(settings.smartSkipIncludeSoftMatches)} disabled={smartSkipDisabled} onCheckedChange={(checked) => onChange({ ...settings, smartSkipIncludeSoftMatches: checked })} />
           </div>
         </SettingsSection>
       ) : null}
@@ -141,18 +155,23 @@ export function SettingsPanel({
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              value={settings.serverUrl || ''}
-              onChange={(event) => onChange({ ...settings, serverUrl: event.target.value })}
-              placeholder="https://ears.example.com"
+              value={serverUrlDraft}
+              onChange={(event) => setServerUrlDraft(event.target.value)}
+              onFocus={() => setServerUrlFocused(true)}
+              onBlur={() => {
+                setServerUrlFocused(false);
+                commitServerUrl();
+              }}
+              onKeyDown={handleServerKeyDown}
+              placeholder="https://pod.elephanthand.com"
               aria-label="App server URL"
             />
           </label>
-          <div className="flex flex-wrap items-center gap-3 rounded-eh border border-bone/15 bg-canvas/30 p-3">
-            <Button onClick={onTestServer} disabled={!settings.serverUrl?.trim()} aria-label="Test app server connection">
+          <div className="flex items-center gap-2 rounded-eh border border-bone/15 bg-canvas/30 p-2">
+            <IconButton label="Test app server connection" onClick={() => onTestServer?.(commitServerUrl())} disabled={!serverUrlDraft.trim()} className="h-9 w-9 shrink-0">
               <Server size={16} aria-hidden />
-              Test server
-            </Button>
-            <p className="min-w-0 flex-1 text-sm text-bone" role="status">{serverTestStatus || 'No server connection tested.'}</p>
+            </IconButton>
+            <p className="min-w-0 flex-1 truncate text-sm text-bone" role="status">{serverTestStatus || 'Not tested.'}</p>
           </div>
         </SettingsSection>
       ) : null}

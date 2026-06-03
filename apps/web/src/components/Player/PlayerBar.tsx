@@ -148,7 +148,7 @@ export function PlayerBar({
       }}
       onTouchEnd={(event) => handleSheetTouchEnd(event.changedTouches[0]?.clientY ?? 0)}
     >
-      <div className={cn('border-b border-bone/15', queueOpen ? 'bg-surface px-4 pb-3 pt-3 md:px-6' : 'px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.85rem)] pt-2')}>
+      <div className={cn('border-b border-bone/15', queueOpen ? 'bg-surface px-4 pb-3 pt-3 md:px-6' : 'px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.85rem)] pt-2 md:px-3')}>
         {queueOpen ? (
           <div className="relative mb-2 grid min-h-[5.5rem] grid-cols-[6rem_1fr] items-center gap-3 pr-16 sm:min-h-[7rem] sm:grid-cols-[7rem_1fr] md:min-h-[8rem] md:grid-cols-[8rem_1fr]">
             {currentArtworkUrl ? (
@@ -350,13 +350,13 @@ function CollapsedPlayer({
 }) {
   return (
     <div className="grid gap-2">
-      <div className="grid grid-cols-[56px_1fr_auto] items-center gap-3">
+      <div className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 md:grid-cols-[56px_minmax(0,1fr)_auto] md:gap-3">
         <button
           type="button"
           onClick={current ? onToggle : undefined}
           disabled={!current}
           aria-label={isPlaying ? 'Pause' : 'Play'}
-          className="relative h-14 w-14 overflow-hidden rounded-eh border border-bone/15 bg-surface transition hover:border-yellow/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow disabled:opacity-45"
+          className="relative h-11 w-11 overflow-hidden rounded-eh border border-bone/15 bg-surface transition hover:border-yellow/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow disabled:opacity-45 md:h-14 md:w-14"
         >
           {artworkUrl ? <img src={artworkUrl} alt="" className="h-full w-full object-cover" /> : null}
           <span className="absolute inset-0 grid place-items-center bg-black/25 text-cream">
@@ -372,11 +372,11 @@ function CollapsedPlayer({
             {current ? current.podcastTitle : 'Choose an episode.'}
           </button>
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          <IconButton label={`Skip back ${settings.skipBackSec} seconds`} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-9 w-9">
+        <div className="flex shrink-0 items-center justify-end gap-1">
+          <IconButton label={`Skip back ${settings.skipBackSec} seconds`} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-8 w-8 md:h-9 md:w-9">
             <Rewind size={16} aria-hidden />
           </IconButton>
-          <IconButton label={`Skip forward ${settings.skipForwardSec} seconds`} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-9 w-9">
+          <IconButton label={`Skip forward ${settings.skipForwardSec} seconds`} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-8 w-8 md:h-9 md:w-9">
             <FastForward size={16} aria-hidden />
           </IconButton>
           <button
@@ -384,7 +384,7 @@ function CollapsedPlayer({
             aria-label="Open queue"
             data-tooltip="Open queue"
             onClick={onOpenQueue}
-            className="eh-tooltip flex h-9 min-w-11 items-center justify-center gap-1 rounded-eh border border-bone/15 bg-surface/70 px-2 text-sm font-black text-cream transition hover:border-yellow/50 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow"
+            className="eh-tooltip flex h-8 min-w-9 items-center justify-center gap-1 rounded-eh border border-bone/15 bg-surface/70 px-1.5 text-xs font-black text-cream transition hover:border-yellow/50 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow md:h-9 md:min-w-11 md:px-2 md:text-sm"
           >
             <ArrowUpToLine size={16} aria-hidden />
             <span>{queueCount}</span>
@@ -503,7 +503,7 @@ function QueueDrawerRow({
           <button type="button" onClick={(event) => { event.stopPropagation(); onOpenEpisode(episode); }} className="block max-w-full truncate text-left text-sm font-black leading-tight text-cream hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">{episode.title}</button>
           <button type="button" onClick={(event) => { event.stopPropagation(); onOpenPodcast(episode.podcastId); }} className="mt-0.5 block max-w-full truncate text-left text-[11px] font-bold uppercase tracking-[0.05em] text-yellow hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">{episode.podcastTitle}</button>
           <p className="mt-0.5 truncate text-[11px] text-bone">{formatDuration(episode.durationSec)}{episode.state.progressSec ? ` · ${formatDuration(episode.state.progressSec)} in` : ''}</p>
-          {progress > 0 && !episode.state.played ? <div className="mt-1 h-1 overflow-hidden rounded-full bg-canvas"><span className="block h-full bg-coral" style={{ width: `${progress}%` }} /></div> : null}
+          {progress > 0 && !episode.state.played ? <div className="mt-1 h-1 overflow-hidden rounded-full border border-bone/15 bg-bone/20"><span className="block h-full bg-coral" style={{ width: `${progress}%` }} /></div> : null}
         </div>
         <IconButton label={playLabel} active={isCurrentEpisode && isCurrentPlaying} onClick={(event) => { event.stopPropagation(); onPlayEpisode(episode); }} className="h-9 w-9">
           <PlayIcon size={16} fill="currentColor" aria-hidden />

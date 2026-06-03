@@ -147,12 +147,20 @@ export async function upsertParsedFeed(result: ParsedFeedResult): Promise<void> 
     await db.feeds.put({ ...result.podcast, updatedAt: timestamp, lastRefreshedAt: timestamp });
     await putPodcastCache(result, timestamp);
     await ensurePodcastPreference(result.podcast.id);
+    const preference = (await db.podcastPreferences.get(result.podcast.id)) || defaultPodcastPreference(result.podcast.id);
     for (const ep of result.episodes) {
       const existing = await db.episodes.get(ep.id);
       await db.episodes.put({ ...existing, ...ep, updatedAt: timestamp });
       await db.cachedEpisodes.put({ ...existing, ...ep, updatedAt: timestamp });
       const state = await db.states.get(ep.id);
-      if (!state) await db.states.put(defaultStateFor(ep.id));
+      if (!state) {
+        await db.states.put({
+          ...defaultStateFor(ep.id),
+          inboxState: preference.addNewEpisodesToInbox ? 'new' : 'archived',
+          inboxPosition: preference.addNewEpisodesToInbox ? await nextInboxPosition() : undefined,
+          updatedAt: timestamp
+        });
+      }
     }
   });
 }
@@ -173,17 +181,19 @@ export async function cacheParsedPodcast(result: ParsedFeedResult, podcastIndexI
 
 export async function subscribeCachedPodcast(podcastId: string): Promise<void> {
   const [podcast, episodes] = await Promise.all([
-    db.podcastCache.get(podcastId),
-    db.cachedEpisodes.where('podcastId').equals(podcastId).toArray()
+    db.podcastCache.get(podcastId).then(async (cached) => cached || await db.feeds.get(podcastId)),
+    db.cachedEpisodes.where('podcastId').equals(podcastId).toArray().then(async (cached) => cached.length ? cached : await db.episodes.where('podcastId').equals(podcastId).toArray())
   ]);
   if (!podcast) throw new Error('Podcast is not cached yet.');
   const timestamp = nowIso();
-  await db.transaction('rw', [db.feeds, db.episodes, db.states, db.podcastPreferences], async () => {
-    await db.feeds.put(toSubscribedPodcast(podcast, timestamp));
+  await db.transaction('rw', [db.feeds, db.episodes, db.states, db.podcastCache, db.cachedEpisodes, db.podcastPreferences], async () => {
+    await db.feeds.put(toSubscribedPodcast(podcast as CachedPodcast, timestamp));
+    await db.podcastCache.put(toCachedPodcast(podcast, timestamp));
     await ensurePodcastPreference(podcast.id);
     const preference = (await db.podcastPreferences.get(podcast.id)) || defaultPodcastPreference(podcast.id);
     for (const episode of episodes) {
       await db.episodes.put({ ...episode, updatedAt: timestamp });
+      await db.cachedEpisodes.put({ ...episode, updatedAt: timestamp });
       const state = await db.states.get(episode.id);
 	      if (!state) {
 	        await db.states.put({
@@ -488,6 +498,17 @@ function toSubscribedPodcast(podcast: CachedPodcast, timestamp: string): Podcast
     createdAt: podcast.createdAt || timestamp,
     updatedAt: timestamp,
     lastRefreshedAt: timestamp
+  };
+}
+
+function toCachedPodcast(podcast: Podcast | CachedPodcast, timestamp: string): CachedPodcast {
+  const cached = podcast as CachedPodcast;
+  return {
+    ...podcast,
+    cachedAt: cached.cachedAt || timestamp,
+    cacheExpiresAt: cached.cacheExpiresAt,
+    podcastIndexId: cached.podcastIndexId,
+    categories: cached.categories || podcast.tags || []
   };
 }
 

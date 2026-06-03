@@ -33,10 +33,9 @@ export function LibraryPage({
   const sorted = useMemo(() => {
     const normalizedQuery = normalizeSearch(query);
     return [...podcasts]
-      .filter((podcast) => subscribedIds.has(podcast.id))
       .filter((podcast) => !normalizedQuery || scorePodcast(podcast, normalizedQuery) > 0)
       .sort((a, b) => a.title.localeCompare(b.title));
-  }, [podcasts, query, subscribedIds]);
+  }, [podcasts, query]);
 
   return (
     <Panel title="Library" action={<Badge tone="yellow">{sorted.length} podcasts</Badge>} className="h-full">
@@ -48,11 +47,11 @@ export function LibraryPage({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Filter subscribed podcasts"
-            aria-label="Filter subscribed podcasts"
+            aria-label="Filter library podcasts"
           />
         </div>
       </div>
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
         {sorted.length ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-5">
             {sorted.map((podcast) => (
@@ -61,13 +60,14 @@ export function LibraryPage({
                 podcast={podcast}
                 episodeCount={stats.get(podcast.id)?.total ?? 0}
                 unplayedCount={stats.get(podcast.id)?.unplayed ?? 0}
+                subscribed={subscribedIds.has(podcast.id)}
                 onClick={() => onOpenPodcast(podcast.id)}
               />
             ))}
           </div>
         ) : (
-          <EmptyState icon={<PodcastIcon size={26} aria-hidden />} title="No subscribed podcasts yet">
-            {query.trim() ? 'No subscribed podcasts match this filter.' : 'Add a podcast from Search or paste an RSS feed in Inbox.'}
+          <EmptyState icon={<PodcastIcon size={26} aria-hidden />} title="Library is empty">
+            {query.trim() ? 'No library podcasts match this filter.' : 'Subscribe, download, queue, or inbox an episode to keep a podcast here.'}
           </EmptyState>
         )}
       </div>
@@ -100,7 +100,7 @@ function normalizeSearch(value: string): string {
   return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
-function PodcastCard({ podcast, episodeCount, unplayedCount, onClick }: { podcast: CachedPodcast; episodeCount: number; unplayedCount: number; onClick: () => void }) {
+function PodcastCard({ podcast, episodeCount, unplayedCount, subscribed, onClick }: { podcast: CachedPodcast; episodeCount: number; unplayedCount: number; subscribed: boolean; onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} className="group min-w-0 text-left" aria-label={`Open ${podcast.title}`} title={`Open ${podcast.title}`}>
       <div className="relative">
@@ -113,7 +113,7 @@ function PodcastCard({ podcast, episodeCount, unplayedCount, onClick }: { podcas
       </div>
       <div className="mt-3 min-w-0">
         <h3 className="truncate text-sm font-black text-cream group-hover:text-yellow">{podcast.title}</h3>
-        <p className="mt-1 truncate text-xs text-bone">{podcast.author || `${episodeCount} episodes`}</p>
+        <p className="mt-1 truncate text-xs text-bone">{subscribed ? 'Subscribed' : 'In library'} · {episodeCount} episodes</p>
       </div>
     </button>
   );

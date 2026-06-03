@@ -33,10 +33,10 @@ export function AppShell({
 }>) {
   return (
     <BackNavigationProvider value={{ canGoBack: Boolean(canGoBack), onBack }}>
-      <div className="flex h-screen max-h-screen flex-col overflow-hidden md:grid md:grid-cols-[auto_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)_auto]">
+      <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-full flex-col overflow-hidden md:grid md:grid-cols-[auto_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)_auto]">
         <MobileNavigationRail active={active} onSelect={onSelect} serverUrl={serverUrl} serverSession={serverSession} onSignIn={onSignIn} onSignOut={onSignOut} />
         <NavigationRail active={active} onSelect={onSelect} serverUrl={serverUrl} serverSession={serverSession} onSignIn={onSignIn} onSignOut={onSignOut} />
-        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:col-start-2 md:row-start-1">
+        <main className="relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden md:col-start-2 md:row-start-1">
           {offline ? (
               <button
                 type="button"
@@ -48,7 +48,7 @@ export function AppShell({
                 <WifiOff size={14} aria-hidden />
               </button>
             ) : null}
-          <div className="min-h-0 flex-1 overflow-hidden p-3 md:p-5">{children}</div>
+          <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-hidden px-0 py-2 md:p-5">{children}</div>
         </main>
         <div className="shrink-0 md:col-start-2 md:row-start-2">
           {player}

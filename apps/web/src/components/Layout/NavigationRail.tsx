@@ -157,7 +157,7 @@ export function NavigationRail({
             >
               {hasSession ? (
                 <>
-                  <p className="text-xs leading-5 text-bone">Signed in with GitHub. Sync and search can use the server.</p>
+                  <p className="text-xs leading-5 text-bone">Signed in as {profileLabel}.</p>
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -173,7 +173,7 @@ export function NavigationRail({
               ) : (
                 <>
                   <p className="text-xs leading-5 text-bone">
-                    {hasServer ? 'Use GitHub sign-in to unlock sync and search.' : hostedWebRuntime ? 'Server sign-in is unavailable.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
+                    {hasServer ? 'Local only. Sign in to unlock sync and search.' : hostedWebRuntime ? 'Local only. Server sign-in is unavailable.' : 'Local only. Add a server URL in Settings to sign in.'}
                   </p>
                   <Button
                     variant="primary"
@@ -212,7 +212,7 @@ export function NavigationRail({
           {profileOpen && (
             <div id={profileMobileMenuId} role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-[220px] rounded-eh border border-bone/15 bg-canvas/95 p-3 shadow-xl shadow-black/30">
               <p className="text-xs leading-5 text-bone">
-                {hasSession ? 'Signed in with GitHub. Sync and search can use the server.' : hasServer ? 'Use GitHub sign-in to unlock sync and search.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
+                {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Local only. Sign in to unlock sync and search.' : 'Local only. Add a server URL in Settings to sign in.'}
               </p>
               <div className="mt-3 grid gap-2">
                 {hasSession ? (
@@ -276,30 +276,35 @@ export function MobileNavigationRail({
   const mobileItems = [...items, ...footerItems];
 
   return (
-    <header className="relative flex shrink-0 items-center gap-2 overflow-x-auto border-b border-bone/15 bg-canvas/90 px-2 py-2 md:hidden" aria-label="Mobile navigation">
-      {mobileItems.map((item) => {
-        const Icon = item.icon;
-        const activeItem = active === item.key;
-        return (
-          <button
-            key={item.key}
-            aria-label={item.label}
-            title={item.label}
-            aria-current={activeItem ? 'page' : undefined}
-            onClick={() => {
-              setProfileOpen(false);
-              onSelect(item.key);
-            }}
-            className={cn(
-              'eh-tooltip grid h-11 w-11 shrink-0 place-items-center rounded-eh border border-transparent text-bone transition hover:border-yellow/30 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow',
-              activeItem && 'border-yellow/60 bg-yellow text-canvas hover:text-canvas'
-            )}
-            data-tooltip={item.label}
-          >
-            <Icon size={20} aria-hidden />
-          </button>
-        );
-      })}
+    <header
+      className="eh-mobile-nav relative flex shrink-0 items-center gap-2 overflow-visible border-b border-bone/15 bg-canvas/90 pl-[calc(env(safe-area-inset-left,0px)+0.5rem)] pr-[calc(env(safe-area-inset-right,0px)+0.5rem)] md:hidden"
+      aria-label="Mobile navigation"
+    >
+      <nav className="scrollbar-soft flex min-w-0 flex-1 gap-2 overflow-x-auto" aria-label="Mobile sections">
+        {mobileItems.map((item) => {
+          const Icon = item.icon;
+          const activeItem = active === item.key;
+          return (
+            <button
+              key={item.key}
+              aria-label={item.label}
+              title={item.label}
+              aria-current={activeItem ? 'page' : undefined}
+              onClick={() => {
+                setProfileOpen(false);
+                onSelect(item.key);
+              }}
+              className={cn(
+                'eh-tooltip grid h-11 w-11 shrink-0 place-items-center rounded-eh border border-transparent text-bone transition hover:border-yellow/30 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow',
+                activeItem && 'border-yellow/60 bg-yellow text-canvas hover:text-canvas'
+              )}
+              data-tooltip={item.label}
+            >
+              <Icon size={20} aria-hidden />
+            </button>
+          );
+        })}
+      </nav>
       <button
         type="button"
         aria-label={hasSession ? `Open profile options for ${profileLabel}` : 'Open sign in options'}
@@ -307,15 +312,9 @@ export function MobileNavigationRail({
         aria-expanded={profileOpen}
         aria-controls={profileMenuId}
         aria-haspopup="menu"
-        onClick={() => {
-          if (!hasSession && !hasServer) {
-            onSignIn();
-            return;
-          }
-          setProfileOpen((open) => !open);
-        }}
+        onClick={() => setProfileOpen((open) => !open)}
         className={cn(
-          'eh-tooltip ml-auto grid h-11 w-11 shrink-0 place-items-center rounded-eh border border-bone/15 bg-surface/70 text-cream transition hover:border-yellow/40 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow',
+          'eh-tooltip grid h-11 w-11 shrink-0 place-items-center rounded-eh border border-bone/15 bg-surface/70 text-cream transition hover:border-yellow/40 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow',
           profileOpen && 'border-yellow bg-yellow text-canvas hover:text-canvas'
         )}
         data-tooltip={profileLabel}
@@ -325,7 +324,7 @@ export function MobileNavigationRail({
       {profileOpen ? (
         <div id={profileMenuId} role="menu" className="absolute right-2 top-full z-30 mt-2 w-[240px] rounded-eh border border-bone/15 bg-canvas/95 p-3 shadow-xl shadow-black/40">
           <p className="text-xs leading-5 text-bone">
-            {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Use GitHub sign-in to unlock sync and search.' : hostedWebRuntime ? 'Server sign-in is unavailable.' : 'Set a server URL in Settings first, then sign in with GitHub.'}
+            {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Local only. Sign in to unlock sync and search.' : hostedWebRuntime ? 'Local only. Server sign-in is unavailable.' : 'Local only. Add a server URL in Settings to sign in.'}
           </p>
           <div className="mt-3 grid gap-2">
             {hasSession ? (

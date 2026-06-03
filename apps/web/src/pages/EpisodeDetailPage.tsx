@@ -1,4 +1,5 @@
 import { LuCheck as Check, LuDownload as Download, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuLoaderCircle as LoaderCircle, LuPlay as Play, LuRotateCcw as RotateCcw, LuTrash as Trash, LuX as X } from 'react-icons/lu';
+import { MdOutlineOfflinePin } from 'react-icons/md';
 import type { EpisodeWithState } from '@/types/domain';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -42,7 +43,7 @@ export function EpisodeDetailPage({
       title={episode.title}
       className="h-full"
     >
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto p-4">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
         <div className="grid gap-5 lg:grid-cols-[180px_1fr]">
           <div className="relative">
             {artworkUrl ? (
@@ -67,7 +68,7 @@ export function EpisodeDetailPage({
               <Badge tone={episode.state.played ? 'sage' : 'yellow'}>{episode.state.played ? 'Played' : 'Unplayed'}</Badge>
               {episode.state.inboxState === 'new' ? <Badge tone="mauve">Inbox #{episode.state.inboxPosition}</Badge> : null}
               {episode.state.queuePosition ? <Badge tone="teal">Queue #{episode.state.queuePosition}</Badge> : null}
-              {episode.state.downloaded ? <Badge tone="teal">Offline</Badge> : null}
+              {episode.state.downloaded ? <span className="inline-flex h-7 items-center gap-1 rounded-eh border border-teal/40 bg-teal/12 px-2 text-xs font-black uppercase tracking-[0.05em] text-teal"><MdOutlineOfflinePin size={15} aria-hidden /> Downloaded</span> : null}
               {processedBadges.map((badge) => (
                 <Badge key={badge} tone={badge === 'Smart Skip' ? 'teal' : 'mauve'}>{badge}</Badge>
               ))}
@@ -132,7 +133,7 @@ export function EpisodeDetailPage({
           </div>
         </div>
         {episode.description ? (
-          <div className="mt-6 rounded-eh border border-bone/15 bg-canvas/30 p-4 text-sm leading-7 text-bone" dangerouslySetInnerHTML={{ __html: episode.description }} />
+          <div className="mt-6 text-sm leading-7 text-bone md:rounded-eh md:border md:border-bone/15 md:bg-canvas/30 md:p-4" dangerouslySetInnerHTML={{ __html: episode.description }} />
         ) : null}
       </div>
     </Panel>
