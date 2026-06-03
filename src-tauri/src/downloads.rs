@@ -29,11 +29,20 @@ pub struct StorageStats {
 }
 
 #[tauri::command]
-pub async fn download_episode(app: AppHandle, request: DownloadRequest) -> Result<DownloadEntry, String> {
+pub async fn download_episode(
+    app: AppHandle,
+    request: DownloadRequest,
+) -> Result<DownloadEntry, String> {
     let dir = downloads_dir(&app)?;
-    tokio::fs::create_dir_all(&dir).await.map_err(|error| error.to_string())?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|error| error.to_string())?;
     let file_name = safe_file_name(&request.file_name);
-    let path = dir.join(format!("{}__{}", safe_file_name(&request.episode_id), file_name));
+    let path = dir.join(format!(
+        "{}__{}",
+        safe_file_name(&request.episode_id),
+        file_name
+    ));
 
     let client = reqwest::Client::builder()
         .user_agent("ElephantPod/0.2 (+https://elephanthand.com)")
@@ -54,15 +63,21 @@ pub async fn download_episode(app: AppHandle, request: DownloadRequest) -> Resul
         .map(str::to_owned);
 
     let tmp_path = path.with_extension("download");
-    let mut file = tokio::fs::File::create(&tmp_path).await.map_err(|error| error.to_string())?;
+    let mut file = tokio::fs::File::create(&tmp_path)
+        .await
+        .map_err(|error| error.to_string())?;
     let mut bytes = 0_u64;
     while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
         bytes += chunk.len() as u64;
-        file.write_all(&chunk).await.map_err(|error| error.to_string())?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|error| error.to_string())?;
     }
     file.flush().await.map_err(|error| error.to_string())?;
     drop(file);
-    tokio::fs::rename(&tmp_path, &path).await.map_err(|error| error.to_string())?;
+    tokio::fs::rename(&tmp_path, &path)
+        .await
+        .map_err(|error| error.to_string())?;
 
     let entry = DownloadEntry {
         episode_id: request.episode_id,
@@ -78,14 +93,13 @@ pub async fn download_episode(app: AppHandle, request: DownloadRequest) -> Resul
     Ok(entry)
 }
 
-#[tauri::command]
-#[allow(non_snake_case)]
-pub async fn delete_downloaded_episode(app: AppHandle, episodeId: String) -> Result<bool, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_downloaded_episode(app: AppHandle, episode_id: String) -> Result<bool, String> {
     let mut manifest = read_manifest(&app).await?;
     let mut deleted = false;
     let mut next = Vec::new();
     for item in manifest.drain(..) {
-        if item.episode_id == episodeId {
+        if item.episode_id == episode_id {
             let _ = tokio::fs::remove_file(&item.path).await;
             deleted = true;
         } else {
@@ -96,11 +110,16 @@ pub async fn delete_downloaded_episode(app: AppHandle, episodeId: String) -> Res
     Ok(deleted)
 }
 
-#[tauri::command]
-#[allow(non_snake_case)]
-pub async fn downloaded_episode_path(app: AppHandle, episodeId: String) -> Result<Option<String>, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub async fn downloaded_episode_path(
+    app: AppHandle,
+    episode_id: String,
+) -> Result<Option<String>, String> {
     let manifest = read_manifest(&app).await?;
-    Ok(manifest.into_iter().find(|item| item.episode_id == episodeId).map(|item| item.path))
+    Ok(manifest
+        .into_iter()
+        .find(|item| item.episode_id == episode_id)
+        .map(|item| item.path))
 }
 
 #[tauri::command]
@@ -117,9 +136,8 @@ pub async fn download_storage_stats(app: AppHandle) -> Result<StorageStats, Stri
     Ok(StorageStats { bytes, files })
 }
 
-#[tauri::command]
-#[allow(non_snake_case)]
-pub async fn prune_downloads(app: AppHandle, maxBytes: u64) -> Result<Vec<String>, String> {
+#[tauri::command(rename_all = "camelCase")]
+pub async fn prune_downloads(app: AppHandle, max_bytes: u64) -> Result<Vec<String>, String> {
     let mut manifest = read_manifest(&app).await?;
     manifest.sort_by(|a, b| a.downloaded_at.cmp(&b.downloaded_at));
     let mut total: u64 = manifest.iter().map(|item| item.bytes).sum();
@@ -127,7 +145,7 @@ pub async fn prune_downloads(app: AppHandle, maxBytes: u64) -> Result<Vec<String
     let mut kept = Vec::new();
 
     for item in manifest {
-        if total > maxBytes {
+        if total > max_bytes {
             let _ = tokio::fs::remove_file(&item.path).await;
             total = total.saturating_sub(item.bytes);
             deleted_ids.push(item.episode_id);
@@ -156,17 +174,23 @@ async fn read_manifest(app: &AppHandle) -> Result<Vec<DownloadEntry>, String> {
     if !Path::new(&path).exists() {
         return Ok(Vec::new());
     }
-    let content = tokio::fs::read_to_string(path).await.map_err(|error| error.to_string())?;
+    let content = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|error| error.to_string())?;
     serde_json::from_str(&content).map_err(|error| error.to_string())
 }
 
 async fn write_manifest(app: &AppHandle, manifest: &[DownloadEntry]) -> Result<(), String> {
     let path = manifest_path(app)?;
     if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await.map_err(|error| error.to_string())?;
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|error| error.to_string())?;
     }
     let content = serde_json::to_string_pretty(manifest).map_err(|error| error.to_string())?;
-    tokio::fs::write(path, content).await.map_err(|error| error.to_string())
+    tokio::fs::write(path, content)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 fn safe_file_name(value: &str) -> String {
@@ -178,5 +202,9 @@ fn safe_file_name(value: &str) -> String {
         })
         .collect();
     let trimmed = cleaned.trim().trim_matches('.');
-    if trimmed.is_empty() { "episode.mp3".to_string() } else { trimmed.chars().take(180).collect() }
+    if trimmed.is_empty() {
+        "episode.mp3".to_string()
+    } else {
+        trimmed.chars().take(180).collect()
+    }
 }

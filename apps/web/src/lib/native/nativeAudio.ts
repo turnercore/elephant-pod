@@ -92,6 +92,7 @@ export async function prepareNativeAudio(episode: EpisodeWithState, sourceUrl: s
       title: episode.title,
       podcastTitle: episode.podcastTitle,
       artworkUrl: episode.imageUrl,
+      durationSec: episode.durationSec,
       startSec,
       playbackRate
     });

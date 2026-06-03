@@ -23,6 +23,7 @@ class PrepareArgs {
   var title: String = ""
   var podcastTitle: String = ""
   var artworkUrl: String? = null
+  var durationSec: Double? = null
   var startSec: Double = 0.0
   var playbackRate: Double = 1.0
 }

@@ -9,6 +9,7 @@ struct PrepareArgs: Decodable {
   let title: String
   let podcastTitle: String
   let artworkUrl: String?
+  let durationSec: Double?
   let startSec: Double
   let playbackRate: Double
 }
@@ -46,6 +47,7 @@ public class ElephantAudioPlugin: Plugin {
       episodeId = args.episodeId
       title = args.title
       podcastTitle = args.podcastTitle
+      durationSec = args.durationSec
       let item = AVPlayerItem(url: url)
       player = AVPlayer(playerItem: item)
       player?.rate = Float(args.playbackRate)

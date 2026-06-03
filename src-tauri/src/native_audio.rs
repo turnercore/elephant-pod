@@ -58,15 +58,19 @@ pub struct AudioStatus {
 static STATUS: OnceLock<Mutex<AudioStatus>> = OnceLock::new();
 
 fn status_store() -> &'static Mutex<AudioStatus> {
-    STATUS.get_or_init(|| Mutex::new(AudioStatus {
-        native_available: false,
-        episode_id: None,
-        position_sec: 0.0,
-        duration_sec: None,
-        playback_rate: 1.0,
-        playing: false,
-        message: Some("Desktop shim active; mobile plugin owns AVPlayer/Media3 playback.".to_string()),
-    }))
+    STATUS.get_or_init(|| {
+        Mutex::new(AudioStatus {
+            native_available: false,
+            episode_id: None,
+            position_sec: 0.0,
+            duration_sec: None,
+            playback_rate: 1.0,
+            playing: false,
+            message: Some(
+                "Desktop shim active; mobile plugin owns AVPlayer/Media3 playback.".to_string(),
+            ),
+        })
+    })
 }
 
 fn update_state(state: NativePlaybackState) -> Result<(), String> {
@@ -96,7 +100,9 @@ pub async fn native_audio_set_playback_state(state: NativePlaybackState) -> Resu
 }
 
 #[tauri::command]
-pub async fn native_audio_set_silence_shortening(options: NativeSilenceOptions) -> Result<(), String> {
+pub async fn native_audio_set_silence_shortening(
+    options: NativeSilenceOptions,
+) -> Result<(), String> {
     let _ = options;
     Ok(())
 }
@@ -188,9 +194,15 @@ pub async fn audio_stop() -> Result<bool, String> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn audio_seek(seconds: Option<f64>, position_sec: Option<f64>) -> Result<AudioStatus, String> {
+pub async fn audio_seek(
+    seconds: Option<f64>,
+    position_sec: Option<f64>,
+) -> Result<AudioStatus, String> {
     let mut status = status_store().lock().map_err(|error| error.to_string())?;
-    status.position_sec = seconds.or(position_sec).unwrap_or(status.position_sec).max(0.0);
+    status.position_sec = seconds
+        .or(position_sec)
+        .unwrap_or(status.position_sec)
+        .max(0.0);
     Ok(status.clone())
 }
 
@@ -203,5 +215,8 @@ pub async fn audio_set_rate(playback_rate: f64) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn audio_status() -> Result<AudioStatus, String> {
-    Ok(status_store().lock().map_err(|error| error.to_string())?.clone())
+    Ok(status_store()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone())
 }

@@ -6,6 +6,7 @@ export interface PrepareRequest {
   title: string;
   podcastTitle: string;
   artworkUrl?: string;
+  durationSec?: number;
   startSec: number;
   playbackRate: number;
 }
