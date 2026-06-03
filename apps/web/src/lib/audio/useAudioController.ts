@@ -22,6 +22,7 @@ export interface AudioController {
   duration: number;
   volume: number;
   setVolume: (value: number) => void;
+  cueEpisode: (episode: EpisodeWithState) => Promise<void>;
   playEpisode: (episode: EpisodeWithState) => Promise<void>;
   toggle: () => Promise<void>;
   seek: (seconds: number) => void;
@@ -159,7 +160,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     setNativeActive(active);
   }, []);
 
-  const playEpisode = useCallback(
+  const cueEpisode = useCallback(
     async (episode: EpisodeWithState) => {
       const audio = audioRef.current;
       const resolved = effectiveSettings();
@@ -168,14 +169,14 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       if (!wasSameEpisode) outroCompletedEpisodeRef.current = null;
       const introOffset = Math.max(0, resolved.skipIntroSec ?? 0);
       const progressSec = episode.state.progressSec || 0;
-      const shouldRewindSameEpisode = !isPlayingRef.current && shouldResumeRewind(pausedAtRef.current);
       const startSec = wasSameEpisode
-        ? shouldRewindSameEpisode
-          ? Math.max(0, currentTimeRef.current - resolved.resumeRewindSec)
-          : currentTimeRef.current
+        ? currentTimeRef.current
         : Math.max(progressSec > 0 ? Math.max(0, progressSec - resolved.resumeRewindSec) : 0, introOffset);
 
       setCurrent(episode);
+      setIsPlaying(false);
+      setCurrentTime(startSec);
+      setDuration(episode.durationSec || 0);
       silenceMapRef.current = null;
       smartSkipMapRef.current = null;
       lastSilenceSkipRef.current = null;
@@ -187,40 +188,52 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       void refreshSmartSkipMap(episode);
 
       if (shouldUseNativeAudio() && resolved.nativeAudioPreferred) {
-        if (wasSameEpisode && nativeActiveRef.current) {
-          await seekNativeAudio(startSec);
-          const nativePlaying = await playNativeAudio();
-          setCurrentTime(startSec);
-          setIsPlaying(nativePlaying);
-          return;
-        }
-
         const sourceUrl = await getNativePlaybackEpisodeUrl(episode);
         const prepared = await prepareNativeAudio(episode, sourceUrl, startSec, resolved.playbackRate);
         if (prepared) {
           if (audio && !audio.paused) audio.pause();
           setNativeActiveFlag(true);
-          setCurrentTime(startSec);
-          setDuration(episode.durationSec || 0);
-          const nativePlaying = await playNativeAudio();
-          setIsPlaying(nativePlaying);
           return;
         }
       }
 
       setNativeActiveFlag(false);
       if (!audio) return;
-      if (!wasSameEpisode || !audio.src) {
-        audio.src = await resolveEpisodeUrl(episode);
-        audio.currentTime = startSec;
-      } else if (audio.currentTime > resolved.resumeRewindSec) {
-        audio.currentTime = startSec;
-      }
+      if (!wasSameEpisode || !audio.src) audio.src = await resolveEpisodeUrl(episode);
+      audio.currentTime = startSec;
       applyPlaybackSettings();
+    },
+    [applyPlaybackSettings, effectiveSettings, refreshSilenceMap, refreshSmartSkipMap, resolveEpisodeUrl, setNativeActiveFlag]
+  );
+
+  const playEpisode = useCallback(
+    async (episode: EpisodeWithState) => {
+      const audio = audioRef.current;
+      const previous = currentRef.current;
+      const wasSameEpisode = previous?.id === episode.id;
+      const resolved = effectiveSettings();
+      const shouldRewindSameEpisode = wasSameEpisode && !isPlayingRef.current && shouldResumeRewind(pausedAtRef.current);
+      const startSec = shouldRewindSameEpisode ? Math.max(0, currentTimeRef.current - resolved.resumeRewindSec) : currentTimeRef.current;
+
+      if (!wasSameEpisode) await cueEpisode(episode);
+      else if (shouldRewindSameEpisode) {
+        if (nativeActiveRef.current) await seekNativeAudio(startSec);
+        else if (audio) audio.currentTime = startSec;
+        setCurrentTime(startSec);
+      }
+      pausedAtRef.current = null;
+
+      if (nativeActiveRef.current) {
+        const nativePlaying = await playNativeAudio();
+        setIsPlaying(nativePlaying);
+        return;
+      }
+
+      if (!audio) return;
       await audio.play();
       setIsPlaying(true);
     },
-    [applyPlaybackSettings, effectiveSettings, refreshSilenceMap, refreshSmartSkipMap, resolveEpisodeUrl, setNativeActiveFlag]
+    [cueEpisode, effectiveSettings]
   );
 
   const toggle = useCallback(async () => {
@@ -474,7 +487,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     });
   }, [seek, settings.skipBackSec, settings.skipForwardSec, skipBy, toggle]);
 
-  return { audioRef, current, isPlaying, currentTime, duration, volume, setVolume, playEpisode, toggle, seek, skipBy, stop, silenceSupported, smartSkipNotice, undoSmartSkip };
+  return { audioRef, current, isPlaying, currentTime, duration, volume, setVolume, cueEpisode, playEpisode, toggle, seek, skipBy, stop, silenceSupported, smartSkipNotice, undoSmartSkip };
 }
 
 function maybeSkipSmartSegment(

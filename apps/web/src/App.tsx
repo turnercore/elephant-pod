@@ -104,6 +104,7 @@ export default function App() {
   const artworkObjectUrlsRef = useRef<string[]>([]);
   const offlineBundlePrefetchRef = useRef<Set<string>>(new Set());
   const youtubeEnrichmentRef = useRef<Set<string>>(new Set());
+  const startupCueEpisodeRef = useRef<string | null>(null);
 
   const hostedWebRuntime = isHostedWebRuntime();
   const runtimeServerUrl = resolveBrowserServerUrl(resolveConfiguredServerUrl(settings?.serverUrl));
@@ -411,6 +412,14 @@ export default function App() {
     () => visibleEpisodes.filter((episode) => episode.state.queuePosition).sort((a, b) => (a.state.queuePosition || 0) - (b.state.queuePosition || 0)),
     [visibleEpisodes]
   );
+
+  useEffect(() => {
+    if (!settings || audio.current || audio.isPlaying || !queueEpisodes.length) return;
+    const top = queueEpisodes[0];
+    if (startupCueEpisodeRef.current === top.id) return;
+    startupCueEpisodeRef.current = top.id;
+    void audio.cueEpisode(withPlaybackArtwork(top));
+  }, [audio.current, audio.cueEpisode, audio.isPlaying, queueEpisodes, settings, withPlaybackArtwork]);
 
   useEffect(() => {
     if (!settings || !canUseServerSilence) return;

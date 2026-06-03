@@ -38,6 +38,8 @@ silence shortening uses signed-in server-generated silence maps.
 
 `src-tauri/src/downloads.rs` implements app-data file downloads for Tauri builds. `src-tauri/src/media_session.rs` is a desktop-safe shim; `src-tauri/plugins/tauri-plugin-elephant-audio` is the local plugin package scaffold that should own AVPlayer/Media3 playback in mobile builds, with reference implementations under `src-tauri/mobile`.
 
+When the app opens or finishes sync/login hydration, the first queued episode is cued as the current episode without starting playback. That keeps the player surface consistent with the queue and lets native mobile builds prepare paused Now Playing metadata. iOS Now Playing uses the episode title, podcast title, duration, and downloaded/remote artwork URL supplied by the frontend; the Swift plugin resolves artwork into `MPMediaItemArtwork`.
+
 ## 3. Server ffmpeg processing
 
 `apps/server/src/mediaJobs.ts` implements:

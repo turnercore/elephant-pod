@@ -1,6 +1,7 @@
 import AVFoundation
 import MediaPlayer
 import Tauri
+import UIKit
 import WebKit
 
 struct PrepareArgs: Decodable {
@@ -14,12 +15,28 @@ struct PrepareArgs: Decodable {
   let playbackRate: Double
 }
 
+struct NowPlayingEnvelope: Decodable {
+  let payload: NowPlayingPayload
+}
+
+struct NowPlayingPayload: Decodable {
+  let title: String
+  let podcastTitle: String
+  let artworkUrl: String?
+  let durationSec: Double?
+  let elapsedSec: Double
+  let playbackRate: Double
+  let playing: Bool
+}
+
 @objc(ElephantAudioPlugin)
 public class ElephantAudioPlugin: Plugin {
   private var player: AVPlayer?
   private var episodeId: String?
   private var title: String = ""
   private var podcastTitle: String = ""
+  private var artworkUrl: String?
+  private var artwork: MPMediaItemArtwork?
   private var durationSec: Double?
 
   @objc public override func load(webview: WKWebView) {
@@ -47,12 +64,15 @@ public class ElephantAudioPlugin: Plugin {
       episodeId = args.episodeId
       title = args.title
       podcastTitle = args.podcastTitle
+      artworkUrl = args.artworkUrl
+      artwork = nil
       durationSec = args.durationSec
       let item = AVPlayerItem(url: url)
       player = AVPlayer(playerItem: item)
       player?.rate = Float(args.playbackRate)
       player?.seek(to: CMTime(seconds: args.startSec, preferredTimescale: 600))
       updateNowPlaying(elapsed: args.startSec, playing: false, playbackRate: args.playbackRate)
+      loadArtwork(args.artworkUrl, episodeId: args.episodeId, elapsed: args.startSec, playing: false, playbackRate: args.playbackRate)
       invoke.resolve(true)
     } catch {
       invoke.reject(error.localizedDescription)
@@ -97,10 +117,24 @@ public class ElephantAudioPlugin: Plugin {
   }
 
   @objc(now_playing:) public func now_playing(_ invoke: Invoke) {
-    if let elapsed = invoke.getDouble("elapsedSec") {
-      updateNowPlaying(elapsed: elapsed, playing: player?.timeControlStatus == .playing, playbackRate: Double(player?.rate ?? 1))
+    do {
+      let args = try invoke.parseArgs(NowPlayingEnvelope.self).payload
+      title = args.title
+      podcastTitle = args.podcastTitle
+      durationSec = args.durationSec
+      if artworkUrl != args.artworkUrl {
+        artworkUrl = args.artworkUrl
+        artwork = nil
+        loadArtwork(args.artworkUrl, episodeId: episodeId, elapsed: args.elapsedSec, playing: args.playing, playbackRate: args.playbackRate)
+      }
+      updateNowPlaying(elapsed: args.elapsedSec, playing: args.playing, playbackRate: args.playbackRate)
+      invoke.resolve()
+    } catch {
+      if let elapsed = invoke.getDouble("elapsedSec") {
+        updateNowPlaying(elapsed: elapsed, playing: player?.timeControlStatus == .playing, playbackRate: Double(player?.rate ?? 1))
+      }
+      invoke.resolve()
     }
-    invoke.resolve()
   }
 
   private func configureAudioSession() {
@@ -126,11 +160,20 @@ public class ElephantAudioPlugin: Plugin {
 
   private func configureRemoteCommands() {
     let center = MPRemoteCommandCenter.shared()
-    center.playCommand.addTarget { [weak self] _ in self?.player?.play(); return .success }
-    center.pauseCommand.addTarget { [weak self] _ in self?.player?.pause(); return .success }
+    center.playCommand.addTarget { [weak self] _ in
+      self?.player?.play()
+      self?.updateNowPlaying(elapsed: self?.currentSeconds() ?? 0, playing: true, playbackRate: Double(self?.player?.rate ?? 1))
+      return .success
+    }
+    center.pauseCommand.addTarget { [weak self] _ in
+      self?.player?.pause()
+      self?.updateNowPlaying(elapsed: self?.currentSeconds() ?? 0, playing: false, playbackRate: Double(self?.player?.rate ?? 1))
+      return .success
+    }
     center.changePlaybackPositionCommand.addTarget { [weak self] event in
       guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
       self?.player?.seek(to: CMTime(seconds: event.positionTime, preferredTimescale: 600))
+      self?.updateNowPlaying(elapsed: event.positionTime, playing: self?.player?.timeControlStatus == .playing, playbackRate: Double(self?.player?.rate ?? 1))
       return .success
     }
   }
@@ -143,7 +186,26 @@ public class ElephantAudioPlugin: Plugin {
       MPNowPlayingInfoPropertyPlaybackRate: playing ? playbackRate : 0
     ]
     if let durationSec { info[MPMediaItemPropertyPlaybackDuration] = durationSec }
+    if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+  }
+
+  private func loadArtwork(_ raw: String?, episodeId targetEpisodeId: String?, elapsed: Double, playing: Bool, playbackRate: Double) {
+    guard let raw, let url = URL(string: raw) else { return }
+    URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+      guard
+        let self,
+        self.episodeId == targetEpisodeId,
+        let data,
+        let image = UIImage(data: data)
+      else { return }
+      let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+      DispatchQueue.main.async {
+        guard self.episodeId == targetEpisodeId else { return }
+        self.artwork = artwork
+        self.updateNowPlaying(elapsed: elapsed, playing: playing, playbackRate: playbackRate)
+      }
+    }.resume()
   }
 
   private func currentSeconds() -> Double {
