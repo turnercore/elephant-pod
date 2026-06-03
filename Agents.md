@@ -1,7 +1,5 @@
 # Agents.md
 
-Repo-specific entry point for agents working on Elephant Pod.
-
 ## Operating principles
 
 - Preserve local-first behavior. The app must be usable with no account and no server.
@@ -14,17 +12,18 @@ Repo-specific entry point for agents working on Elephant Pod.
 - Treat downloads as device-local. Do not sync native file paths between devices.
 - Treat public clips as public. Do not add private-feed clip sharing without explicit privacy and rights checks.
 
-## First files to read
+## Documentation
+Please read the following documentation as it relates to your task. Please keep documentation up to date as you work, and add new documentation as needed.
 
-1. `README.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/FEATURE_MATRIX.md`
-4. `docs/SERVER_SYNC.md`
-5. `docs/AUDIO_ENGINE.md`
-6. `docs/MOBILE_TAURI_NOTES.md`
-7. `docs/ACCESSIBILITY.md`
-8. `infra/supabase/schema.sql`
-9. `infra/supabase/README.md`
+1. `README.md` - Readme with project overview, development setup, and contribution guidelines.
+2. `docs/ARCHITECTURE.md` - High-level architecture overview, including data flow, sync contracts, and component boundaries.
+3. `docs/FEATURE_MATRIX.md` - Feature matrix comparing Elephant Pod to other podcast apps and listing planned features.
+4. `docs/SERVER_SYNC.md` - Documentation for server-side sync logic.
+5. `docs/AUDIO_ENGINE.md` - Documentation for the audio engine implementation.
+6. `docs/MOBILE_TAURI_NOTES.md` - Notes and guidelines for mobile development with Tauri.
+7. `docs/ACCESSIBILITY.md` - Accessibility guidelines and implementation details.
+8. `infra/supabase/schema.sql` - Database schema and sync contract documentation for Supabase.
+9. `infra/supabase/README.md` - Setup instructions, environment variable documentation, and security guidelines for Supabase.
 
 ## Project boundaries
 
@@ -43,52 +42,4 @@ RSS proxying, clip-link publishing, ffmpeg rendering, static app hosting, and fu
 Native wrapper. Contains native filesystem download commands, audio shim commands, and mobile audio plugin scaffolds.
 
 ### `infra/supabase`
-
-SQL schema, RLS policies, and a local Supabase-style Docker stack.
-
-## Required validation before handing off
-
-At minimum, run:
-
-```bash
-npm install
-npm run typecheck
-npm run build
-```
-
-For server changes:
-
-```bash
-PORT=8899 WEB_DIST=apps/web/dist node apps/server/dist/index.js
-curl http://localhost:8899/api/health
-```
-
-For Tauri changes, also run where Rust is available:
-
-```bash
-cd src-tauri
-cargo check
-cd ..
-npm run tauri:dev
-```
-
-For UI changes, manually check:
-
-- Keyboard navigation through the sidebar, queue, player, and settings.
-- Screen-reader names for icon buttons.
-- Local-only mode with no `.env` Supabase keys.
-- Refresh/import/export paths.
-- Player state after reload.
-- Native download fallback path in a Tauri build.
-- Public clip creation with and without ffmpeg available.
-- Sync from device A → server → device B, then reverse direction.
-
-## High-priority future tasks
-
-1. Compile and validate the mobile audio plugin in generated Tauri iOS/Android projects.
-2. Add native queue end-callbacks so autoplay-next works fully in native mode.
-3. Add mutation-log sync for stronger conflict handling.
-4. Move clip/silence rendering to a durable queue for large deployments.
-5. Add feed refresh worker/cron on the server.
-6. Add Podcasting 2.0 transcript/chapter ingestion.
-7. Add Playwright tests and mobile smoke tests.
+Superbase is only used for authentication while the local postgres database is the source of truth for sync and data.
