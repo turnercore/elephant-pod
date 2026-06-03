@@ -28,6 +28,8 @@ nativePruneDownloads(maxBytes)
 
 Native playback should use local filesystem URLs for downloaded episodes. The webview asset URL returned by `nativeDownloadedUrl` is for HTML media fallback; iOS AVPlayer should receive a `file://` URL from the stored native download path.
 
+Desktop Tauri downloaded playback uses the HTML audio fallback, so it depends on Tauri v2's asset protocol. Keep `tauri/protocol-asset` enabled and keep `app.security.assetProtocol.scope` limited to `$APPDATA/downloads/**`; widening that scope would expose more local files to the WebView than the podcast player needs.
+
 ## iOS entitlements/config
 
 - Enable Audio, AirPlay, and Picture in Picture background mode.

@@ -68,6 +68,8 @@ Downloaded episode storage is device-local. Automatic queued downloads are enabl
 2. Queued episodes from top to bottom.
 3. Inbox episodes from the current triage top to bottom.
 
+Tauri desktop playback of downloaded files uses the WebView audio fallback, so local download URLs must go through Tauri's asset protocol. The shell enables `app.security.assetProtocol` only for `$APPDATA/downloads/**` and compiles Tauri with `protocol-asset`. Mobile native playback does not use the asset URL for AVPlayer/Media3; it receives the stored native download path as a `file://` URL.
+
 ## Native model
 
 Browser/web mode uses an HTML audio element without routing remote podcast media through Web Audio. Tauri builds can use the bridge in `apps/web/src/lib/native/tauriBridge.ts`.
