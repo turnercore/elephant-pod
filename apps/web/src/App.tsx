@@ -61,6 +61,7 @@ import {
   upsertParsedFeed
 } from '@/lib/storage/repository';
 import { deleteInactiveDownloadIfNeeded, deleteInactiveDownloadsIfNeeded, maybeAutoDownload, pruneDownloadsOverCap } from '@/lib/features/automation';
+import { deriveLibraryPodcasts } from '@/lib/libraryModel';
 import { isTauriRuntime } from '@/lib/native/tauriBridge';
 import { isHostedWebRuntime, isLoopbackUrl } from '@/lib/runtime';
 import { syncNow } from '@/lib/sync/syncEngine';
@@ -1313,44 +1314,6 @@ function StatusToast({ message, onDismiss }: { message: string; onDismiss: () =>
 
 function allKnownEpisodes(cached: EpisodeWithState[], subscribed: EpisodeWithState[]): EpisodeWithState[] {
   return [...new Map([...cached, ...subscribed].map((episode) => [episode.id, episode])).values()];
-}
-
-function deriveLibraryPodcasts(cached: CachedPodcast[], subscribed: Podcast[], episodes: EpisodeWithState[]): CachedPodcast[] {
-  const map = new Map<string, CachedPodcast>();
-  for (const podcast of cached) map.set(podcast.id, podcast);
-  for (const podcast of subscribed) {
-    map.set(podcast.id, {
-      ...podcast,
-      cachedAt: podcast.updatedAt,
-      cacheExpiresAt: undefined,
-      podcastIndexId: undefined,
-      categories: podcast.tags || []
-    });
-  }
-  for (const episode of episodes) {
-    if (map.has(episode.podcastId)) continue;
-    const timestamp = episode.updatedAt || episode.publishedAt || nowIso();
-    map.set(episode.podcastId, {
-      id: episode.podcastId,
-      title: episode.podcastTitle,
-      author: undefined,
-      description: undefined,
-      imageUrl: episode.imageUrl,
-      feedUrl: '',
-      websiteUrl: undefined,
-      tags: [],
-      sourceType: undefined,
-      sourceUrl: undefined,
-      externalId: undefined,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      cachedAt: timestamp,
-      cacheExpiresAt: undefined,
-      podcastIndexId: undefined,
-      categories: []
-    });
-  }
-  return [...map.values()].sort((a, b) => a.title.localeCompare(b.title));
 }
 
 function defaultPodcastPreference(podcastId: string): PodcastPreference {

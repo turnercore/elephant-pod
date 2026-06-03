@@ -7,6 +7,7 @@ import {
   nativeDownloadedUrl,
   nativePruneDownloads,
   nativeStorageStats,
+  toNativeFileUrl,
   safeEpisodeFileName
 } from '../native/tauriBridge';
 
@@ -72,7 +73,7 @@ export async function getNativePlaybackEpisodeUrl(episode: EpisodeWithState): Pr
   if (isTauriRuntime() && episode.state.downloaded) {
     const fileUrl = await nativeDownloadedFileUrl(episode.id);
     if (fileUrl) return fileUrl;
-    if (episode.state.downloadPath) return `file://${encodeURI(episode.state.downloadPath)}`;
+    if (episode.state.downloadPath) return toNativeFileUrl(episode.state.downloadPath);
   }
   return episode.audioUrl;
 }
