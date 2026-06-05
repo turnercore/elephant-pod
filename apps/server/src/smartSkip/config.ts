@@ -7,7 +7,7 @@ export interface SmartSkipConfig {
   segmenterBaseUrl?: string;
   segmenterModel: string;
   segmenterBatchEnabled: boolean;
-  segmenterBatchCheckIntervalHours: number;
+  segmenterBatchCheckIntervalMinutes: number;
   proactiveEnabled: boolean;
   activeUserDays: number;
   proactiveRunsPerDay: number;
@@ -29,7 +29,7 @@ export function readSmartSkipConfig(options: { dataDir: string; publicUrl: strin
     segmenterBaseUrl: envString('SMART_SKIP_SEGMENTER_BASE_URL'),
     segmenterModel: envString('SMART_SKIP_SEGMENTER_MODEL') || 'gpt-5.4-mini',
     segmenterBatchEnabled: envBool('SMART_SKIP_SEGMENTER_BATCH_ENABLED', true),
-    segmenterBatchCheckIntervalHours: Math.max(1, envNumber('SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS', 12)),
+    segmenterBatchCheckIntervalMinutes: Math.max(1, readSegmenterBatchCheckIntervalMinutes()),
     proactiveEnabled: envBool('SMART_SKIP_PROACTIVE_ENABLED', false),
     activeUserDays: envNumber('SMART_SKIP_ACTIVE_USER_DAYS', 30),
     proactiveRunsPerDay: envNumber('SMART_SKIP_PROACTIVE_RUNS_PER_DAY', 2),
@@ -54,6 +54,18 @@ function envBool(name: string, fallback: boolean): boolean {
 function envWhisperFormat(name: string): SmartSkipConfig['whisperFormat'] {
   const value = envString(name)?.toLowerCase();
   return value === 'openai' || value === 'openai_audio' || value === 'multipart' ? 'openai' : 'contract';
+}
+
+function readSegmenterBatchCheckIntervalMinutes(): number {
+  const minutes = envNumber('SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_MINUTES', Number.NaN);
+  if (Number.isFinite(minutes)) return minutes;
+
+  // Backward-compatible fallback: an earlier revision used hours.
+  // Keep this path so deployments that still export *_HOURS continue to work.
+  const legacyHours = envNumber('SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS', Number.NaN);
+  if (Number.isFinite(legacyHours)) return legacyHours * 60;
+
+  return 720; // 12 hours
 }
 
 function envNumber(name: string, fallback: number): number {

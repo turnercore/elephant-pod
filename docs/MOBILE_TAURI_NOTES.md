@@ -51,7 +51,7 @@ Native download manifests store file paths for quick lookup, but mobile updates 
 
 - The collapsed mobile player shows episode/podcast/progress information on the left and larger artwork plus transport controls on the right.
 - Mobile queue access is swipe-up on the player. The queue/player sheet should track the finger during drag, support velocity, and snap open or closed instead of waiting for touch end.
-- Inbox and queue rows use Mail-style horizontal swipes. Half swipes reveal actions; full swipes perform the primary contextual action. Desktop keeps explicit controls and drag handles instead of requiring gestures.
+- Inbox and queue rows use horizontal swipes to reveal action buttons. Swipes do not auto-run actions; users tap a revealed button to commit. Desktop keeps explicit controls and drag handles instead of requiring gestures.
 
 ## Android config
 

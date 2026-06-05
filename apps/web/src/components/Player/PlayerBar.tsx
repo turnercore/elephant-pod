@@ -297,7 +297,7 @@ export function PlayerBar({
       onPointerUp={handleSheetPointerEnd}
       onPointerCancel={handleSheetPointerEnd}
     >
-      <div className={cn('border-b border-bone/15', queueOpen ? 'bg-surface px-4 pb-3 pt-3 md:px-6' : 'px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.85rem)] pt-2 md:px-3')}>
+      <div className={cn('border-b border-bone/15', queueOpen ? 'px-4 pb-3 pt-3 md:px-6' : 'px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.85rem)] pt-2 md:px-3')}>
         <button
           type="button"
           aria-label={queueOpen ? 'Collapse player' : 'Open queue'}
@@ -668,8 +668,6 @@ function QueueDrawerRow({
           { key: 'bottom', label: 'Bottom', icon: <ListEnd size={18} aria-hidden />, tone: 'default', onAction: () => onQueueEnd(episode) },
           { key: 'remove', label: 'Remove', icon: <Trash2 size={18} aria-hidden />, tone: 'danger', onAction: () => onRemoveQueue(episode) }
         ]}
-        fullSwipeLeft={() => onRemoveQueue(episode)}
-        fullSwipeRight={() => onSendInbox(episode)}
       >
         <div className="grid grid-cols-[auto_52px_1fr_auto] items-center gap-2 p-2 md:grid-cols-[auto_56px_1fr_auto] md:gap-3">
           <button

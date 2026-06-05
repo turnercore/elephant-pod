@@ -210,7 +210,7 @@ async function segmentWithBatch(input: {
 }
 
 async function releaseForBatchRecheck(job: SmartSkipJob, config: SmartSkipConfig, task: SmartSkipExternalTask): Promise<void> {
-  const nextCheckAt = task.nextCheckAt || new Date(Date.now() + config.segmenterBatchCheckIntervalHours * 60 * 60_000).toISOString();
+  const nextCheckAt = task.nextCheckAt || new Date(Date.now() + config.segmenterBatchCheckIntervalMinutes * 60_000).toISOString();
   const waiting: SmartSkipJob = {
     ...job,
     status: 'queued',
@@ -229,7 +229,7 @@ function externalTaskFromBatchResponse(jobId: string, response: Awaited<ReturnTy
   const now = new Date().toISOString();
   const nextCheckAt = response.status === 'completed' || isTerminalBatchStatus(response.status)
     ? undefined
-    : new Date(Date.now() + config.segmenterBatchCheckIntervalHours * 60 * 60_000).toISOString();
+    : new Date(Date.now() + config.segmenterBatchCheckIntervalMinutes * 60_000).toISOString();
   return {
     id: existing?.id || `ssk_ext_${hash(`${jobId}|segmenter_batch`)}`,
     jobId,

@@ -69,8 +69,6 @@ function InboxTriageRow({ episode, podcastImageUrl, processedBadges = [], handle
       rightActions={[
         { key: 'remove-inbox', label: 'Remove', icon: <ArchiveX size={18} aria-hidden />, tone: 'danger', onAction: () => handlers.onDismiss?.(episode) }
       ]}
-      fullSwipeLeft={() => handlers.onDismiss?.(episode)}
-      fullSwipeRight={() => handlers.onQueueEnd?.(episode)}
     >
       <article className="p-3">
         <div className="grid gap-3 md:grid-cols-[auto_1fr_auto] md:items-center">

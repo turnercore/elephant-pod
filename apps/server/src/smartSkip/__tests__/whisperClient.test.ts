@@ -74,7 +74,7 @@ function configFixture(overrides: Partial<SmartSkipConfig>): SmartSkipConfig {
     whisperFormat: 'contract',
     segmenterModel: 'mock',
     segmenterBatchEnabled: true,
-    segmenterBatchCheckIntervalHours: 12,
+    segmenterBatchCheckIntervalMinutes: 12,
     proactiveEnabled: false,
     activeUserDays: 30,
     proactiveRunsPerDay: 2,

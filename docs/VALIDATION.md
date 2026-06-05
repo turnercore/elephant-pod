@@ -61,7 +61,7 @@ Real episode processing submits segmenting through `/v1/segment-batches` by
 default. The app server stores the returned batch ID in
 `smart_skip_external_tasks`, sets the Smart Skip job to
 `stage='waiting-for-segment-batch'`, and rechecks after
-`SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS` hours, defaulting to `12`.
+`SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_MINUTES` minutes, defaulting to `720` (12 hours).
 
 Existing databases should be migrated before real Smart Skip testing:
 

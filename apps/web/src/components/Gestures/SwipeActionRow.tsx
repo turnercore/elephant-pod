@@ -13,8 +13,6 @@ interface SwipeActionRowProps {
   children: ReactNode;
   leftActions?: SwipeAction[];
   rightActions?: SwipeAction[];
-  fullSwipeLeft?: () => void;
-  fullSwipeRight?: () => void;
   className?: string;
   contentClassName?: string;
   disabled?: boolean;
@@ -22,16 +20,12 @@ interface SwipeActionRowProps {
 }
 
 const REVEAL_DISTANCE = 92;
-const FULL_DISTANCE = 176;
 const MAX_OFFSET = 210;
-const VELOCITY_FULL = 0.72;
 
 export function SwipeActionRow({
   children,
   leftActions = [],
   rightActions = [],
-  fullSwipeLeft,
-  fullSwipeRight,
   className,
   contentClassName,
   disabled,
@@ -41,10 +35,10 @@ export function SwipeActionRow({
   const [dragging, setDragging] = useState(false);
   const offsetRef = useRef(0);
   const suppressClickUntil = useRef(0);
-  const gesture = useRef<{ pointerId: number; startX: number; startY: number; lastX: number; lastAt: number; velocity: number; locked: boolean } | null>(null);
+  const gesture = useRef<{ pointerId: number; startX: number; startY: number; locked: boolean } | null>(null);
 
-  const canSwipeLeft = rightActions.length > 0 || Boolean(fullSwipeLeft);
-  const canSwipeRight = leftActions.length > 0 || Boolean(fullSwipeRight);
+  const canSwipeLeft = rightActions.length > 0;
+  const canSwipeRight = leftActions.length > 0;
 
   function clampOffset(value: number) {
     const min = canSwipeLeft ? -MAX_OFFSET : 0;
@@ -68,9 +62,6 @@ export function SwipeActionRow({
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      lastX: event.clientX,
-      lastAt: performance.now(),
-      velocity: 0,
       locked: false
     };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -85,11 +76,6 @@ export function SwipeActionRow({
     if (Math.abs(dx) > 8) current.locked = true;
     if (!current.locked) return;
 
-    const now = performance.now();
-    const dt = Math.max(1, now - current.lastAt);
-    current.velocity = (event.clientX - current.lastX) / dt;
-    current.lastX = event.clientX;
-    current.lastAt = now;
     setDragging(true);
     setTrackedOffset(clampOffset(dx));
   }
@@ -104,30 +90,9 @@ export function SwipeActionRow({
       // Pointer capture may already be released by the browser.
     }
     const dx = offsetRef.current;
-    const velocity = current.velocity;
     setDragging(false);
     if (current.locked) suppressClickUntil.current = Date.now() + 350;
 
-    if (dx <= -FULL_DISTANCE || velocity <= -VELOCITY_FULL) {
-      if (fullSwipeLeft) {
-        setTrackedOffset(-MAX_OFFSET);
-        window.setTimeout(() => {
-          fullSwipeLeft();
-          close();
-        }, 120);
-        return;
-      }
-    }
-    if (dx >= FULL_DISTANCE || velocity >= VELOCITY_FULL) {
-      if (fullSwipeRight) {
-        setTrackedOffset(MAX_OFFSET);
-        window.setTimeout(() => {
-          fullSwipeRight();
-          close();
-        }, 120);
-        return;
-      }
-    }
     if (dx <= -REVEAL_DISTANCE && rightActions.length) {
       setTrackedOffset(-Math.min(MAX_OFFSET, Math.max(REVEAL_DISTANCE, rightActions.length * 74)));
       return;

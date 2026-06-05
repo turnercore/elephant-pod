@@ -42,8 +42,6 @@ export function QueuePanel({ episodes, onPlay, onMove, onQueueTop, onQueueEnd, o
             { key: 'bottom', label: 'Bottom', icon: <ListEnd size={18} aria-hidden />, tone: 'default', onAction: () => onQueueEnd(episode) },
             { key: 'remove', label: 'Remove', icon: <Trash2 size={18} aria-hidden />, tone: 'danger', onAction: () => onRemove(episode) }
           ]}
-          fullSwipeLeft={() => onRemove(episode)}
-          fullSwipeRight={() => onSendInbox(episode)}
         >
           <article className="flex min-w-0 items-center gap-2 bg-surface/55 p-2 md:gap-3 md:bg-surface/80 md:p-3">
             <div className="grid h-8 w-8 shrink-0 place-items-center rounded-eh border border-mauve/45 bg-mauve/20 text-xs font-black text-cream md:h-9 md:w-9 md:text-sm">{index + 1}</div>
