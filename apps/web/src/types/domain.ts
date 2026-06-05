@@ -248,8 +248,42 @@ export interface SmartSkipMapCacheEntry {
   episodeId: string;
   audioUrl: string;
   map: unknown;
+  status?: 'queued' | 'processing' | 'ready' | 'failed' | 'stale' | 'missing';
+  jobId?: string;
+  reason?: string;
+  error?: string | null;
+  lastRequestedAt?: string;
   cachedAt: string;
   updatedAt: string;
+}
+
+export interface StoredServerSession {
+  serverUrl: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  userId?: string;
+  email?: string;
+  username?: string;
+  updatedAt: string;
+}
+
+export type SyncActionEntityType = 'episode_state';
+export type SyncActionType = 'episode-state-updated';
+
+export interface SyncAction {
+  id: string;
+  deviceId: string;
+  sequence: number;
+  entityType: SyncActionEntityType;
+  entityId: string;
+  actionType: SyncActionType;
+  payload: {
+    state?: Partial<EpisodeState>;
+  };
+  createdAt: string;
+  pushedAt?: string;
+  appliedAt?: string;
 }
 
 export interface SyncMeta {

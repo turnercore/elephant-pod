@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrepareRequest {
     pub episode_id: String,
@@ -8,11 +8,12 @@ pub struct PrepareRequest {
     pub title: String,
     pub podcast_title: String,
     pub artwork_url: Option<String>,
+    pub duration_sec: Option<f64>,
     pub start_sec: f64,
     pub playback_rate: f64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NowPlayingRequest {
     pub episode_id: String,
@@ -25,7 +26,7 @@ pub struct NowPlayingRequest {
     pub playing: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioCapabilities {
     pub available: bool,
@@ -36,7 +37,7 @@ pub struct AudioCapabilities {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioStatus {
     pub native_available: bool,

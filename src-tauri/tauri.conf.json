@@ -45,6 +45,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "iOS": {
+      "frameworks": ["AVFoundation", "MediaPlayer"],
+      "infoPlist": "Info.ios.plist"
+    },
     "icon": [
       "icons/icon.icns",
       "icons/icon.ico",

@@ -36,9 +36,9 @@ silence shortening uses signed-in server-generated silence maps.
 - `native_audio_set_silence_shortening`
 - `native_audio_clear_session`
 
-`src-tauri/src/downloads.rs` implements app-data file downloads for Tauri builds. `src-tauri/src/media_session.rs` is a desktop-safe shim; `src-tauri/plugins/tauri-plugin-elephant-audio` is the local plugin package scaffold that should own AVPlayer/Media3 playback in mobile builds, with reference implementations under `src-tauri/mobile`.
+`src-tauri/src/downloads.rs` implements app-data file downloads for Tauri builds. `src-tauri/src/media_session.rs` is a desktop-safe shim; `src-tauri/plugins/tauri-plugin-elephant-audio` is the local plugin package. iOS builds package the plugin's Swift AVPlayer implementation so the web audio controller can prepare, play, pause, seek, set rate, poll native status, and update lock-screen metadata through `MPNowPlayingInfoCenter`. Android Media3 playback ownership remains the next native step, with reference implementations under `src-tauri/mobile`.
 
-When the app opens or finishes sync/login hydration, the first queued episode is cued as the current episode without starting playback. That keeps the player surface consistent with the queue and lets native mobile builds prepare paused Now Playing metadata. iOS Now Playing uses the episode title, podcast title, duration, and downloaded/remote artwork URL supplied by the frontend; the Swift plugin resolves artwork into `MPMediaItemArtwork`.
+When the app opens or finishes sync/login hydration, the first queued episode is cued as the current episode without starting playback. That keeps the player surface consistent with the queue and lets native mobile builds prepare paused Now Playing metadata. iOS Now Playing uses a frontend `now_playing` payload with the episode id, episode title, podcast title, duration, elapsed position, playback rate, play/pause state, and downloaded/remote artwork URL. The Swift plugin resolves artwork into `MPMediaItemArtwork` and refreshes `MPNowPlayingInfoCenter` after cue, play, pause, seek, rate, and periodic native status updates. The web audio fallback also publishes Media Session metadata and position state so iOS WebKit lock-screen playback shows the episode instead of the app name when the native plugin is not the active audio engine.
 
 ## 3. Server ffmpeg processing
 
@@ -64,6 +64,8 @@ Playback telemetry records real listening time, content time heard, estimated sp
 ## Smart Skip V1
 
 Smart Skip is a signed-in server feature. The client never runs browser-side audio analysis for remote podcast streams and does not attempt Smart Skip in local/offline mode.
+
+When global Smart Skip is enabled and the user is signed in to the app server, episodes in Inbox or Queue are proactively submitted to `/api/smart-skip/process`. `202 queued` responses are cached locally as queued/processing state so the client does not spam the server, then the app polls those eligible episodes for a ready segment map. Episode rows show a Smart Skip magic badge only after a ready map is cached; queued work may show a queued badge but does not affect playback.
 
 The server routes are:
 

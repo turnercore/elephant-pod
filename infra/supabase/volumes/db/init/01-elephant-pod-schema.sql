@@ -141,6 +141,22 @@ create table if not exists public.sync_tombstones (
   check (table_name in ('subscriptions', 'episodes', 'episode_states', 'clips'))
 );
 
+create table if not exists public.sync_actions (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  device_id text not null,
+  sequence bigint not null default 0,
+  entity_type text not null,
+  entity_id text not null,
+  action_type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  pushed_at timestamptz,
+  applied_at timestamptz,
+  check (entity_type in ('episode_state')),
+  check (action_type in ('episode-state-updated'))
+);
+
 -- Optional unauthenticated public clip registry used by the app server.
 create table if not exists public.public_clips (
   id text primary key,
@@ -169,6 +185,7 @@ alter table public.podcast_preferences enable row level security;
 alter table public.user_settings enable row level security;
 alter table public.clips enable row level security;
 alter table public.sync_tombstones enable row level security;
+alter table public.sync_actions enable row level security;
 alter table public.public_clips enable row level security;
 
 drop policy if exists "subscriptions are owned by user" on public.subscriptions;
@@ -178,6 +195,7 @@ drop policy if exists "podcast preferences are owned by user" on public.podcast_
 drop policy if exists "settings are owned by user" on public.user_settings;
 drop policy if exists "clips are owned by user" on public.clips;
 drop policy if exists "tombstones are owned by user" on public.sync_tombstones;
+drop policy if exists "sync actions are owned by user" on public.sync_actions;
 drop policy if exists "public clips are readable" on public.public_clips;
 
 create policy "subscriptions are owned by user" on public.subscriptions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -187,6 +205,7 @@ create policy "podcast preferences are owned by user" on public.podcast_preferen
 create policy "settings are owned by user" on public.user_settings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "clips are owned by user" on public.clips for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "tombstones are owned by user" on public.sync_tombstones for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "sync actions are owned by user" on public.sync_actions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "public clips are readable" on public.public_clips for select using (true);
 
 create index if not exists idx_subscriptions_user_updated on public.subscriptions(user_id, updated_at desc);
@@ -196,6 +215,8 @@ create index if not exists idx_episode_states_inbox on public.episode_states(use
 create index if not exists idx_podcast_preferences_user_updated on public.podcast_preferences(user_id, updated_at desc);
 create index if not exists idx_clips_user_episode on public.clips(user_id, episode_local_id);
 create index if not exists idx_tombstones_user_deleted on public.sync_tombstones(user_id, deleted_at desc);
+create index if not exists idx_sync_actions_user_created on public.sync_actions(user_id, created_at, sequence);
+create index if not exists idx_sync_actions_user_entity on public.sync_actions(user_id, entity_type, entity_id, created_at desc);
 
 create table if not exists public.smart_skip_media_versions (
   id text primary key,

@@ -1,9 +1,10 @@
 import type { PropsWithChildren } from 'react';
 import { cn } from '@/lib/cn';
 
-export function Badge({ children, tone = 'sage', className }: PropsWithChildren<{ tone?: 'sage' | 'teal' | 'mauve' | 'coral' | 'yellow'; className?: string }>) {
+export function Badge({ children, tone = 'sage', className, title }: PropsWithChildren<{ tone?: 'sage' | 'teal' | 'mauve' | 'coral' | 'yellow'; className?: string; title?: string }>) {
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.06em]',
         tone === 'sage' && 'border-sage/25 bg-sage/10 text-sage',

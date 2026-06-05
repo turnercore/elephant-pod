@@ -2,7 +2,7 @@
 
 Elephant Pod is a local-first podcast app for web, desktop, iOS, and Android via Tauri. It combines an AntennaPod-style inbox/queue workflow, Overcast-style listening polish, optional self-hosted Supabase sync, server-rendered clips, and Elephant Hand Games branding.
 
-This repository is a **v2 production-oriented scaffold**. The web/server app builds and runs. The Tauri shell now has native filesystem download commands and a stable command boundary for native audio. A local Tauri audio plugin package is included and registered for desktop-safe fallback; the iOS/Android implementations are still scaffolds that need generated-project wiring and physical-device validation.
+This repository is a **v2 production-oriented scaffold**. The web/server app builds and runs. The Tauri shell now has native filesystem download commands and a stable command boundary for native audio. A local Tauri audio plugin package is included and registered for desktop-safe fallback; iOS now packages an AVPlayer-backed plugin for playback, remote controls, and Now Playing metadata, while Android media-session behavior still needs promotion from the reference implementation and device validation.
 
 ## What works now
 
@@ -34,11 +34,12 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - `src-tauri/src/downloads.rs`: native app-data episode downloads, manifest tracking, storage stats, deletion, and oldest-first pruning.
 - `src-tauri/src/native_audio.rs`: desktop-safe Rust command surface for native audio session state.
 - `src-tauri/plugins/tauri-plugin-elephant-audio`: local Tauri audio plugin scaffold registered in the app shell.
+- `src-tauri/plugins/tauri-plugin-elephant-audio/ios/Sources/ElephantAudioPlugin/ElephantAudioPlugin.swift`: iOS AVPlayer plugin for playback, seeking, rate changes, lock-screen commands, and `MPNowPlayingInfoCenter` metadata.
 - `src-tauri/mobile/ios/ElephantPodAudioPlugin.swift`: AVAudioSession / AVPlayer / MPRemoteCommandCenter implementation reference.
 - `src-tauri/mobile/android/.../ElephantPodAudioPlugin.kt` and `ElephantPodPlaybackService.kt`: Android Media3 / ExoPlayer / MediaSessionService reference.
 - `apps/server/src/mediaJobs.ts`: ffmpeg clip rendering and silence-shortening jobs.
 - `apps/web/src/lib/audio/silenceMaps.ts`: frontend handoff to signed-in server-generated silence maps.
-- `apps/web/src/lib/sync/syncEngine.ts`: bidirectional Supabase sync with merge conflict accounting.
+- `apps/web/src/lib/sync/syncEngine.ts`: bidirectional server sync with snapshot merge, action-log replay, and conflict accounting.
 - `infra/docker-compose.yml`: local Postgres plus Elephant Pod server for local development.
 - `.forgejo/workflows/publish-container.yml`: Forgejo Actions build-and-push flow for the server image.
 - `.forgejo/workflows/deploy-superzima.yml`: SSH deploy flow that pulls the Forgejo registry image on `superzima`.
@@ -225,7 +226,7 @@ npm install
 npm run tauri:dev
 ```
 
-For iOS/Android, run the normal Tauri mobile initialization flow, then wire the local plugin package in `src-tauri/plugins/tauri-plugin-elephant-audio` and the platform reference files in `src-tauri/mobile` into the generated projects. See `docs/MOBILE_TAURI_NOTES.md`.
+For iOS/Android, run the normal Tauri mobile initialization flow. The local plugin package in `src-tauri/plugins/tauri-plugin-elephant-audio` is registered by the shell; iOS builds package its Swift AVPlayer plugin and generated iOS config enables background audio. Android Media3 playback remains a reference implementation under `src-tauri/mobile` until it is promoted into the production plugin. See `docs/MOBILE_TAURI_NOTES.md`.
 
 ## Repository map
 
@@ -240,8 +241,8 @@ Agents.md       Instructions for future coding agents
 
 ## Current limitations
 
-- Native audio plugin code is included but not yet compiled into generated Tauri mobile projects.
-- iOS/Android background playback, lock-screen controls, interruptions, and foreground service behavior require device validation.
+- iOS Now Playing metadata is compiled into the Tauri mobile plugin and the generated iOS app enables background audio, but physical lock-screen visual validation is still required.
+- Full iOS/Android native playback ownership, remote lock-screen controls, interruptions, and Android foreground service behavior require device validation.
 - Server-side silence shortening renders a cached processed file; it does not yet stream progressively while ffmpeg is processing.
-- Supabase sync uses latest `updated_at` as the conflict rule. A CRDT/mutation-log model would be stronger for collaborative/shared accounts.
+- Sync uses latest `updated_at` snapshots plus a device action log for episode state conflicts. A full CRDT with server revisions and action compaction would still be stronger for collaborative/shared accounts.
 - Public clips are public. Do not use public clip sharing for private feeds until the authorization model is extended.

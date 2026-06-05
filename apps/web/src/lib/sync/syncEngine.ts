@@ -1,4 +1,4 @@
-import type { AppSettings, Clip, Episode, EpisodeState, Podcast, PodcastPreference, SyncTombstone, TombstoneTable } from '@/types/domain';
+import type { AppSettings, Clip, Episode, EpisodeState, Podcast, PodcastPreference, SyncAction, SyncTombstone, TombstoneTable } from '@/types/domain';
 import { db } from '../storage/db';
 import { getSettings, saveSettings } from '../storage/repository';
 import { nowIso } from '../dates';
@@ -11,6 +11,12 @@ export interface SyncResult {
   message: string;
 }
 
+export interface SyncOptions {
+  activeEpisodeId?: string;
+  activeProgressSec?: number;
+  activePlaying?: boolean;
+}
+
 interface SyncRequestPayload {
   feeds: Podcast[];
   episodes: Episode[];
@@ -18,6 +24,7 @@ interface SyncRequestPayload {
   podcastPreferences: PodcastPreference[];
   clips: Clip[];
   tombstones: SyncTombstone[];
+  actions: SyncAction[];
   settings: AppSettings;
   deviceId?: string;
 }
@@ -42,6 +49,9 @@ interface SyncResponsePayload {
   clips?: unknown;
   sync_tombstones?: unknown;
   tombstones?: unknown;
+  sync_actions?: unknown;
+  syncActions?: unknown;
+  actions?: unknown;
   user_settings?: unknown;
   userSettings?: unknown;
 }
@@ -53,6 +63,7 @@ interface PulledRemote {
   podcastPreferences: unknown[];
   clips: unknown[];
   tombstones: unknown[];
+  actions: unknown[];
   settings: unknown;
 }
 
@@ -61,19 +72,20 @@ type RemoteEpisodeState = Omit<EpisodeState, 'downloaded' | 'downloadedAt' | 'do
   downloadedAt?: string;
 };
 
-export async function syncNow(serverUrl?: string, accessToken?: string): Promise<SyncResult> {
+export async function syncNow(serverUrl?: string, accessToken?: string, options: SyncOptions = {}): Promise<SyncResult> {
   const settings = await getSettings();
   const base = normalizeServerUrl(serverUrl || settings.serverUrl);
   if (!base) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Server URL is not configured.' };
   if (!accessToken) return { pushed: 0, pulled: 0, conflicts: 0, message: 'Sign in before syncing.' };
 
-  const [localFeeds, localEpisodes, localStates, localPodcastPreferences, localClips, localTombstones] = await Promise.all([
+  const [localFeeds, localEpisodes, localStates, localPodcastPreferences, localClips, localTombstones, pendingActions] = await Promise.all([
     db.feeds.toArray(),
     db.episodes.toArray(),
     db.states.toArray(),
     db.podcastPreferences.toArray(),
     db.clips.toArray(),
-    db.tombstones.toArray()
+    db.tombstones.toArray(),
+    db.syncActions.filter((action) => !action.pushedAt).toArray()
   ]);
 
   const payload: SyncRequestPayload = {
@@ -83,6 +95,7 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
     podcastPreferences: localPodcastPreferences,
     clips: localClips,
     tombstones: localTombstones,
+    actions: pendingActions,
     settings,
     deviceId: settings.deviceId || crypto.randomUUID()
   };
@@ -111,11 +124,13 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
   const remotePodcastPreferences = normalizeRemotePodcastPreferences(pulled.podcastPreferences);
   const remoteClips = normalizeRemoteClips(pulled.clips);
   const remoteTombstones = normalizeRemoteTombstones(pulled.tombstones);
+  const remoteActions = normalizeRemoteActions(pulled.actions);
   const remoteSettings = pickedRemoteSettings(pulled.settings);
 
+  await syncActions(pendingActions, remoteActions, stats, options);
   await syncFeeds(localFeeds, remoteFeeds, stats);
   await syncEpisodes(localEpisodes, remoteEpisodes, stats);
-  await syncStates(localStates, remoteStates, stats);
+  await syncStates(localStates, remoteStates, stats, options, pendingActions);
   await syncPodcastPreferences(localPodcastPreferences, remotePodcastPreferences, stats);
   await syncClips(localClips, remoteClips, stats);
   await syncSettings(settings, remoteSettings, stats);
@@ -137,6 +152,7 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
     lastPushedAt: timestamp,
     updatedAt: timestamp
   });
+  await markActionsPushed(pendingActions, timestamp);
   const nextSettings = await getSettings();
   await saveSettings({ ...nextSettings, lastSyncAt: timestamp });
 
@@ -150,7 +166,7 @@ export async function syncNow(serverUrl?: string, accessToken?: string): Promise
 
 function extractPulled(body: SyncResponsePayload | null): PulledRemote {
   if (!body) {
-    return { subscriptions: [], episodes: [], episodeStates: [], podcastPreferences: [], clips: [], tombstones: [], settings: null };
+    return { subscriptions: [], episodes: [], episodeStates: [], podcastPreferences: [], clips: [], tombstones: [], actions: [], settings: null };
   }
 
   const pulled = toRecord(body.pulledData ?? body.pulled ?? body.pulls);
@@ -161,6 +177,7 @@ function extractPulled(body: SyncResponsePayload | null): PulledRemote {
     podcastPreferences: toArray(pulled.podcastPreferences || pulled.podcast_preferences || body.podcastPreferences || body.podcast_preferences),
     clips: toArray(pulled.clips || body.clips),
     tombstones: toArray(pulled.sync_tombstones || pulled.tombstones || body.sync_tombstones || body.tombstones),
+    actions: toArray(pulled.sync_actions || pulled.syncActions || pulled.actions || body.sync_actions || body.syncActions || body.actions),
     settings: pulled.settings || pulled.user_settings || pulled.userSettings || body.user_settings || body.userSettings
   };
 }
@@ -189,6 +206,32 @@ function normalizeRemoteTombstones(rows: unknown[]): SyncTombstone[] {
   return rows
     .map((row) => normalizeRemoteTombstone(toRecord(row)))
     .filter((tombstone): tombstone is SyncTombstone => tombstone !== null);
+}
+
+function normalizeRemoteActions(rows: unknown[]): SyncAction[] {
+  return rows.map(normalizeRemoteAction).filter((action): action is SyncAction => action !== null);
+}
+
+function normalizeRemoteAction(row: unknown): SyncAction | null {
+  const record = toRecord(row);
+  const id = asString(record.id);
+  const deviceId = asString(record.device_id ?? record.deviceId);
+  const entityType = asString(record.entity_type ?? record.entityType);
+  const actionType = asString(record.action_type ?? record.actionType);
+  const entityId = asString(record.entity_id ?? record.entityId);
+  if (!id || !deviceId || entityType !== 'episode_state' || actionType !== 'episode-state-updated' || !entityId) return null;
+  return {
+    id,
+    deviceId,
+    sequence: asNumber(record.sequence) || 0,
+    entityType,
+    entityId,
+    actionType,
+    payload: toRecord(record.payload) as SyncAction['payload'],
+    createdAt: asOptionalString(record.created_at ?? record.createdAt) || nowIso(),
+    pushedAt: asOptionalString(record.pushed_at ?? record.pushedAt),
+    appliedAt: asOptionalString(record.applied_at ?? record.appliedAt)
+  };
 }
 
 function normalizeRemoteFeed(row: unknown): Podcast | null {
@@ -418,14 +461,20 @@ async function syncEpisodes(local: Episode[], remote: Episode[], stats: MutableS
   }
 }
 
-async function syncStates(local: EpisodeState[], remote: RemoteEpisodeState[], stats: MutableSyncStats) {
+async function syncStates(local: EpisodeState[], remote: RemoteEpisodeState[], stats: MutableSyncStats, options: SyncOptions, pendingActions: SyncAction[] = []) {
   const remoteMap = new Map(remote.map((row) => [row.episodeId, hydrateRemoteEpisodeState(row)]));
+  const latestPendingAction = latestActionByEntity(pendingActions);
   const toPull: EpisodeState[] = [];
 
   for (const state of local) {
     const row = remoteMap.get(state.episodeId);
     if (row && isRemoteNewer(state.updatedAt, row.updatedAt)) {
-      toPull.push(mergeRemoteEpisodeState(state, row));
+      const action = latestPendingAction.get(state.episodeId);
+      if (action && shouldKeepPendingActionOverRemote(action.createdAt, row.updatedAt)) {
+        stats.pushed += 1;
+        continue;
+      }
+      toPull.push(mergeRemoteEpisodeState(state, row, options));
       stats.conflicts += 1;
     } else if (!row) {
       stats.pushed += 1;
@@ -446,9 +495,90 @@ async function syncStates(local: EpisodeState[], remote: RemoteEpisodeState[], s
   }
 }
 
-function mergeRemoteEpisodeState(local: EpisodeState, remote: EpisodeState): EpisodeState {
+export function shouldKeepPendingActionOverRemote(actionCreatedAt?: string, remoteUpdatedAt?: string | null): boolean {
+  return isLocalNewer(actionCreatedAt, remoteUpdatedAt);
+}
+
+async function syncActions(localPending: SyncAction[], remote: SyncAction[], stats: MutableSyncStats, options: SyncOptions) {
+  const localIds = new Set((await db.syncActions.toArray()).map((action) => action.id));
+  const remoteToApply = remote
+    .filter((action) => !localIds.has(action.id))
+    .sort(compareActions);
+
+  if (remoteToApply.length) {
+    for (const action of remoteToApply) {
+      await applyRemoteAction(action, options);
+      await db.syncActions.put({ ...action, appliedAt: nowIso(), pushedAt: action.pushedAt || action.createdAt });
+    }
+    stats.pulled += remoteToApply.length;
+  }
+
+  if (localPending.length) stats.pushed += localPending.length;
+}
+
+async function applyRemoteAction(action: SyncAction, options: SyncOptions) {
+  if (action.entityType !== 'episode_state') return;
+  if (options.activePlaying && options.activeEpisodeId === action.entityId) return;
+  const patch = action.payload.state;
+  if (!patch) return;
+  const current = await db.states.get(action.entityId);
+  if (current && !isRemoteNewer(current.updatedAt, action.createdAt)) return;
+  await db.states.put({
+    ...current,
+    ...hydrateRemoteEpisodeState({
+      episodeId: action.entityId,
+      played: Boolean(patch.played),
+      playedAt: patch.playedAt,
+      lastPlayedAt: patch.lastPlayedAt,
+      progressSec: patch.progressSec || 0,
+      inboxState: patch.inboxState || 'archived',
+      inboxPosition: patch.inboxPosition,
+      queuedAt: patch.queuedAt,
+      queuePosition: patch.queuePosition,
+      downloaded: false,
+      downloadedAt: undefined,
+      favorite: Boolean(patch.favorite),
+      deletedAt: patch.deletedAt,
+      clipCount: patch.clipCount || 0,
+      updatedAt: patch.updatedAt || action.createdAt
+    }),
+    downloaded: current?.downloaded ?? false,
+    downloadedAt: current?.downloadedAt,
+    downloadPath: current?.downloadPath,
+    downloadBytes: current?.downloadBytes,
+    downloadBackend: current?.downloadBackend,
+    downloadSource: current?.downloadSource,
+    updatedAt: patch.updatedAt || action.createdAt
+  });
+}
+
+function latestActionByEntity(actions: SyncAction[]): Map<string, SyncAction> {
+  const map = new Map<string, SyncAction>();
+  for (const action of actions) {
+    const existing = map.get(action.entityId);
+    if (!existing || compareActions(existing, action) < 0) map.set(action.entityId, action);
+  }
+  return map;
+}
+
+function compareActions(a: SyncAction, b: SyncAction): number {
+  const byTime = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  if (byTime !== 0) return byTime;
+  const bySequence = a.sequence - b.sequence;
+  if (bySequence !== 0) return bySequence;
+  return a.deviceId.localeCompare(b.deviceId);
+}
+
+async function markActionsPushed(actions: SyncAction[], pushedAt: string) {
+  if (!actions.length) return;
+  await db.syncActions.bulkPut(actions.map((action) => ({ ...action, pushedAt })));
+}
+
+export function mergeRemoteEpisodeState(local: EpisodeState, remote: EpisodeState, options: SyncOptions = {}): EpisodeState {
+  const activeProgressSec = options.activeEpisodeId === local.episodeId ? options.activeProgressSec : undefined;
+  const protectActivePlayback = options.activePlaying && options.activeEpisodeId === local.episodeId;
   // Keep device-local download metadata from the destination device on merges.
-  return {
+  const merged = {
     ...remote,
     downloaded: local.downloaded,
     downloadedAt: local.downloadedAt,
@@ -456,6 +586,19 @@ function mergeRemoteEpisodeState(local: EpisodeState, remote: EpisodeState): Epi
     downloadBytes: local.downloadBytes,
     downloadBackend: local.downloadBackend,
     downloadSource: local.downloadSource
+  };
+  if (!protectActivePlayback) return merged;
+  return {
+    ...merged,
+    played: local.played,
+    playedAt: local.playedAt,
+    lastPlayedAt: local.lastPlayedAt,
+    progressSec: Math.max(local.progressSec || 0, Math.floor(activeProgressSec || 0)),
+    inboxState: local.inboxState,
+    inboxPosition: local.inboxPosition,
+    queuedAt: local.queuedAt,
+    queuePosition: local.queuePosition,
+    updatedAt: nowIso()
   };
 }
 

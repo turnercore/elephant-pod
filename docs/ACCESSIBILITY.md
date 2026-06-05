@@ -8,6 +8,8 @@ Current baseline:
 - Icon buttons use visible tooltips/title plus `aria-label`.
 - Profile icon buttons open a menu in both signed-in and local-only states; local-only users get status text and a sign-in/setup action.
 - Player is wrapped in a footer with `aria-label="Player"`.
+- Mobile swipe rows keep visible button alternatives for play, queue, Inbox, remove, and played actions. Swipe gestures are shortcuts, not the only way to act.
+- The mobile player queue sheet can be opened by swipe, while desktop keeps an explicit queue button. Sheet and row animations should respect reduced-motion preferences.
 - Modal clip composer uses `role="dialog"` and `aria-modal`.
 - Status messages use `role="status"`.
 - Visible focus rings are high contrast yellow.

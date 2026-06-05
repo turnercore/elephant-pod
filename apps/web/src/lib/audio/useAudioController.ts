@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject, type R
 import type { AppSettings, EpisodeWithState, PodcastPreference } from '@/types/domain';
 import { getCachedEpisodeUrl, getNativePlaybackEpisodeUrl } from '../storage/cache';
 import { isTauriRuntime, listenNativeMediaCommands, nativeClearAudioSession, nativePlaybackState, nativeSetSilenceShortening } from '../native/tauriBridge';
-import { getNativeAudioStatus, pauseNativeAudio, playNativeAudio, prepareNativeAudio, seekNativeAudio, setNativeAudioRate, stopNativeAudio } from '../native/nativeAudio';
+import { getNativeAudioStatus, pauseNativeAudio, playNativeAudio, prepareNativeAudio, seekNativeAudio, sendNativeNowPlaying, setNativeAudioRate, stopNativeAudio } from '../native/nativeAudio';
 import { ensureServerSilenceMap, getCachedReadySilenceMap } from './silenceMaps';
 import { shouldUseNativeAudio } from '../runtime';
 import type { SilenceMap } from '@/types/domain';
@@ -83,6 +83,21 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     currentTimeRef.current = currentTime;
   }, [currentTime]);
 
+  const publishNativeNowPlaying = useCallback((episode: EpisodeWithState | null, elapsedSec: number, playing: boolean, playbackRate: number, durationSec?: number) => {
+    publishWebMediaSession(episode, elapsedSec, playing, playbackRate, durationSec);
+    if (!episode || !shouldUseNativeAudio()) return;
+    void sendNativeNowPlaying({
+      episodeId: episode.id,
+      title: episode.title,
+      podcastTitle: episode.podcastTitle,
+      artworkUrl: episode.imageUrl,
+      durationSec: durationSec || episode.durationSec,
+      elapsedSec,
+      playbackRate,
+      playing
+    });
+  }, []);
+
   const applyPlaybackSettings = useCallback(() => {
     const resolved = effectiveSettings();
     const audio = audioRef.current;
@@ -90,7 +105,10 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
 
     setSilenceSupported(Boolean(resolved.silenceShortening && (nativeActiveRef.current || silenceMapRef.current?.status === 'ready')));
 
-    if (nativeActiveRef.current) void setNativeAudioRate(resolved.playbackRate);
+    if (nativeActiveRef.current) {
+      void setNativeAudioRate(resolved.playbackRate);
+      publishNativeNowPlaying(currentRef.current, currentTimeRef.current, isPlayingRef.current, resolved.playbackRate, duration || currentRef.current?.durationSec);
+    }
 
     if (shouldUseNativeAudio()) {
       void nativeSetSilenceShortening({
@@ -100,7 +118,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         boostRate: resolved.silenceBoostRate ?? 2.15
       });
     }
-  }, [effectiveSettings]);
+  }, [duration, effectiveSettings, publishNativeNowPlaying]);
 
   useEffect(() => {
     applyPlaybackSettings();
@@ -177,6 +195,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       setIsPlaying(false);
       setCurrentTime(startSec);
       setDuration(episode.durationSec || 0);
+      publishNativeNowPlaying(episode, startSec, false, resolved.playbackRate, episode.durationSec);
       silenceMapRef.current = null;
       smartSkipMapRef.current = null;
       lastSilenceSkipRef.current = null;
@@ -193,6 +212,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         if (prepared) {
           if (audio && !audio.paused) audio.pause();
           setNativeActiveFlag(true);
+          publishNativeNowPlaying(episode, startSec, false, resolved.playbackRate, episode.durationSec);
           return;
         }
       }
@@ -203,7 +223,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       audio.currentTime = startSec;
       applyPlaybackSettings();
     },
-    [applyPlaybackSettings, effectiveSettings, refreshSilenceMap, refreshSmartSkipMap, resolveEpisodeUrl, setNativeActiveFlag]
+    [applyPlaybackSettings, effectiveSettings, publishNativeNowPlaying, refreshSilenceMap, refreshSmartSkipMap, resolveEpisodeUrl, setNativeActiveFlag]
   );
 
   const playEpisode = useCallback(
@@ -226,6 +246,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       if (nativeActiveRef.current) {
         const nativePlaying = await playNativeAudio();
         setIsPlaying(nativePlaying);
+        publishNativeNowPlaying(currentRef.current, currentTimeRef.current, nativePlaying, resolved.playbackRate, duration || currentRef.current?.durationSec);
         return;
       }
 
@@ -233,7 +254,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       await audio.play();
       setIsPlaying(true);
     },
-    [cueEpisode, effectiveSettings]
+    [cueEpisode, duration, effectiveSettings, publishNativeNowPlaying]
   );
 
   const toggle = useCallback(async () => {
@@ -242,6 +263,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         await pauseNativeAudio();
         setIsPlaying(false);
         pausedAtRef.current = Date.now();
+        publishNativeNowPlaying(currentRef.current, currentTimeRef.current, false, effectiveSettings().playbackRate, duration || currentRef.current?.durationSec);
       } else {
         const target = shouldResumeRewind(pausedAtRef.current) && currentTimeRef.current > settings.resumeRewindSec ? Math.max(0, currentTimeRef.current - settings.resumeRewindSec) : currentTimeRef.current;
         if (target !== currentTimeRef.current) {
@@ -251,6 +273,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         const nativePlaying = await playNativeAudio();
         setIsPlaying(nativePlaying);
         pausedAtRef.current = null;
+        publishNativeNowPlaying(currentRef.current, currentTimeRef.current, nativePlaying, effectiveSettings().playbackRate, duration || currentRef.current?.durationSec);
       }
       return;
     }
@@ -263,13 +286,15 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       }
       await audio.play();
       setIsPlaying(true);
+      publishNativeNowPlaying(currentRef.current, audio.currentTime, true, effectiveSettings().playbackRate, Number.isFinite(audio.duration) ? audio.duration : currentRef.current?.durationSec);
       pausedAtRef.current = null;
     } else {
       audio.pause();
       setIsPlaying(false);
       pausedAtRef.current = Date.now();
+      publishNativeNowPlaying(currentRef.current, audio.currentTime, false, effectiveSettings().playbackRate, Number.isFinite(audio.duration) ? audio.duration : currentRef.current?.durationSec);
     }
-  }, [settings.resumeRewindSec]);
+  }, [duration, effectiveSettings, publishNativeNowPlaying, settings.resumeRewindSec]);
 
   const seek = useCallback((seconds: number) => {
     const next = Math.max(0, Math.min(seconds, duration || seconds));
@@ -280,6 +305,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         setCurrentTime(status.positionSec ?? next);
         setDuration(status.durationSec ?? duration);
         setIsPlaying(status.playing);
+        publishNativeNowPlaying(currentRef.current, status.positionSec ?? next, status.playing, status.playbackRate || effectiveSettings().playbackRate, status.durationSec ?? duration);
       });
       return;
     }
@@ -288,7 +314,8 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
     if (!audio) return;
     audio.currentTime = Math.max(0, Math.min(seconds, audio.duration || seconds));
     setCurrentTime(audio.currentTime);
-  }, [duration]);
+    publishNativeNowPlaying(currentRef.current, audio.currentTime, !audio.paused, audio.playbackRate || effectiveSettings().playbackRate, Number.isFinite(audio.duration) ? audio.duration : duration || currentRef.current?.durationSec);
+  }, [duration, effectiveSettings, publishNativeNowPlaying]);
 
   const skipBy = useCallback((seconds: number) => {
     if (nativeActiveRef.current) {
@@ -356,6 +383,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         currentTimeRef.current = positionSec;
         setDuration(durationSec);
         setIsPlaying(status.playing);
+        publishNativeNowPlaying(currentRef.current, positionSec, status.playing, status.playbackRate || effectiveSettings().playbackRate, durationSec);
         const skipOutroSec = Math.max(0, effectiveSettings().skipOutroSec ?? 0);
         const currentEpisodeId = currentRef.current?.id;
         if (
@@ -375,7 +403,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [effectiveSettings, nativeActive, podcastPreferences, seek]);
+  }, [effectiveSettings, nativeActive, podcastPreferences, publishNativeNowPlaying, seek]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -419,6 +447,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         durationSec,
         playbackRate: audio.playbackRate
       });
+      publishNativeNowPlaying(currentRef.current, audio.currentTime, !audio.paused, audio.playbackRate || resolved.playbackRate, durationSec);
     };
     const onDuration = () => {
       if (!nativeActiveRef.current) setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
@@ -513,6 +542,34 @@ function maybeSkipSmartSegment(
   const event = { segment: target.segment, seekToSec: target.seekToSec, episodeId: episode.id };
   seekTo(target.seekToSec, event);
   return true;
+}
+
+function publishWebMediaSession(episode: EpisodeWithState | null, elapsedSec: number, playing: boolean, playbackRate: number, durationSec?: number): void {
+  if (!episode || typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+  const mediaSession = navigator.mediaSession;
+  try {
+    const artwork = episode.imageUrl ? [
+      { src: episode.imageUrl, sizes: '96x96', type: 'image/png' },
+      { src: episode.imageUrl, sizes: '256x256', type: 'image/png' },
+      { src: episode.imageUrl, sizes: '512x512', type: 'image/png' }
+    ] : undefined;
+    mediaSession.metadata = new MediaMetadata({
+      title: episode.title,
+      artist: episode.podcastTitle,
+      album: episode.podcastTitle,
+      artwork
+    });
+    mediaSession.playbackState = playing ? 'playing' : 'paused';
+    if ('setPositionState' in mediaSession) {
+      mediaSession.setPositionState({
+        duration: Math.max(0, durationSec || episode.durationSec || 0),
+        playbackRate: Math.max(0.25, playbackRate || 1),
+        position: Math.max(0, elapsedSec || 0)
+      });
+    }
+  } catch {
+    // Some WebKit builds reject cross-origin artwork or incomplete position state.
+  }
 }
 
 function maybeSkipSilenceSegment(

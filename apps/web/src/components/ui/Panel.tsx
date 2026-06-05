@@ -15,16 +15,16 @@ export function Panel({ title, kicker, action, className, children, ...props }: 
   return (
     <section className={cn('flex min-h-0 flex-col overflow-hidden bg-transparent', className)} {...props}>
       {(title || kicker || action) && (
-        <header className="flex items-start justify-between gap-4 border-b border-bone/15 px-4 py-4 md:px-5">
-          <div className="flex min-w-0 items-start gap-3">
+        <header className="flex items-center justify-between gap-3 border-b border-bone/15 px-3 py-1.5 md:px-4">
+          <div className="flex min-w-0 items-center gap-2">
             {canGoBack && onBack ? (
-              <IconButton label="Back" onClick={onBack} className="mt-0.5 h-9 w-9 shrink-0" title="Back">
-                <ArrowLeft size={18} aria-hidden />
+              <IconButton label="Back" onClick={onBack} className="h-8 w-8 shrink-0" title="Back">
+                <ArrowLeft size={17} aria-hidden />
               </IconButton>
             ) : null}
             <div className="min-w-0">
-              {kicker && <p className="eh-note mb-1 text-sm text-yellow">{kicker}</p>}
-              {title && <h2 className="eh-title break-words text-xl text-cream">{title}</h2>}
+              {kicker && <p className="eh-note text-xs leading-4 text-yellow">{kicker}</p>}
+              {title && <h2 className="eh-title flex min-h-8 items-center break-words text-lg leading-none text-cream md:text-xl">{title}</h2>}
             </div>
           </div>
           {action}

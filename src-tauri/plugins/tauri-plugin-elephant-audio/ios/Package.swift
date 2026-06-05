@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-  name: "ElephantAudioPlugin",
+  name: "tauri-plugin-elephant-audio",
   platforms: [.iOS(.v15)],
-  products: [.library(name: "ElephantAudioPlugin", targets: ["ElephantAudioPlugin"])],
-  dependencies: [.package(name: "Tauri", path: "../../../../.tauri/tauri-api")],
-  targets: [.target(name: "ElephantAudioPlugin", dependencies: ["Tauri"])]
+  products: [.library(name: "tauri-plugin-elephant-audio", type: .static, targets: ["tauri-plugin-elephant-audio"])],
+  dependencies: [.package(name: "Tauri", path: "../.tauri/tauri-api")],
+  targets: [.target(name: "tauri-plugin-elephant-audio", dependencies: ["Tauri"], path: "Sources/ElephantAudioPlugin")]
 )

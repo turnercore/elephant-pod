@@ -111,6 +111,19 @@ const syncTombstoneSchema = z.object({
   pushedAt: z.string().optional()
 });
 
+const syncActionSchema = z.object({
+  id: z.string().min(1),
+  deviceId: z.string().min(1),
+  sequence: z.number().int().nonnegative().default(0),
+  entityType: z.literal('episode_state'),
+  entityId: z.string().min(1),
+  actionType: z.literal('episode-state-updated'),
+  payload: z.record(z.unknown()).default({}),
+  createdAt: z.string(),
+  pushedAt: z.string().optional(),
+  appliedAt: z.string().optional()
+});
+
 const syncPodcastPreferenceSchema = z.object({
   podcastId: z.string().min(1),
   playbackRate: z.number().min(0.5).max(3.5).optional(),
@@ -146,6 +159,7 @@ const syncRequestSchema = z.object({
   podcastPreferences: z.array(syncPodcastPreferenceSchema).default([]),
   clips: z.array(syncClipSchema).default([]),
   tombstones: z.array(syncTombstoneSchema).default([]),
+  actions: z.array(syncActionSchema).default([]),
   settings: syncSettingsSchema
 });
 
@@ -161,6 +175,7 @@ type SyncState = z.infer<typeof syncStateSchema>;
 type SyncPodcastPreference = z.infer<typeof syncPodcastPreferenceSchema>;
 type SyncClip = z.infer<typeof syncClipSchema>;
 type SyncTombstone = z.infer<typeof syncTombstoneSchema>;
+type SyncAction = z.infer<typeof syncActionSchema>;
 type SyncSettings = z.infer<typeof syncSettingsSchema>;
 type SyncStatePush = Omit<SyncState, 'downloaded' | 'downloadedAt' | 'downloadPath' | 'downloadBytes' | 'downloadBackend'>;
 type RemotePulledState = Omit<SyncState, 'downloaded' | 'downloadedAt' | 'downloadPath' | 'downloadBytes' | 'downloadBackend'>;
@@ -178,6 +193,7 @@ type SyncResponse = {
     clips: SyncClip[];
     settings: SyncSettings | null;
     tombstones: SyncTombstone[];
+    actions: SyncAction[];
   };
   serverTime: string;
 };
@@ -288,6 +304,19 @@ type RemoteTombstone = {
   local_id: string;
   deleted_at: string;
   pushed_at: string | null;
+};
+
+type RemoteSyncAction = {
+  id: string;
+  device_id: string;
+  sequence: number;
+  entity_type: 'episode_state';
+  entity_id: string;
+  action_type: 'episode-state-updated';
+  payload: Record<string, unknown>;
+  created_at: string;
+  pushed_at: string | null;
+  applied_at: string | null;
 };
 
 type RemoteSettings = {
@@ -547,6 +576,28 @@ async function syncTombstones(
   await upsert('sync_tombstones', toPush, 'id', stats);
 }
 
+async function syncActions(
+  userId: string,
+  local: SyncAction[],
+  remote: RemoteSyncAction[],
+  stats: MutableSyncStats,
+  pulled: SyncAction[]
+) {
+  const toPush = local
+    .filter((item) => !item.pushedAt)
+    .map((item) => toRemoteAction(userId, item));
+
+  const localIds = new Set(local.map((item) => item.id));
+  const toPull = remote.filter((item) => !localIds.has(item.id));
+  if (toPull.length) {
+    stats.pulled += toPull.length;
+    pulled.push(...toPull.map(fromRemoteAction).sort(compareSyncActions));
+  }
+
+  if (!toPush.length) return;
+  await upsert('sync_actions', toPush, 'id', stats);
+}
+
 function toRemoteFeed(userId: string, feed: SyncFeed) {
   const now = nowIso();
   return {
@@ -565,6 +616,22 @@ function toRemoteFeed(userId: string, feed: SyncFeed) {
     last_refreshed_at: feed.lastRefreshedAt,
     created_at: feed.createdAt || now,
     updated_at: feed.updatedAt || now
+  };
+}
+
+function toRemoteAction(userId: string, action: SyncAction) {
+  return {
+    id: action.id,
+    user_id: userId,
+    device_id: action.deviceId,
+    sequence: action.sequence,
+    entity_type: action.entityType,
+    entity_id: action.entityId,
+    action_type: action.actionType,
+    payload: action.payload,
+    created_at: action.createdAt,
+    pushed_at: action.pushedAt,
+    applied_at: action.appliedAt
   };
 }
 
@@ -725,6 +792,29 @@ function fromRemoteState(row: RemoteState): RemotePulledState {
 	  };
 	}
 
+function fromRemoteAction(row: RemoteSyncAction): SyncAction {
+  return {
+    id: row.id,
+    deviceId: row.device_id,
+    sequence: row.sequence,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    actionType: row.action_type,
+    payload: row.payload,
+    createdAt: row.created_at,
+    pushedAt: row.pushed_at || undefined,
+    appliedAt: row.applied_at || undefined
+  };
+}
+
+function compareSyncActions(a: SyncAction, b: SyncAction): number {
+  const byTime = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  if (byTime !== 0) return byTime;
+  const bySequence = a.sequence - b.sequence;
+  if (bySequence !== 0) return bySequence;
+  return a.deviceId.localeCompare(b.deviceId);
+}
+
 function fromRemotePodcastPreference(row: RemotePodcastPreference): SyncPodcastPreference {
   return {
     podcastId: row.podcast_local_id,
@@ -795,7 +885,8 @@ export async function syncHandler(req: Request, res: Response) {
 	    podcastPreferences: [] as SyncPodcastPreference[],
 	    clips: [] as SyncClip[],
     settings: null as SyncSettings | null,
-    tombstones: [] as SyncTombstone[]
+    tombstones: [] as SyncTombstone[],
+    actions: [] as SyncAction[]
   };
 
   const stats: MutableSyncStats = { pushed: 0, pulled: 0, conflicts: 0 };
@@ -803,13 +894,14 @@ export async function syncHandler(req: Request, res: Response) {
   const now = nowIso();
 
   try {
-	    const [remoteFeeds, remoteEpisodes, remoteStates, remotePodcastPreferences, remoteClips, remoteTombstones, remoteSettings] = await Promise.all([
+	    const [remoteFeeds, remoteEpisodes, remoteStates, remotePodcastPreferences, remoteClips, remoteTombstones, remoteActions, remoteSettings] = await Promise.all([
 	      selectAll<RemoteSubscription>('subscriptions', context.userId),
 	      selectAll<RemoteEpisode>('episodes', context.userId),
 	      selectAll<RemoteState>('episode_states', context.userId),
 	      selectAll<RemotePodcastPreference>('podcast_preferences', context.userId),
 	      selectAll<RemoteClip>('clips', context.userId),
       selectAll<RemoteTombstone>('sync_tombstones', context.userId),
+      selectAll<RemoteSyncAction>('sync_actions', context.userId),
       selectSettings<RemoteSettings>(context.userId)
     ]);
 
@@ -831,6 +923,7 @@ export async function syncHandler(req: Request, res: Response) {
     if (settingsResult.remoteSettings) pullResult.settings = settingsResult.remoteSettings;
 
     await syncTombstones(context.userId, payload.tombstones, remoteTombstones, stats, pullResult.tombstones);
+    await syncActions(context.userId, payload.actions, remoteActions, stats, pullResult.actions);
   } catch (error) {
     if (isTableMissing(error)) {
       res.status(503).json({

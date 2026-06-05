@@ -12,7 +12,7 @@
 
 ## Runtime sync contract
 
-The web/Tauri client keeps a local IndexedDB-first model and stores only `serverUrl` in settings. Browser/web runtime blocks on a valid server session before exposing app actions. Tauri/native runtime can skip sign-in and use the same local store without server connectivity. Once a valid session exists, sync is considered active automatically.
+The web/Tauri client keeps a local IndexedDB-first model and stores only `serverUrl` in settings. Browser/web runtime blocks on a valid server session before exposing app actions. Tauri/native runtime can skip sign-in and use the same local store without server connectivity. Once a valid session exists, sync is considered active automatically. App-server auth sessions are stored outside synced settings: the client writes the token payload to browser `localStorage` and a device-local IndexedDB `authSessions` backup so iOS/Tauri launches can restore sign-in if WebView localStorage is not ready or is cleared.
 
 Client responsibilities:
 
@@ -39,7 +39,7 @@ Auth/sync contract endpoints:
 The v2 sync flow is:
 
 ```text
-client local rows -> POST sync request + bearer token -> server validates token -> server reads/writes local Postgres -> server resolves conflicts -> server returns merged rows + tombstones -> client applies IndexedDB updates -> local sync metadata updates
+client local rows + pending actions -> POST sync request + bearer token -> server validates token -> server reads/writes local Postgres -> server resolves conflicts -> server returns merged rows + tombstones + actions -> client applies actions and IndexedDB updates -> local sync metadata updates
 ```
 
 Current tables and entities:
@@ -50,6 +50,7 @@ Current tables and entities:
 - `clips`
 - `user_settings`
 - `sync_tombstones`
+- `sync_actions`
 - `public_clips`
 
 Subscriptions and episodes include optional source metadata for RSS and YouTube synthetic sources: `source_type`, `source_url`, `external_id`, and episode `extraction_status`. Existing databases should apply `infra/postgres/migrations/20260602_youtube_sources.sql`.
@@ -61,14 +62,19 @@ Subscriptions and episodes include optional source metadata for RSS and YouTube 
 | Subscriptions | Newer `updated_at` row wins. |
 | Episodes | Newer `updated_at` row wins. |
 | Episode state | Newer `updated_at` row wins. |
-| Queue | Queue fields are part of episode state, so newer state wins. |
+| Queue | Queue fields are part of episode state and are also logged in `sync_actions`; recent local actions beat older remote snapshots. |
 | Settings | Newer settings blob wins. |
 | Podcast preferences | Newer per-podcast row wins, including speed, skip forward/back, skip intro/outro, silence, sort, and new-episode Inbox behavior. |
 | Clips | Newer clip row wins. |
 | Tombstones | Pulled tombstones delete matching local rows. |
+| Sync actions | Episode-state actions are ordered by `created_at`, `sequence`, and `device_id`; actions are idempotent by `id`. |
 | Downloads | Not synced; every device owns its own downloaded files. |
 
 Download-related settings such as queued auto-download, inbox auto-download, delete-after-listen, Inbox sort direction, Wi-Fi-only downloads, and storage cap are part of the synced settings blob. Actual downloaded files, file paths, local download-source tags, downloaded artwork blobs, and cached skip maps remain local-only.
+
+Active playback is protected during client-side merge. When a sync pull returns a newer `episode_states` row for the episode currently playing on this device, the local playback-affecting fields win for that merge: played state, played timestamps, progress, queue position, queued timestamp, Inbox state, and Inbox position. Device-local download fields also remain local. This prevents stale server state from pausing, resetting, unqueueing, resurrecting Inbox rows, or otherwise disrupting iPhone/native playback while audio is active.
+
+Episode-state mutations also append to a local `syncActions` queue before the next sync. The server stores these actions in `sync_actions` and returns actions the current device has not seen. The client applies remote actions in stable order before accepting remote snapshots, skips playback-affecting action application for the currently playing episode, and keeps a local pending action when that action is newer than the remote row being merged. This preserves local/offline intent across common conflicts such as queue reorder, Inbox triage, mark-listened, and progress updates while keeping the snapshot tables as the materialized view used by the UI.
 
 Downloaded episodes are the offline contract. When the browser reports offline, the app shows an offline banner and filters Library, Inbox, Queue, Downloads, and detail navigation to downloaded episodes and their parent podcasts. Episode state mutations still write to local IndexedDB while offline. When connectivity and a valid session return, the client runs sync again so played, progress, queue, Inbox, settings, and subscription changes can be pushed through the normal merge path.
 
@@ -78,7 +84,7 @@ Listening stats are also local-only. They are profile facts on the device and ca
 
 Silence maps are server-derived cache data. They are created through signed-in server endpoints, cached locally in IndexedDB, and not merged through Supabase/server sync. Downloading an episode attempts to cache the matching silence map so Smart Skip silence can keep working offline when the map is ready.
 
-Smart Skip maps are server-owned cache data. They require signed-in server routes, are stored in server Smart Skip tables, cached locally in IndexedDB when ready, and are not merged through Supabase/server sync. Downloading an episode attempts to cache the matching Smart Skip map so Smart Skip can keep working offline when the map is ready. Local-only Tauri playback, queueing, inbox triage, settings, and downloads must continue without server Smart Skip access.
+Smart Skip maps are server-owned cache data. They require signed-in server routes, are stored in server Smart Skip tables, cached locally in IndexedDB when ready, and are not merged through Supabase/server sync. The client may also cache queued/processing request status for eligible Inbox and Queue episodes so proactive Smart Skip work can be de-duped and polled without affecting local playback state. Downloading an episode attempts to cache the matching Smart Skip map so Smart Skip can keep working offline when the map is ready. Local-only Tauri playback, queueing, inbox triage, settings, and downloads must continue without server Smart Skip access.
 
 ## Search and Add Podcast contract
 
@@ -145,9 +151,9 @@ Security rules:
 ## Remaining sync hardening
 
 - Add paginated incremental pulls by cursor.
-- Add mutation-log table and server revisions.
+- Add server revisions and action compaction for old `sync_actions` rows.
 - Add per-field settings merge instead of blob merge.
-- Add queue-specific merge rules for multi-device concurrent reordering.
+- Add richer queue-specific action semantics for multi-device concurrent reordering.
 - Add integration tests with two simulated devices.
 
 ## Validation notes

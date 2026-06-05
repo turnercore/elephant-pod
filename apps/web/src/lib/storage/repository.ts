@@ -1,4 +1,4 @@
-import type { AppSettings, BackupFile, CachedPodcast, Clip, Episode, EpisodeState, EpisodeWithState, ListeningStats, Podcast, PodcastPreference, ParsedFeedResult, SilenceMap, SortDirection } from '@/types/domain';
+import type { AppSettings, BackupFile, CachedPodcast, Clip, Episode, EpisodeState, EpisodeWithState, ListeningStats, Podcast, PodcastPreference, ParsedFeedResult, SilenceMap, SortDirection, SyncAction } from '@/types/domain';
 import { nowIso } from '../dates';
 import { defaultStateFor } from '../sampleData';
 import { db } from './db';
@@ -138,7 +138,17 @@ export async function listReadySilenceMapEpisodeIds(): Promise<string[]> {
 
 export async function listReadySmartSkipMapEpisodeIds(): Promise<string[]> {
   const maps = await db.smartSkipMaps.toArray();
-  return [...new Set(maps.map((map) => map.episodeId))];
+  return [...new Set(maps.filter((map) => map.status === 'ready' || isReadySmartSkipMap(map.map)).map((map) => map.episodeId))];
+}
+
+export async function listSmartSkipMapEpisodeIdsByStatus(statuses: Array<'queued' | 'processing' | 'ready' | 'failed' | 'stale' | 'missing'>): Promise<string[]> {
+  const wanted = new Set(statuses);
+  const maps = await db.smartSkipMaps.toArray();
+  return [...new Set(maps.filter((map) => map.status && wanted.has(map.status)).map((map) => map.episodeId))];
+}
+
+function isReadySmartSkipMap(raw: unknown): boolean {
+  return Boolean(raw && typeof raw === 'object' && (raw as { status?: string }).status === 'ready');
 }
 
 export async function upsertParsedFeed(result: ParsedFeedResult): Promise<void> {
@@ -230,6 +240,7 @@ export async function updateEpisodeState(episodeId: string, patch: Partial<Episo
     next.inboxPosition = undefined;
   }
   await db.states.put(next);
+  await enqueueEpisodeStateAction(next);
 }
 
 export async function updateEpisodeMetadata(episodeId: string, patch: Partial<Episode>): Promise<void> {
@@ -267,6 +278,10 @@ export async function addEpisodeToQueueNext(episodeId: string): Promise<void> {
   await insertEpisodeAtQueuePosition(episodeId, 1);
 }
 
+export async function addEpisodeToQueueTop(episodeId: string): Promise<void> {
+  await insertEpisodeAtQueuePosition(episodeId, 1);
+}
+
 export async function playEpisodeAtQueueTop(episodeId: string): Promise<void> {
   await insertEpisodeAtQueuePosition(episodeId, 1);
   await updateEpisodeState(episodeId, { lastPlayedAt: nowIso() });
@@ -297,6 +312,7 @@ async function insertEpisodeAtQueuePosition(episodeId: string, targetPosition: n
 	      nextStates.push({ ...(existing || defaultStateFor(episodeId)), inboxState: 'archived', inboxPosition: undefined, queuedAt: timestamp, queuePosition: nextStates.length + 1, updatedAt: timestamp });
 	    }
 	    await db.states.bulkPut(nextStates);
+	    await Promise.all(nextStates.map(enqueueEpisodeStateAction));
 	  });
 	  await normalizeInboxPositions();
 	}
@@ -304,6 +320,14 @@ async function insertEpisodeAtQueuePosition(episodeId: string, targetPosition: n
 export async function removeFromQueue(episodeId: string): Promise<void> {
   await updateEpisodeState(episodeId, { queuePosition: undefined, queuedAt: undefined });
   await normalizeQueuePositions();
+}
+
+export async function removeFromInbox(episodeId: string): Promise<void> {
+  await updateEpisodeState(episodeId, {
+    inboxState: 'dismissed',
+    inboxPosition: undefined
+  });
+  await normalizeInboxPositions();
 }
 
 export async function moveInQueue(episodeId: string, direction: -1 | 1): Promise<void> {
@@ -325,11 +349,18 @@ export async function normalizeQueuePositions(): Promise<void> {
   const queued = (await db.states.toArray())
     .filter((s) => s.queuePosition)
     .sort((a, b) => (a.queuePosition || 0) - (b.queuePosition || 0));
+  const changed: EpisodeState[] = [];
+  const timestamp = nowIso();
   await db.transaction('rw', db.states, async () => {
     for (let i = 0; i < queued.length; i += 1) {
-      await db.states.put({ ...queued[i], queuePosition: i + 1, updatedAt: nowIso() });
+      const nextPosition = i + 1;
+      if (queued[i].queuePosition === nextPosition) continue;
+      const next = { ...queued[i], queuePosition: nextPosition, updatedAt: timestamp };
+      changed.push(next);
+      await db.states.put(next);
     }
   });
+  await Promise.all(changed.map(enqueueEpisodeStateAction));
 }
 
 export async function markAllInFeedPlayed(podcastId: string): Promise<void> {
@@ -383,6 +414,10 @@ export async function sendAllUnplayedToInbox(podcastId: string): Promise<void> {
 	  await normalizeQueuePositions();
 	  await normalizeInboxPositions();
 	}
+
+export async function sendEpisodeToInboxBottom(episodeId: string): Promise<void> {
+  await sendEpisodeToInbox(episodeId);
+}
 
 export async function getPodcastPreference(podcastId: string): Promise<PodcastPreference> {
   return (await db.podcastPreferences.get(podcastId)) || defaultPodcastPreference(podcastId);
@@ -533,19 +568,61 @@ async function nextInboxPosition(): Promise<number> {
   return states.reduce((acc, state) => Math.max(acc, state.inboxPosition || 0), 0) + 1;
 }
 
+async function enqueueEpisodeStateAction(state: EpisodeState): Promise<void> {
+  const meta = await db.syncMeta.get('main');
+  const settings = await db.settings.get('local');
+  const timestamp = state.updatedAt || nowIso();
+  const deviceId = meta?.deviceId || settings?.deviceId || crypto.randomUUID();
+  const sequence = Date.now();
+  const action: SyncAction = {
+    id: crypto.randomUUID(),
+    deviceId,
+    sequence,
+    entityType: 'episode_state',
+    entityId: state.episodeId,
+    actionType: 'episode-state-updated',
+    payload: {
+      state: {
+        played: state.played,
+        playedAt: state.playedAt,
+        lastPlayedAt: state.lastPlayedAt,
+        progressSec: state.progressSec,
+        inboxState: state.inboxState,
+        inboxPosition: state.inboxPosition,
+        queuedAt: state.queuedAt,
+        queuePosition: state.queuePosition,
+        favorite: state.favorite,
+        deletedAt: state.deletedAt,
+        clipCount: state.clipCount,
+        updatedAt: state.updatedAt
+      }
+    },
+    createdAt: timestamp
+  };
+  await db.syncActions.put(action);
+}
+
 export async function normalizeInboxPositions(): Promise<void> {
   const states = await db.states.toArray();
   const inbox = states
     .filter((state) => state.inboxState === 'new' && !state.queuePosition && !state.played)
     .sort((a, b) => (a.inboxPosition || 0) - (b.inboxPosition || 0));
   const timestamp = nowIso();
+  const changed: EpisodeState[] = [];
   await db.transaction('rw', db.states, async () => {
     for (let index = 0; index < inbox.length; index += 1) {
-      await db.states.put({ ...inbox[index], inboxPosition: index + 1, updatedAt: timestamp });
+      const nextPosition = index + 1;
+      if (inbox[index].inboxPosition === nextPosition) continue;
+      const next = { ...inbox[index], inboxPosition: nextPosition, updatedAt: timestamp };
+      changed.push(next);
+      await db.states.put(next);
     }
     const notInbox = states.filter((state) => state.inboxPosition && (state.inboxState !== 'new' || state.queuePosition || state.played));
     for (const state of notInbox) {
-      await db.states.put({ ...state, inboxPosition: undefined, updatedAt: timestamp });
+      const next = { ...state, inboxPosition: undefined, updatedAt: timestamp };
+      changed.push(next);
+      await db.states.put(next);
     }
   });
+  await Promise.all(changed.map(enqueueEpisodeStateAction));
 }

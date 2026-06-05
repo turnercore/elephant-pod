@@ -1,7 +1,7 @@
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
 import type { ServerClip } from './types.js';
 
-type AllowedTable = 'subscriptions' | 'episodes' | 'episode_states' | 'podcast_preferences' | 'user_settings' | 'clips' | 'sync_tombstones' | 'public_clips';
+type AllowedTable = 'subscriptions' | 'episodes' | 'episode_states' | 'podcast_preferences' | 'user_settings' | 'clips' | 'sync_tombstones' | 'sync_actions' | 'public_clips';
 
 const TABLE_CONFLICTS: Record<AllowedTable, string[]> = {
   subscriptions: ['user_id', 'local_id'],
@@ -11,6 +11,7 @@ const TABLE_CONFLICTS: Record<AllowedTable, string[]> = {
   user_settings: ['user_id'],
   clips: ['user_id', 'local_id'],
   sync_tombstones: ['id'],
+  sync_actions: ['id'],
   public_clips: ['id']
 };
 

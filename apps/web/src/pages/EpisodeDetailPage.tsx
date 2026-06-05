@@ -1,4 +1,4 @@
-import { LuCheck as Check, LuDownload as Download, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuLoaderCircle as LoaderCircle, LuPlay as Play, LuRotateCcw as RotateCcw, LuTrash as Trash, LuX as X } from 'react-icons/lu';
+import { LuCheck as Check, LuDownload as Download, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuLoaderCircle as LoaderCircle, LuPlay as Play, LuRotateCcw as RotateCcw, LuSparkles as Sparkles, LuTrash as Trash, LuX as X } from 'react-icons/lu';
 import { MdOutlineOfflinePin } from 'react-icons/md';
 import type { EpisodeWithState } from '@/types/domain';
 import { Badge } from '@/components/ui/Badge';
@@ -70,7 +70,7 @@ export function EpisodeDetailPage({
               {episode.state.queuePosition ? <Badge tone="teal">Queue #{episode.state.queuePosition}</Badge> : null}
               {episode.state.downloaded ? <span className="inline-flex h-7 items-center gap-1 rounded-eh border border-teal/40 bg-teal/12 px-2 text-xs font-black uppercase tracking-[0.05em] text-teal"><MdOutlineOfflinePin size={15} aria-hidden /> Downloaded</span> : null}
               {processedBadges.map((badge) => (
-                <Badge key={badge} tone={badge === 'Smart Skip' ? 'teal' : 'mauve'}>{badge}</Badge>
+                <ProcessedBadge key={badge} badge={badge} />
               ))}
             </div>
             <button type="button" onClick={() => onOpenPodcast(episode.podcastId)} className="mt-3 flex max-w-xl items-center gap-3 rounded-eh border border-bone/15 bg-surface/70 p-2 text-left transition hover:border-yellow/45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow" aria-label={`Open ${episode.podcastTitle}`}>
@@ -138,4 +138,24 @@ export function EpisodeDetailPage({
       </div>
     </Panel>
   );
+}
+
+function ProcessedBadge({ badge }: { badge: string }) {
+  if (badge === 'Smart Skip') {
+    return (
+      <Badge tone="teal" className="gap-1" title="Smart Skip processed">
+        <Sparkles size={12} aria-hidden />
+        <span>Smart Skip</span>
+      </Badge>
+    );
+  }
+  if (badge === 'Smart Skip queued') {
+    return (
+      <Badge tone="mauve" className="gap-1" title="Smart Skip queued">
+        <Sparkles size={12} aria-hidden />
+        <span>Queued</span>
+      </Badge>
+    );
+  }
+  return <Badge tone="mauve">{badge}</Badge>;
 }

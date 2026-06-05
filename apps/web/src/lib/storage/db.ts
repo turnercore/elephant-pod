@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { AppSettings, ArtworkCacheEntry, CachedPodcast, Clip, Episode, EpisodeState, ListeningStats, Podcast, PodcastPreference, SilenceMap, SmartSkipMapCacheEntry, SyncMeta, SyncTombstone } from '@/types/domain';
+import type { AppSettings, ArtworkCacheEntry, CachedPodcast, Clip, Episode, EpisodeState, ListeningStats, Podcast, PodcastPreference, SilenceMap, SmartSkipMapCacheEntry, StoredServerSession, SyncAction, SyncMeta, SyncTombstone } from '@/types/domain';
 import { defaultSettings, demoEpisodes, demoPodcasts } from '../sampleData';
 import { nowIso } from '../dates';
 
@@ -18,6 +18,8 @@ export class ElephantPodDatabase extends Dexie {
   silenceMaps!: Table<SilenceMap, string>;
   artworkCache!: Table<ArtworkCacheEntry, string>;
   smartSkipMaps!: Table<SmartSkipMapCacheEntry, string>;
+  authSessions!: Table<StoredServerSession, string>;
+  syncActions!: Table<SyncAction, string>;
 
   constructor() {
     super('elephant-pod');
@@ -199,6 +201,24 @@ export class ElephantPodDatabase extends Dexie {
       silenceMaps: 'id, episodeId, audioUrl, status, updatedAt, lastRequestedAt, lastCheckedAt',
       artworkCache: 'url, cachedAt, updatedAt',
       smartSkipMaps: 'id, episodeId, audioUrl, cachedAt, updatedAt'
+    });
+    this.version(12).stores({
+      feeds: 'id, feedUrl, title, sourceType, sourceUrl, externalId, updatedAt',
+      episodes: 'id, podcastId, podcastTitle, publishedAt, title, guid, sourceType, sourceUrl, externalId, extractionStatus, updatedAt',
+      states: 'episodeId, played, inboxState, inboxPosition, queuePosition, downloaded, downloadedAt, updatedAt',
+      clips: 'id, episodeId, createdAt, updatedAt, renderStatus',
+      settings: 'id, updatedAt',
+      syncMeta: 'id, deviceId, updatedAt',
+      tombstones: 'id, tableName, localId, deletedAt, pushedAt',
+      podcastCache: 'id, feedUrl, title, sourceType, sourceUrl, externalId, cachedAt, cacheExpiresAt, updatedAt',
+      cachedEpisodes: 'id, podcastId, podcastTitle, publishedAt, title, guid, sourceType, sourceUrl, externalId, extractionStatus, updatedAt',
+      podcastPreferences: 'podcastId, updatedAt',
+      listeningStats: 'id, updatedAt',
+      silenceMaps: 'id, episodeId, audioUrl, status, updatedAt, lastRequestedAt, lastCheckedAt',
+      artworkCache: 'url, cachedAt, updatedAt',
+      smartSkipMaps: 'id, episodeId, audioUrl, cachedAt, updatedAt',
+      authSessions: 'serverUrl, updatedAt',
+      syncActions: 'id, deviceId, entityType, entityId, actionType, createdAt, pushedAt, appliedAt'
     });
   }
 }

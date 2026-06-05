@@ -25,6 +25,8 @@ If you run the app server from the repository root instead of inside this compos
 
 `volumes/db/init/01-elephant-pod-schema.sql` is mounted into the database container so a fresh stack creates the Elephant Pod sync schema automatically.
 
+The schema includes `sync_actions`, an append-only per-user action log used by clients to preserve offline queue, Inbox, played, and progress mutations across frequent sync conflicts. Access tokens are not stored in this schema; mobile/web auth sessions are device-local client data only.
+
 ## Environment contract
 
 This stack assumes the server receives a secret-bearing env set. Keep these out of client bundles:

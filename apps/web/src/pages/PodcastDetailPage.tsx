@@ -75,9 +75,9 @@ export function PodcastDetailPage({
       title={podcast.title}
       className="h-full"
     >
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-3 py-3 md:p-4">
         <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
-          <div>
+          <div className="mx-auto w-full max-w-[22rem] lg:mx-0 lg:max-w-none">
             {podcast.imageUrl ? (
               <img src={podcast.imageUrl} alt={`${podcast.title} artwork`} className="aspect-square w-full rounded-eh border border-bone/15 object-cover shadow-lg shadow-black/30" />
             ) : (

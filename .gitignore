@@ -31,6 +31,8 @@ target/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/.cargo/
+src-tauri/plugins/*/.tauri/
+src-tauri/plugins/*/ios/Package.resolved
 **/*.rs.bk
 *.pdb
 

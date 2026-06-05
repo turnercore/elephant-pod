@@ -28,7 +28,7 @@
 | Played/unplayed tracking | Implemented | Filter and sync schema. |
 | Mark all as played in show | Implemented | Library action. |
 | Sorting newest/oldest | Implemented | Library filters plus configurable Inbox newest/oldest triage ordering. |
-| Bidirectional server sync | Implemented prototype | Pull/merge/push Supabase flow; needs incremental cursor/mutation-log hardening. |
+| Bidirectional server sync | Implemented prototype | Pull/merge/push server flow with a device action log for episode-state conflicts; needs incremental cursor, action compaction, and multi-device integration tests. |
 | Auto refresh feeds | Implemented basic | Timer in app; server cron planned. |
 | Wi-Fi-only download | Partial | Browser Network Information API where available; native OS constraints still needed. |
 | Player queue manager | Implemented | Bottom player opens into a full-screen queue surface with transport controls, drag reorder, play now/next/end, send to Inbox, remove, and mark played actions. |
@@ -36,5 +36,5 @@
 | Auto-delete after listen | Implemented | Enabled by default. Non-favorite downloads are deleted when the episode is no longer queued or inboxed; manual downloads are retained while active. |
 | Storage cap/prioritized prune | Partial native-ready | App prunes by priority: favorites, queue top-to-bottom, then inbox top-to-bottom. |
 | Screen reader support | Implemented baseline | Labels, focus states, semantic regions. Needs audit. |
-| Tauri mobile native audio | Scaffolded | Swift/Kotlin implementation shape and command contract; not device-validated. |
+| Tauri mobile native audio | Partial iOS native playback | iOS builds package an AVPlayer plugin with background audio, Now Playing metadata, seek/rate, and remote play/pause/position commands. Physical lock-screen validation and Android foreground media service remain. |
 | Self-hosted Supabase bundle | Included | `infra/supabase/docker-compose.yml` plus schema and app service. |

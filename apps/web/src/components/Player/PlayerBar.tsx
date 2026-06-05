@@ -1,16 +1,24 @@
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, type DragEndEvent, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { LuArrowDownToLine as ArrowDownToLine, LuArrowUpToLine as ArrowUpToLine, LuCheck as Check, LuFastForward as FastForward, LuGripVertical as GripVertical, LuInbox as Inbox, LuListEnd as ListEnd, LuListMusic as ListMusic, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRewind as Rewind, LuRotateCcw as RotateCcw, LuScissors as Scissors, LuSkipForward as SkipForward, LuTrash2 as Trash2 } from 'react-icons/lu';
+import { LuArrowDownToLine as ArrowDownToLine, LuArrowUpToLine as ArrowUpToLine, LuCheck as Check, LuGripVertical as GripVertical, LuInbox as Inbox, LuListEnd as ListEnd, LuListMusic as ListMusic, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuScissors as Scissors, LuSkipForward as SkipForward, LuSparkles as Sparkles, LuTrash2 as Trash2 } from 'react-icons/lu';
+import { IoCheckmarkDoneOutline, IoChevronBackCircleOutline, IoChevronForwardCircleOutline } from 'react-icons/io5';
+import { RiForward5Line, RiForward10Line, RiForward15Line, RiForward30Line, RiReplay5Line, RiReplay10Line, RiReplay15Line, RiReplay30Line } from 'react-icons/ri';
+import type { IconType } from 'react-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSettings, EpisodeWithState } from '@/types/domain';
 import type { SmartSkipEvent } from '@/lib/smartSkip/types';
 import { formatDuration } from '@/lib/dates';
 import { cn } from '@/lib/cn';
+import { SwipeActionRow } from '../Gestures/SwipeActionRow';
 import { IconButton } from '../ui/IconButton';
 import { SleepTimer } from './SleepTimer';
 
 const speedSteps = [1, 1.1, 1.2, 1.3, 1.4, 1.5, 2];
+const SHEET_PEEK_PX = 132;
+const SHEET_TOP_OFFSET_PX = 61;
+const SHEET_VELOCITY = 0.62;
+const SKIP_COMMIT_DELAY_MS = 230;
 
 interface PlayerBarProps {
   current: EpisodeWithState | null;
@@ -27,7 +35,6 @@ interface PlayerBarProps {
   onUndoSmartSkip?: () => void;
   onToggle: () => void;
   onSeek: (seconds: number) => void;
-  onSkipBy: (seconds: number) => void;
   onSettingsChange: (settings: AppSettings) => void;
   onStopForSleep: () => void;
   onPlayNext: () => void;
@@ -58,7 +65,6 @@ export function PlayerBar({
   onUndoSmartSkip,
   onToggle,
   onSeek,
-  onSkipBy,
   onSettingsChange,
   onStopForSleep,
   onPlayNext,
@@ -75,10 +81,19 @@ export function PlayerBar({
 }: PlayerBarProps) {
   const [queueOpen, setQueueOpen] = useState(false);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
-  const startY = useRef<number | null>(null);
+  const [sheetDragging, setSheetDragging] = useState(false);
+  const [sheetOffset, setSheetOffset] = useState(0);
+  const [optimisticSkipTime, setOptimisticSkipTime] = useState<number | null>(null);
+  const [skipBackPulse, setSkipBackPulse] = useState(0);
+  const [skipForwardPulse, setSkipForwardPulse] = useState(0);
+  const sheetOffsetRef = useRef(0);
+  const skipCommitTimerRef = useRef<number | null>(null);
+  const optimisticSkipTimeRef = useRef<number | null>(null);
+  const sheetGesture = useRef<{ pointerId: number; startX: number; startY: number; lastY: number; lastAt: number; velocity: number; startOffset: number; locked: boolean } | null>(null);
   const effectiveDuration = duration || current?.durationSec || 0;
-  const progress = effectiveDuration > 0 ? Math.max(0, Math.min(100, (currentTime / effectiveDuration) * 100)) : 0;
-  const remaining = Math.max(0, effectiveDuration - currentTime);
+  const displayedCurrentTime = optimisticSkipTime ?? currentTime;
+  const progress = effectiveDuration > 0 ? Math.max(0, Math.min(100, (displayedCurrentTime / effectiveDuration) * 100)) : 0;
+  const remaining = Math.max(0, effectiveDuration - displayedCurrentTime);
   const currentArtworkUrl = current ? current.imageUrl || getPodcastImageUrl?.(current.podcastId) : undefined;
   const currentEpisodeLabel = current ? formatEpisodeLabel(current) : '';
   const sensors = useSensors(
@@ -92,19 +107,150 @@ export function PlayerBar({
   useEffect(() => {
     setQueueOpen(false);
     setSelectedQueueId(null);
+    clearPendingSkip();
   }, [collapseToken]);
 
-  function toggleSheet() {
-    setQueueOpen((open) => !open);
-    setSelectedQueueId(null);
+  useEffect(() => {
+    clearPendingSkip();
+  }, [current?.id]);
+
+  useEffect(() => {
+    return () => clearPendingSkip();
+  }, []);
+
+  function clearPendingSkip() {
+    if (skipCommitTimerRef.current !== null) {
+      window.clearTimeout(skipCommitTimerRef.current);
+      skipCommitTimerRef.current = null;
+    }
+    optimisticSkipTimeRef.current = null;
+    setOptimisticSkipTime(null);
   }
 
-  function handleSheetTouchEnd(clientY: number) {
-    if (startY.current === null) return;
-    const delta = clientY - startY.current;
-    startY.current = null;
-    if (delta < -48) setQueueOpen(true);
-    if (delta > 48) setQueueOpen(false);
+  function queueSkip(seconds: number) {
+    if (!current) return;
+    const base = optimisticSkipTimeRef.current ?? currentTime;
+    const next = Math.max(0, Math.min(base + seconds, effectiveDuration || Math.max(0, base + seconds)));
+    optimisticSkipTimeRef.current = next;
+    setOptimisticSkipTime(next);
+    if (seconds < 0) setSkipBackPulse((value) => value + 1);
+    else setSkipForwardPulse((value) => value + 1);
+    if (skipCommitTimerRef.current !== null) window.clearTimeout(skipCommitTimerRef.current);
+    skipCommitTimerRef.current = window.setTimeout(() => {
+      skipCommitTimerRef.current = null;
+      const target = optimisticSkipTimeRef.current;
+      optimisticSkipTimeRef.current = null;
+      setOptimisticSkipTime(null);
+      if (target !== null) onSeek(target);
+    }, SKIP_COMMIT_DELAY_MS);
+  }
+
+  function toggleSheet() {
+    if (queueOpen) {
+      closeSheetAnimated();
+      return;
+    }
+    setQueueOpen(true);
+    setSelectedQueueId(null);
+    setTrackedSheetOffset(0);
+  }
+
+  function closeSheetAnimated() {
+    setSheetDragging(false);
+    setSelectedQueueId(null);
+    setTrackedSheetOffset(closedSheetOffset());
+    window.setTimeout(() => {
+      setQueueOpen(false);
+      setTrackedSheetOffset(0);
+    }, 220);
+  }
+
+  function setTrackedSheetOffset(value: number) {
+    sheetOffsetRef.current = value;
+    setSheetOffset(value);
+  }
+
+  function closedSheetOffset() {
+    if (typeof window === 'undefined') return 520;
+    return Math.max(260, window.innerHeight - SHEET_TOP_OFFSET_PX - SHEET_PEEK_PX);
+  }
+
+  function handleSheetPointerDown(event: React.PointerEvent<HTMLElement>) {
+    if (event.pointerType === 'mouse') return;
+    const target = event.target as HTMLElement | null;
+    const startedOnHandle = Boolean(target?.closest('[data-sheet-handle]'));
+    if (!startedOnHandle && target?.closest('button,a,input,select,textarea,[role="button"],[role="slider"],[data-player-control]')) return;
+    const startOffset = queueOpen ? 0 : closedSheetOffset();
+    sheetGesture.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastY: event.clientY,
+      lastAt: performance.now(),
+      velocity: 0,
+      startOffset,
+      locked: false
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleSheetPointerMove(event: React.PointerEvent<HTMLElement>) {
+    const gesture = sheetGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const dy = event.clientY - gesture.startY;
+    const dx = event.clientX - gesture.startX;
+    if (!gesture.locked) {
+      if (Math.abs(dx) > Math.abs(dy) + 6) {
+        sheetGesture.current = null;
+        try {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        } catch {
+          // Pointer capture may already be released.
+        }
+        return;
+      }
+      if (Math.abs(dy) < 12 || Math.abs(dy) < Math.abs(dx) * 1.2) return;
+    }
+    gesture.locked = true;
+    event.preventDefault();
+    const now = performance.now();
+    const dt = Math.max(1, now - gesture.lastAt);
+    gesture.velocity = (event.clientY - gesture.lastY) / dt;
+    gesture.lastY = event.clientY;
+    gesture.lastAt = now;
+    setSheetDragging(true);
+    setQueueOpen(true);
+    setSelectedQueueId(null);
+    setTrackedSheetOffset(Math.max(0, Math.min(closedSheetOffset(), gesture.startOffset + dy)));
+  }
+
+  function handleSheetPointerEnd(event: React.PointerEvent<HTMLElement>) {
+    const gesture = sheetGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    sheetGesture.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already be released.
+    }
+    const closed = closedSheetOffset();
+    const finalOffset = Math.max(0, Math.min(closed, gesture.startOffset + event.clientY - gesture.startY));
+    sheetOffsetRef.current = finalOffset;
+    const shouldOpen = finalOffset < closed * 0.58 || gesture.velocity < -SHEET_VELOCITY;
+    const shouldClose = finalOffset > closed * 0.35 || gesture.velocity > SHEET_VELOCITY;
+    setSheetDragging(false);
+    if (shouldOpen && !shouldClose) {
+      setQueueOpen(true);
+      setTrackedSheetOffset(0);
+      return;
+    }
+    if (shouldClose) {
+      setTrackedSheetOffset(finalOffset);
+      window.requestAnimationFrame(closeSheetAnimated);
+      return;
+    }
+    setQueueOpen(true);
+    setTrackedSheetOffset(0);
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -140,50 +286,27 @@ export function PlayerBar({
     <footer
       className={cn(
         'border-t border-bone/15 bg-canvas text-cream transition-[height,transform] duration-300 ease-out',
-        queueOpen ? 'player-queue-stage fixed inset-x-0 bottom-0 top-[61px] z-40 flex flex-col border-t-0 shadow-2xl shadow-black md:left-[230px] md:top-0' : 'relative'
+        queueOpen || sheetDragging ? 'fixed inset-x-0 bottom-0 top-[61px] z-40 flex flex-col border-t-0 shadow-2xl shadow-black md:left-[230px] md:top-0' : 'relative',
+        queueOpen && !sheetDragging && sheetOffset === 0 && 'player-queue-stage',
+        sheetDragging && 'transition-none'
       )}
       aria-label="Player"
-      onTouchStart={(event) => {
-        startY.current = event.changedTouches[0]?.clientY ?? null;
-      }}
-      onTouchEnd={(event) => handleSheetTouchEnd(event.changedTouches[0]?.clientY ?? 0)}
+      style={(queueOpen || sheetDragging) && sheetOffset > 0 ? { transform: `translate3d(0, ${sheetOffset}px, 0)` } : undefined}
+      onPointerDown={handleSheetPointerDown}
+      onPointerMove={handleSheetPointerMove}
+      onPointerUp={handleSheetPointerEnd}
+      onPointerCancel={handleSheetPointerEnd}
     >
       <div className={cn('border-b border-bone/15', queueOpen ? 'bg-surface px-4 pb-3 pt-3 md:px-6' : 'px-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.85rem)] pt-2 md:px-3')}>
-        {queueOpen ? (
-          <div className="relative mb-2 grid min-h-[5.5rem] grid-cols-[6rem_1fr] items-center gap-3 pr-16 sm:min-h-[7rem] sm:grid-cols-[7rem_1fr] md:min-h-[8rem] md:grid-cols-[8rem_1fr]">
-            {currentArtworkUrl ? (
-              <div className="aspect-square w-24 overflow-hidden rounded-[16px] border border-bone/15 bg-canvas shadow-xl shadow-black/30 sm:w-28 md:w-32">
-                <img src={currentArtworkUrl} alt="" className="h-full w-full object-cover" />
-              </div>
-            ) : <div aria-hidden />}
-            <div className="min-w-0 rounded-eh border border-bone/15 bg-canvas/40 px-3 py-2 shadow-lg shadow-black/20">
-              {currentEpisodeLabel ? <p className="mb-0.5 truncate text-[10px] font-black uppercase tracking-[0.08em] text-yellow">{currentEpisodeLabel}</p> : null}
-              <button type="button" onClick={() => current && openEpisode(current)} className="block max-w-full truncate text-left text-lg font-black leading-tight hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow md:text-2xl">
-                {current?.title || 'Nothing playing'}
-              </button>
-              <button type="button" onClick={() => current && openPodcast(current.podcastId)} className="block max-w-full truncate text-left text-sm text-bone hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">
-                {current ? current.podcastTitle : 'Choose an episode from Inbox, Library, or Search.'}
-              </button>
-            </div>
-            <button
-              type="button"
-              aria-label="Collapse player"
-              data-tooltip="Collapse player"
-              onClick={toggleSheet}
-              className="eh-tooltip flex h-9 min-w-14 items-center justify-center gap-1 rounded-eh border border-bone/15 bg-surface/90 px-2 text-sm font-black text-cream shadow-lg shadow-black/25 transition hover:border-yellow/50 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow md:h-10"
-              style={{ position: 'absolute', top: 0, right: 0 }}
-            >
-              <ArrowDownToLine size={16} aria-hidden />
-              <span>{visibleQueue.length}</span>
-            </button>
-          </div>
-        ) : null}
-        {queueOpen ? (
-          <div className="grid grid-cols-[1fr_auto] items-center gap-3">
-            <ProgressBar progress={progress} duration={effectiveDuration} onSeek={onSeek} />
-            {current ? <span className="min-w-[3.5rem] text-right text-[11px] font-black tabular-nums text-bone">{formatRemainingLabel(remaining)}</span> : null}
-          </div>
-        ) : null}
+        <button
+          type="button"
+          aria-label={queueOpen ? 'Collapse player' : 'Open queue'}
+          data-sheet-handle
+          onClick={toggleSheet}
+          className="mx-auto mb-1 block h-3.5 w-16 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow"
+        >
+          <span aria-hidden="true" className="mx-auto mt-1 block h-1 w-11 rounded-full bg-bone/45 transition-colors hover:bg-yellow/70" />
+        </button>
         <div className={cn('mt-2 grid gap-2', queueOpen ? '' : '')}>
           {smartSkipNotice ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-eh border border-yellow/30 bg-yellow/10 px-3 py-2 text-sm font-bold text-yellow">
@@ -193,34 +316,33 @@ export function PlayerBar({
               </button>
             </div>
           ) : null}
-          {!queueOpen ? (
-            <CollapsedPlayer
-              current={current}
-              artworkUrl={currentArtworkUrl}
-              currentEpisodeLabel={currentEpisodeLabel}
-              progress={progress}
-              duration={effectiveDuration}
-              remaining={remaining}
-              queueCount={visibleQueue.length}
-              isPlaying={isPlaying}
-              settings={settings}
-              onToggle={onToggle}
-              onSeek={onSeek}
-              onSkipBy={onSkipBy}
-              onOpenEpisode={openEpisode}
-              onOpenPodcast={openPodcast}
-              onOpenQueue={toggleSheet}
-            />
-          ) : (
-          <div className={cn('grid w-full gap-1 md:w-auto md:justify-self-end md:gap-2', canUseSilenceShortening ? 'grid-cols-7' : 'grid-cols-6')}>
-              <IconButton label={`Skip back ${settings.skipBackSec} seconds`} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-10 w-full md:h-12 md:w-12">
-                <Rewind size={18} aria-hidden />
-              </IconButton>
-              <IconButton label={isPlaying ? 'Pause' : 'Play'} onClick={onToggle} active={isPlaying} disabled={!current} className="h-10 w-full md:h-12 md:w-12">
-                {isPlaying ? <Pause size={20} aria-hidden /> : <Play size={20} fill="currentColor" aria-hidden />}
-              </IconButton>
-              <IconButton label={`Skip forward ${settings.skipForwardSec} seconds`} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-10 w-full md:h-12 md:w-12">
-                <FastForward size={18} aria-hidden />
+          <CollapsedPlayer
+            current={current}
+            artworkUrl={currentArtworkUrl}
+            currentEpisodeLabel={currentEpisodeLabel}
+            progress={progress}
+            duration={effectiveDuration}
+            remaining={remaining}
+            isPlaying={isPlaying}
+            settings={settings}
+            onToggle={onToggle}
+            onSeek={onSeek}
+            onSkipBy={queueSkip}
+            skipBackPulse={skipBackPulse}
+            skipForwardPulse={skipForwardPulse}
+            onOpenEpisode={openEpisode}
+            onOpenPodcast={openPodcast}
+          />
+          {queueOpen ? (
+            <div className={cn('grid w-full gap-1 md:w-auto md:justify-self-end md:gap-2', canUseSilenceShortening ? 'grid-cols-5' : 'grid-cols-4')}>
+              <IconButton
+                label={settings.smartSkipEnabled ? 'Disable Smart Skip' : 'Enable Smart Skip'}
+                title={settings.smartSkipEnabled ? 'Disable Smart Skip' : 'Enable Smart Skip'}
+                onClick={() => onSettingsChange({ ...settings, smartSkipEnabled: !settings.smartSkipEnabled })}
+                active={settings.smartSkipEnabled}
+                className="h-10 w-full md:h-12 md:w-12"
+              >
+                <Sparkles size={18} aria-hidden />
               </IconButton>
               <IconButton label="Cycle playback speed" onClick={cycleSpeed} className="h-10 w-full text-xs font-black md:h-12 md:w-12">
                 {formatSpeed(settings.playbackRate)}
@@ -232,7 +354,7 @@ export function PlayerBar({
                 </IconButton>
               ) : null}
               <IconButton
-                label="Skip to next podcast"
+                label="Mark as played and skip"
                 onClick={() => {
                   if (current) onTogglePlayed(current);
                   onPlayNext();
@@ -240,10 +362,10 @@ export function PlayerBar({
                 disabled={!current}
                 className="h-10 w-full md:h-12 md:w-12"
               >
-                <SkipForward size={18} aria-hidden />
+                <IoCheckmarkDoneOutline size={20} aria-hidden />
               </IconButton>
-          </div>
-          )}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -283,7 +405,7 @@ export function PlayerBar({
                 </SortableContext>
               </DndContext>
             ) : (
-              <div className="mx-auto grid min-h-[45vh] max-w-3xl place-items-center rounded-eh border border-dashed border-bone/20 bg-surface/45 p-8 text-center">
+              <div className="grid min-h-[45vh] place-items-center px-6 text-center">
                 <div>
                   <ListMusic size={32} className="mx-auto mb-4 text-yellow" aria-hidden />
                   <h3 className="eh-title text-xl">Queue is empty</h3>
@@ -299,20 +421,102 @@ export function PlayerBar({
 }
 
 function ProgressBar({ progress, duration, onSeek }: { progress: number; duration: number; onSeek: (seconds: number) => void }) {
+  const [draftValue, setDraftValue] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const max = Math.max(1, duration);
+  const currentValue = Math.min(Math.max(0, duration * (progress / 100)), max);
+  const displayValue = draftValue ?? currentValue;
+  const displayProgress = duration > 0 ? Math.max(0, Math.min(100, (displayValue / duration) * 100)) : progress;
+
+  useEffect(() => {
+    if (!dragging) setDraftValue(null);
+  }, [currentValue, dragging]);
+
+  function commit(value: number) {
+    const next = Math.max(0, Math.min(value, duration || value));
+    setDragging(false);
+    setDraftValue(null);
+    if (duration) onSeek(next);
+  }
+
   return (
     <input
       type="range"
       min={0}
-      max={Math.max(1, duration)}
+      max={max}
       step={1}
-      value={Math.min(Math.max(0, duration * (progress / 100)), Math.max(1, duration))}
+      value={displayValue}
       aria-label="Seek playback"
-      className="player-progress range-track h-3 w-full cursor-pointer appearance-none rounded-full bg-canvas/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow"
-      style={{ '--progress': `${progress}%` } as React.CSSProperties}
-      onChange={(event) => onSeek(Number(event.target.value))}
+      className="player-progress range-track h-3 min-w-0 w-full cursor-pointer appearance-none rounded-full bg-canvas/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow"
+      style={{ '--progress': `${displayProgress}%` } as React.CSSProperties}
+      data-player-control
+      onPointerDown={() => setDragging(true)}
+      onPointerUp={(event) => commit(Number(event.currentTarget.value))}
+      onPointerCancel={() => {
+        setDragging(false);
+        setDraftValue(null);
+      }}
+      onInput={(event) => setDraftValue(Number(event.currentTarget.value))}
+      onChange={(event) => {
+        if (!dragging) commit(Number(event.currentTarget.value));
+      }}
+      onKeyUp={(event) => {
+        if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End' || event.key === 'PageUp' || event.key === 'PageDown') {
+          commit(Number(event.currentTarget.value));
+        }
+      }}
+      onBlur={(event) => {
+        if (draftValue !== null) commit(Number(event.currentTarget.value));
+      }}
       disabled={!duration}
     />
   );
+}
+
+function SkipButton({
+  direction,
+  seconds,
+  pulse,
+  onClick,
+  disabled,
+  className
+}: {
+  direction: 'back' | 'forward';
+  seconds: number;
+  pulse: number;
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const Icon = skipIcon(direction, seconds);
+  const animationClass = direction === 'back' ? 'skip-icon-spin-back' : 'skip-icon-spin-forward';
+  return (
+    <IconButton
+      label={`Skip ${direction === 'back' ? 'back' : 'forward'} ${seconds} seconds`}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn('group active:scale-95 active:brightness-125', className)}
+    >
+      <span key={`${direction}-${pulse}`} className={cn('grid place-items-center text-cream transition-colors group-active:text-yellow', pulse > 0 && animationClass)}>
+        <Icon size={22} aria-hidden />
+      </span>
+    </IconButton>
+  );
+}
+
+function skipIcon(direction: 'back' | 'forward', seconds: number): IconType {
+  if (direction === 'forward') {
+    if (seconds === 5) return RiForward5Line;
+    if (seconds === 10) return RiForward10Line;
+    if (seconds === 15) return RiForward15Line;
+    if (seconds === 30) return RiForward30Line;
+    return IoChevronForwardCircleOutline;
+  }
+  if (seconds === 5) return RiReplay5Line;
+  if (seconds === 10) return RiReplay10Line;
+  if (seconds === 15) return RiReplay15Line;
+  if (seconds === 30) return RiReplay30Line;
+  return IoChevronBackCircleOutline;
 }
 
 function CollapsedPlayer({
@@ -322,15 +526,15 @@ function CollapsedPlayer({
   progress,
   duration,
   remaining,
-  queueCount,
   isPlaying,
   settings,
   onToggle,
   onSeek,
   onSkipBy,
+  skipBackPulse,
+  skipForwardPulse,
   onOpenEpisode,
-  onOpenPodcast,
-  onOpenQueue
+  onOpenPodcast
 }: {
   current: EpisodeWithState | null;
   artworkUrl?: string;
@@ -338,83 +542,56 @@ function CollapsedPlayer({
   progress: number;
   duration: number;
   remaining: number;
-  queueCount: number;
   isPlaying: boolean;
   settings: AppSettings;
   onToggle: () => void;
   onSeek: (seconds: number) => void;
   onSkipBy: (seconds: number) => void;
+  skipBackPulse: number;
+  skipForwardPulse: number;
   onOpenEpisode: (episode: EpisodeWithState) => void;
   onOpenPodcast: (podcastId: string) => void;
-  onOpenQueue: () => void;
 }) {
   return (
-    <div className="grid gap-2">
-      <div className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 md:grid-cols-[56px_minmax(0,1fr)_auto] md:gap-3">
-        <button
-          type="button"
-          onClick={current ? onToggle : undefined}
-          disabled={!current}
-          aria-label={isPlaying ? 'Pause' : 'Play'}
-          className="relative h-11 w-11 overflow-hidden rounded-eh border border-bone/15 bg-surface transition hover:border-yellow/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow disabled:opacity-45 md:h-14 md:w-14"
-        >
+    <div className="grid grid-cols-[minmax(0,1fr)_6.75rem] items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_4.5rem] md:items-center">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto_auto] gap-x-2 gap-y-2 py-0.5">
+        <div className="col-span-2 min-w-0 self-start">
+          <div className="min-w-0 w-full">
+            <button type="button" onClick={() => current && onOpenEpisode(current)} className="block w-full max-w-full truncate text-left text-[15px] font-black leading-tight text-cream hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow md:text-base">
+              {current?.title || 'Nothing playing'}
+            </button>
+            <button type="button" onClick={() => current && onOpenPodcast(current.podcastId)} className="mt-1 block w-full max-w-full truncate text-left text-xs font-bold leading-tight text-bone hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow md:text-sm">
+              {current ? current.podcastTitle : 'Choose an episode.'}
+            </button>
+            {currentEpisodeLabel ? <p className="sr-only">{currentEpisodeLabel}</p> : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-end justify-end gap-1.5 self-end">
+          <SkipButton direction="back" seconds={settings.skipBackSec} pulse={skipBackPulse} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-9 w-9 md:h-10 md:w-10" />
+          <SkipButton direction="forward" seconds={settings.skipForwardSec} pulse={skipForwardPulse} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-9 w-9 md:h-10 md:w-10" />
+        </div>
+        <div className="col-span-2 grid grid-cols-[1fr_auto] items-center gap-2">
+          <ProgressBar progress={progress} duration={duration} onSeek={onSeek} />
+          <span className="min-w-[3.25rem] text-right text-[11px] font-black tabular-nums text-bone">{current ? formatRemainingLabel(remaining) : '-:--'}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={current ? onToggle : undefined}
+        disabled={!current}
+        aria-label={isPlaying ? 'Pause' : 'Play'}
+        className="relative h-[6.75rem] w-[6.75rem] overflow-hidden rounded-eh border border-bone/15 bg-surface transition hover:border-yellow/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow disabled:opacity-45 md:h-[4.5rem] md:w-[4.5rem]"
+      >
+        <span className="absolute inset-0">
           {artworkUrl ? <img src={artworkUrl} alt="" className="h-full w-full object-cover" /> : null}
-          <span className="absolute inset-0 grid place-items-center bg-black/25 text-cream">
+        </span>
+        <span className="absolute inset-0 grid place-items-center bg-black/20">
+          <span className="grid h-12 w-12 place-items-center rounded-full bg-canvas/70 text-cream shadow-lg shadow-black/30 backdrop-blur-sm md:h-10 md:w-10">
             {isPlaying ? <Pause size={20} fill="currentColor" aria-hidden /> : <Play size={20} fill="currentColor" aria-hidden />}
           </span>
-        </button>
-        <div className="min-w-0">
-          {currentEpisodeLabel ? <p className="mb-0.5 truncate text-[10px] font-black uppercase tracking-[0.08em] text-yellow">{currentEpisodeLabel}</p> : null}
-          <button type="button" onClick={() => current && onOpenEpisode(current)} className="block max-w-full truncate text-left text-sm font-black leading-tight hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">
-            {current?.title || 'Nothing playing'}
-          </button>
-          <button type="button" onClick={() => current && onOpenPodcast(current.podcastId)} className="mt-0.5 block max-w-full truncate text-left text-xs text-bone hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">
-            {current ? current.podcastTitle : 'Choose an episode.'}
-          </button>
-        </div>
-        <div className="flex shrink-0 items-center justify-end gap-1">
-          <IconButton label={`Skip back ${settings.skipBackSec} seconds`} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-8 w-8 md:h-9 md:w-9">
-            <Rewind size={16} aria-hidden />
-          </IconButton>
-          <IconButton label={`Skip forward ${settings.skipForwardSec} seconds`} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-8 w-8 md:h-9 md:w-9">
-            <FastForward size={16} aria-hidden />
-          </IconButton>
-          <button
-            type="button"
-            aria-label="Open queue"
-            data-tooltip="Open queue"
-            onClick={onOpenQueue}
-            className="eh-tooltip flex h-8 min-w-9 items-center justify-center gap-1 rounded-eh border border-bone/15 bg-surface/70 px-1.5 text-xs font-black text-cream transition hover:border-yellow/50 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow md:h-9 md:min-w-11 md:px-2 md:text-sm"
-          >
-            <ArrowUpToLine size={16} aria-hidden />
-            <span>{queueCount}</span>
-          </button>
-        </div>
-      </div>
-      <div className="grid grid-cols-[1fr_auto] items-center gap-3">
-        <ProgressBar progress={progress} duration={duration} onSeek={onSeek} />
-        {current ? <span className="min-w-[3.5rem] text-right text-[11px] font-black tabular-nums text-bone">{formatRemainingLabel(remaining)}</span> : null}
-      </div>
+        </span>
+      </button>
     </div>
-  );
-}
-
-function QueueCountButton({ count, onClick, active, className }: { count: number; onClick: () => void; active?: boolean; className?: string }) {
-  return (
-    <button
-      type="button"
-      aria-label={active ? 'Collapse player' : 'Open queue'}
-      data-tooltip={active ? 'Collapse player' : 'Open queue'}
-      onClick={onClick}
-      className={cn(
-        'eh-tooltip flex h-10 min-w-12 items-center justify-center gap-1.5 rounded-eh border px-2 font-black transition hover:border-yellow/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow active:translate-y-px',
-        active ? 'border-yellow bg-yellow text-canvas' : 'border-bone/15 bg-surface/70 text-cream',
-        className
-      )}
-    >
-      <ListMusic size={17} aria-hidden />
-      <span className="text-xs leading-none">{count}</span>
-    </button>
   );
 }
 
@@ -450,7 +627,6 @@ function QueueDrawerRow({
   isCurrentPlaying?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: episode.id });
-  const startX = useRef<number | null>(null);
   const artworkUrl = episode.imageUrl || podcastImageUrl;
   const isCurrentEpisode = currentEpisodeId === episode.id;
   const PlayIcon = isCurrentEpisode && isCurrentPlaying ? Pause : Play;
@@ -466,7 +642,11 @@ function QueueDrawerRow({
         selected && 'border-yellow/50 bg-yellow/10',
         isDragging && 'relative z-20 scale-[1.01] border-yellow bg-canvas shadow-xl shadow-black/40'
       )}
-      onClick={onSelect}
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (target.closest('button,a,input,select,textarea,[role="button"]')) return;
+        onSelect();
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
@@ -474,41 +654,47 @@ function QueueDrawerRow({
         }
         if (event.key === 'Escape' && selected) onSelect();
       }}
-      onTouchStart={(event) => {
-        startX.current = event.changedTouches[0]?.clientX ?? null;
-      }}
-      onTouchEnd={(event) => {
-        if (startX.current === null) return;
-        const delta = (event.changedTouches[0]?.clientX ?? 0) - startX.current;
-        startX.current = null;
-        if (Math.abs(delta) > 48) onSelect();
-      }}
       tabIndex={0}
       aria-label={`${episode.title} queue row`}
     >
-      <div className="grid grid-cols-[auto_52px_1fr_auto] items-center gap-2 p-2 md:grid-cols-[auto_56px_1fr_auto] md:gap-3">
-        <button
-          ref={setActivatorNodeRef}
-          type="button"
-          aria-label={`Drag ${episode.title}`}
-          data-tooltip="Drag to reorder"
-          className="eh-tooltip grid h-9 w-7 place-items-center rounded-eh text-bone transition hover:bg-cream/5 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical size={18} aria-hidden />
-        </button>
-        {artworkUrl ? <img src={artworkUrl} alt="" className="h-[52px] w-[52px] rounded-eh border border-bone/15 object-cover md:h-14 md:w-14" /> : <div className="h-[52px] w-[52px] rounded-eh border border-bone/15 bg-canvas md:h-14 md:w-14" />}
-        <div className="min-w-0">
-          <button type="button" onClick={(event) => { event.stopPropagation(); onOpenEpisode(episode); }} className="block max-w-full truncate text-left text-sm font-black leading-tight text-cream hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">{episode.title}</button>
-          <button type="button" onClick={(event) => { event.stopPropagation(); onOpenPodcast(episode.podcastId); }} className="mt-0.5 block max-w-full truncate text-left text-[11px] font-bold uppercase tracking-[0.05em] text-yellow hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">{episode.podcastTitle}</button>
-          <p className="mt-0.5 truncate text-[11px] text-bone">{formatDuration(episode.durationSec)}{episode.state.progressSec ? ` · ${formatDuration(episode.state.progressSec)} in` : ''}</p>
-          {progress > 0 && !episode.state.played ? <div className="mt-1 h-1 overflow-hidden rounded-full border border-bone/15 bg-bone/20"><span className="block h-full bg-coral" style={{ width: `${progress}%` }} /></div> : null}
+      <SwipeActionRow
+        contentClassName="rounded-eh"
+        leftActions={[
+          { key: 'send-inbox', label: 'Inbox', icon: <Inbox size={18} aria-hidden />, tone: 'primary', onAction: () => onSendInbox(episode) },
+          { key: 'played', label: episode.state.played ? 'Unplayed' : 'Listened', icon: episode.state.played ? <RotateCcw size={18} aria-hidden /> : <Check size={18} aria-hidden />, tone: 'success', onAction: () => onTogglePlayed(episode) }
+        ]}
+        rightActions={[
+          { key: 'top', label: 'Top', icon: <ListStart size={18} aria-hidden />, tone: 'primary', onAction: () => onQueueNext(episode) },
+          { key: 'bottom', label: 'Bottom', icon: <ListEnd size={18} aria-hidden />, tone: 'default', onAction: () => onQueueEnd(episode) },
+          { key: 'remove', label: 'Remove', icon: <Trash2 size={18} aria-hidden />, tone: 'danger', onAction: () => onRemoveQueue(episode) }
+        ]}
+        fullSwipeLeft={() => onRemoveQueue(episode)}
+        fullSwipeRight={() => onSendInbox(episode)}
+      >
+        <div className="grid grid-cols-[auto_52px_1fr_auto] items-center gap-2 p-2 md:grid-cols-[auto_56px_1fr_auto] md:gap-3">
+          <button
+            ref={setActivatorNodeRef}
+            type="button"
+            aria-label={`Drag ${episode.title}`}
+            data-tooltip="Drag to reorder"
+            className="eh-tooltip grid h-9 w-7 place-items-center rounded-eh text-bone transition hover:bg-cream/5 hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size={18} aria-hidden />
+          </button>
+          {artworkUrl ? <img src={artworkUrl} alt="" className="h-[52px] w-[52px] rounded-eh border border-bone/15 object-cover md:h-14 md:w-14" /> : <div className="h-[52px] w-[52px] rounded-eh border border-bone/15 bg-canvas md:h-14 md:w-14" />}
+          <div className="min-w-0">
+            <button type="button" onClick={(event) => { event.stopPropagation(); onOpenEpisode(episode); }} className="block max-w-full truncate text-left text-sm font-black leading-tight text-cream hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">{episode.title}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); onOpenPodcast(episode.podcastId); }} className="mt-0.5 block max-w-full truncate text-left text-[11px] font-bold uppercase tracking-[0.05em] text-yellow hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">{episode.podcastTitle}</button>
+            <p className="mt-0.5 truncate text-[11px] text-bone">{formatDuration(episode.durationSec)}{episode.state.progressSec ? ` · ${formatDuration(episode.state.progressSec)} in` : ''}</p>
+            {progress > 0 && !episode.state.played ? <div className="mt-1 h-1 overflow-hidden rounded-full border border-bone/15 bg-bone/20"><span className="block h-full bg-coral" style={{ width: `${progress}%` }} /></div> : null}
+          </div>
+          <IconButton label={playLabel} active={isCurrentEpisode && isCurrentPlaying} onClick={(event) => { event.stopPropagation(); onPlayEpisode(episode); }} className="h-9 w-9">
+            <PlayIcon size={16} fill="currentColor" aria-hidden />
+          </IconButton>
         </div>
-        <IconButton label={playLabel} active={isCurrentEpisode && isCurrentPlaying} onClick={(event) => { event.stopPropagation(); onPlayEpisode(episode); }} className="h-9 w-9">
-          <PlayIcon size={16} fill="currentColor" aria-hidden />
-        </IconButton>
-      </div>
+      </SwipeActionRow>
       {selected ? (
         <div className="grid grid-cols-5 gap-1.5 border-t border-bone/15 bg-canvas/50 p-2" onClick={(event) => event.stopPropagation()}>
           <IconButton label="Play next" onClick={() => onQueueNext(episode)} className="h-9 w-full"><ListStart size={16} aria-hidden /></IconButton>

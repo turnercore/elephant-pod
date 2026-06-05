@@ -224,6 +224,29 @@ create index if not exists idx_podcast_preferences_user_updated on public.podcas
 create index if not exists idx_clips_user_episode on public.clips(user_id, episode_local_id);
 create index if not exists idx_tombstones_user_deleted on public.sync_tombstones(user_id, deleted_at desc);
 
+create table if not exists public.sync_actions (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  device_id text not null,
+  sequence bigint not null default 0,
+  entity_type text not null,
+  entity_id text not null,
+  action_type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  pushed_at timestamptz,
+  applied_at timestamptz,
+  check (entity_type in ('episode_state')),
+  check (action_type in ('episode-state-updated'))
+);
+
+alter table public.sync_actions enable row level security;
+drop policy if exists "sync actions are owned by user" on public.sync_actions;
+create policy "sync actions are owned by user" on public.sync_actions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create index if not exists idx_sync_actions_user_created on public.sync_actions(user_id, created_at, sequence);
+create index if not exists idx_sync_actions_user_entity on public.sync_actions(user_id, entity_type, entity_id, created_at desc);
+
 create table if not exists public.smart_skip_media_versions (
   id text primary key,
   episode_local_id text not null,

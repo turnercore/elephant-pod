@@ -1,4 +1,4 @@
-import { LuArchiveX as ArchiveX, LuCheck as Check, LuDownload as Download, LuEllipsis as MoreHorizontal, LuInbox as Inbox, LuLoaderCircle as LoaderCircle, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuStar as Star, LuTrash as Trash, LuX as X } from 'react-icons/lu';
+import { LuArchiveX as ArchiveX, LuCheck as Check, LuDownload as Download, LuEllipsis as MoreHorizontal, LuInbox as Inbox, LuLoaderCircle as LoaderCircle, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuSparkles as Sparkles, LuStar as Star, LuTrash as Trash, LuX as X } from 'react-icons/lu';
 import { MdOutlineOfflinePin } from 'react-icons/md';
 import { useRef, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
@@ -62,12 +62,12 @@ export function EpisodeCard({
     episode.state.queuePosition ? `#${episode.state.queuePosition}` : '',
     ...(processedBadges || [])
   ].filter(Boolean);
-  const downloadLabel = downloading ? 'Downloading' : episode.state.downloaded ? 'Delete download' : 'Download';
+  const downloadLabel = downloading ? 'Downloading episode' : episode.state.downloaded ? 'Delete downloaded file' : 'Download episode';
   const DownloadIcon = downloading ? LoaderCircle : episode.state.downloaded ? Check : Download;
 
   return (
     <article
-      className="group w-full max-w-full overflow-hidden border-b border-bone/15 bg-surface/55 transition hover:border-yellow/35 has-[button:focus-visible]:border-yellow md:rounded-eh md:border md:bg-surface/85"
+      className="group w-full max-w-full overflow-visible border-b border-bone/15 bg-surface/55 transition hover:border-yellow/35 has-[button:focus-visible]:border-yellow md:rounded-eh md:border md:bg-surface/85"
       onClick={(event) => {
         if (!onOpenEpisode) return;
         const target = event.target as HTMLElement;
@@ -101,7 +101,7 @@ export function EpisodeCard({
           {badges.length ? (
             <div className="mb-1 flex min-w-0 items-center gap-1.5">
               {badges.slice(0, 3).map((badge) => (
-                <Badge key={badge} tone={badge === 'Smart Skip' ? 'teal' : badge === 'Trim silence' || badge.startsWith('#') ? 'mauve' : episode.state.played ? 'sage' : 'yellow'}>{badge}</Badge>
+                <EpisodeBadge key={badge} badge={badge} played={episode.state.played} />
               ))}
               {episode.state.downloaded ? <MdOutlineOfflinePin size={15} className="shrink-0 text-teal" aria-label="Downloaded" /> : null}
               {episode.state.favorite && <Star size={13} className="shrink-0 text-yellow" fill="currentColor" aria-label="Favorite" />}
@@ -132,24 +132,21 @@ export function EpisodeCard({
       </div>
 
       {revealed ? (
-        <div className="grid grid-cols-4 gap-1.5 border-t border-bone/15 bg-canvas/50 p-2 md:grid-cols-8">
-          <IconButton label={playLabel} active={isCurrentEpisode && isCurrentPlaying} onClick={() => onPlay(episode)} className="h-9 w-full">
-            <PlayIcon size={16} fill="currentColor" aria-hidden />
-          </IconButton>
-          <IconButton label="Play next" onClick={() => (onPlayNext || onQueue)(episode)} active={Boolean(episode.state.queuePosition === 1)} className="h-9 w-full">
+        <div className="grid grid-cols-3 gap-1.5 border-t border-bone/15 bg-canvas/50 p-2 md:grid-cols-7">
+          <IconButton label="Play next" title="Play next" onClick={() => (onPlayNext || onQueue)(episode)} active={Boolean(episode.state.queuePosition === 1)} className="h-9 w-full">
             <ListStart size={16} aria-hidden />
           </IconButton>
-          <IconButton label="Add to end of queue" onClick={() => (onQueueEnd || onQueue)(episode)} active={Boolean(episode.state.queuePosition)} className="h-9 w-full">
+          <IconButton label="Play at bottom of queue" title="Play at bottom of queue" onClick={() => (onQueueEnd || onQueue)(episode)} active={Boolean(episode.state.queuePosition)} className="h-9 w-full">
             <ListEnd size={16} aria-hidden />
           </IconButton>
-          <IconButton label={episode.state.played ? 'Mark unplayed' : 'Mark played'} onClick={() => onTogglePlayed(episode)} className="h-9 w-full">
+          <IconButton label={episode.state.played ? 'Mark as unlistened' : 'Mark as listened'} onClick={() => onTogglePlayed(episode)} className="h-9 w-full">
             {episode.state.played ? <RotateCcw size={16} aria-hidden /> : <Check size={16} aria-hidden />}
           </IconButton>
           {onDownload ? (
             confirmingDeleteDownload ? (
               <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 rounded-eh border border-coral/35 bg-coral/10 px-2">
-                <span className="truncate text-xs font-bold text-cream">Delete download?</span>
-                <IconButton label="Delete download?" danger onClick={() => onDownload(episode)} className="h-7 w-7 shrink-0">
+                <span className="truncate text-xs font-bold text-cream">Delete file?</span>
+                <IconButton label="Delete downloaded file" danger onClick={() => onDownload(episode)} className="h-7 w-7 shrink-0">
                   <Trash size={16} aria-hidden />
                 </IconButton>
                 <IconButton label="Cancel delete download" onClick={onCancelDeleteDownload} className="h-7 w-7 shrink-0">
@@ -174,12 +171,12 @@ export function EpisodeCard({
             )
           ) : null}
           {onSendInbox ? (
-            <IconButton label="Send to inbox" onClick={() => onSendInbox(episode)} active={episode.state.inboxState === 'new'} className="h-9 w-full">
+            <IconButton label="Send to inbox" title="Send to inbox" onClick={() => onSendInbox(episode)} active={episode.state.inboxState === 'new'} className="h-9 w-full">
               <Inbox size={16} aria-hidden />
             </IconButton>
           ) : null}
           {onDismiss ? (
-            <IconButton label="Dismiss from inbox" danger onClick={() => onDismiss(episode)} className="h-9 w-full">
+            <IconButton label="Remove from inbox" title="Remove from inbox" danger onClick={() => onDismiss(episode)} className="h-9 w-full">
               <ArchiveX size={16} aria-hidden />
             </IconButton>
           ) : null}
@@ -191,4 +188,24 @@ export function EpisodeCard({
 
 function stripHtml(input: string): string {
   return input.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function EpisodeBadge({ badge, played }: { badge: string; played: boolean }) {
+  if (badge === 'Smart Skip') {
+    return (
+      <Badge tone="teal" className="gap-1" title="Smart Skip processed">
+        <Sparkles size={12} aria-hidden />
+        <span>Smart Skip</span>
+      </Badge>
+    );
+  }
+  if (badge === 'Smart Skip queued') {
+    return (
+      <Badge tone="mauve" className="gap-1" title="Smart Skip queued">
+        <Sparkles size={12} aria-hidden />
+        <span>Queued</span>
+      </Badge>
+    );
+  }
+  return <Badge tone={badge === 'Trim silence' || badge.startsWith('#') ? 'mauve' : played ? 'sage' : 'yellow'}>{badge}</Badge>;
 }

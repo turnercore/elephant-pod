@@ -16,7 +16,8 @@ import { DownloadsPage } from '@/pages/DownloadsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { useAudioController } from '@/lib/audio/useAudioController';
 import { prefetchServerSilenceMaps } from '@/lib/audio/silenceMaps';
-import { requestSmartSkipProcessing } from '@/lib/smartSkip/api';
+import { fetchSmartSkipSegmentMap, requestSmartSkipProcessing } from '@/lib/smartSkip/api';
+import { getSmartSkipRequestStatus } from '@/lib/smartSkip/cache';
 import { nowIso } from '@/lib/dates';
 import { fetchFeedThroughServer } from '@/lib/rss';
 import { enrichYoutubeEpisode, extractYoutubeEpisode, fetchServerCapabilities, importYoutubeSource } from '@/lib/youtubeImport';
@@ -24,11 +25,12 @@ import { exportOpml, importOpml } from '@/lib/opml';
 import { deleteEpisodeFromCache, downloadEpisodeToCache } from '@/lib/storage/cache';
 import { cacheArtworkForOfflineEpisodes, hydrateArtworkForLibrary, revokeArtworkObjectUrls } from '@/lib/storage/artwork';
 import { ensureSeedData } from '@/lib/storage/db';
-import { clearServerSession, consumeAuthTokenFromCallback, fetchServerSessionProfile, isServerSessionExpired, loadServerSession, normalizeServerUrl, readAuthSessionFromUrl, resolveBrowserServerUrl, saveServerSession, startGithubSignIn, testServerConnection, type ServerSession } from '@/lib/sync/serverAuth';
+import { clearServerSession, consumeAuthTokenFromCallback, fetchServerSessionProfile, isServerSessionExpired, loadPersistedServerSession, loadServerSession, normalizeServerUrl, readAuthSessionFromUrl, resolveBrowserServerUrl, saveServerSession, startGithubSignIn, testServerConnection, type ServerSession } from '@/lib/sync/serverAuth';
 import {
   exportBackup,
   addEpisodeToQueueEnd,
   addEpisodeToQueueNext,
+  addEpisodeToQueueTop,
   cacheParsedPodcast,
   getSettings,
   getEpisodeWithState,
@@ -43,11 +45,12 @@ import {
   listPodcastPreferences,
   listReadySilenceMapEpisodeIds,
   listReadySmartSkipMapEpisodeIds,
+  listSmartSkipMapEpisodeIdsByStatus,
   markAllInFeedPlayed,
   markAllInFeedUnplayed,
   moveInQueue,
-  normalizeInboxPositions,
   playEpisodeAtQueueTop,
+  removeFromInbox,
   removeFromQueue,
   reorderQueue,
   saveSettings,
@@ -89,6 +92,8 @@ export default function App() {
   const [confirmDeleteDownloadEpisodeId, setConfirmDeleteDownloadEpisodeId] = useState<string | null>(null);
   const [readySilenceEpisodeIds, setReadySilenceEpisodeIds] = useState<Set<string>>(new Set());
   const [readySmartSkipEpisodeIds, setReadySmartSkipEpisodeIds] = useState<Set<string>>(new Set());
+  const [processingSmartSkipEpisodeIds, setProcessingSmartSkipEpisodeIds] = useState<Set<string>>(new Set());
+  const [smartSkipPollTick, setSmartSkipPollTick] = useState(0);
   const [playerCollapseToken, setPlayerCollapseToken] = useState(0);
   const [status, setStatus] = useState('');
   const [serverTestStatus, setServerTestStatus] = useState('');
@@ -98,6 +103,7 @@ export default function App() {
   const [youtubeImportEnabled, setYoutubeImportEnabled] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const telemetryRef = useRef<{ episodeId: string; mediaAt: number; wallAt: number } | null>(null);
+  const persistedProgressRef = useRef<{ episodeId: string; second: number } | null>(null);
   const profileHydrationRef = useRef<string | null>(null);
   const syncHydrationRef = useRef<string | null>(null);
   const onlineSyncRef = useRef<string | null>(null);
@@ -105,6 +111,7 @@ export default function App() {
   const offlineBundlePrefetchRef = useRef<Set<string>>(new Set());
   const youtubeEnrichmentRef = useRef<Set<string>>(new Set());
   const startupCueEpisodeRef = useRef<string | null>(null);
+  const smartSkipRequestedAtRef = useRef<Map<string, number>>(new Map());
 
   const hostedWebRuntime = isHostedWebRuntime();
   const runtimeServerUrl = resolveBrowserServerUrl(resolveConfiguredServerUrl(settings?.serverUrl));
@@ -170,7 +177,7 @@ export default function App() {
 
   const refreshLocalState = useCallback(async () => {
     await ensureSeedData();
-    const [nextSettings, nextFeeds, nextEpisodes, nextCachedPodcasts, nextCachedEpisodes, nextPodcastPreferences, nextListeningStats, nextReadySilenceIds, nextReadySmartSkipIds] = await Promise.all([
+    const [nextSettings, nextFeeds, nextEpisodes, nextCachedPodcasts, nextCachedEpisodes, nextPodcastPreferences, nextListeningStats, nextReadySilenceIds, nextReadySmartSkipIds, nextProcessingSmartSkipIds] = await Promise.all([
       getSettings(),
       listFeeds(),
       listEpisodes(),
@@ -179,7 +186,8 @@ export default function App() {
       listPodcastPreferences(),
       getListeningStats(),
       listReadySilenceMapEpisodeIds(),
-      listReadySmartSkipMapEpisodeIds()
+      listReadySmartSkipMapEpisodeIds(),
+      listSmartSkipMapEpisodeIdsByStatus(['queued', 'processing'])
     ]);
     const normalizedSettings = isTauriRuntime() && isLoopbackUrl(nextSettings.serverUrl || '') ? { ...nextSettings, serverUrl: '' } : nextSettings;
     if (normalizedSettings !== nextSettings) void saveSettings(normalizedSettings);
@@ -200,6 +208,7 @@ export default function App() {
     setListeningStats(nextListeningStats);
     setReadySilenceEpisodeIds(new Set(nextReadySilenceIds));
     setReadySmartSkipEpisodeIds(new Set(nextReadySmartSkipIds));
+    setProcessingSmartSkipEpisodeIds(new Set(nextProcessingSmartSkipIds));
     void cacheArtworkForOfflineEpisodes([...nextEpisodes, ...nextCachedEpisodes], [...nextFeeds, ...nextCachedPodcasts]).then((count) => {
       if (count > 0) void refreshLocalState();
     });
@@ -237,7 +246,17 @@ export default function App() {
       return;
     }
 
-    setServerSession(loadServerSession(runtimeServerUrl));
+    const immediateSession = loadServerSession(runtimeServerUrl);
+    setServerSession(immediateSession);
+    if (!immediateSession) {
+      let cancelled = false;
+      void loadPersistedServerSession(runtimeServerUrl).then((persistedSession) => {
+        if (!cancelled && persistedSession) setServerSession(persistedSession);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
   }, [pendingCallbackSession, runtimeServerUrl]);
 
   useEffect(() => {
@@ -309,7 +328,7 @@ export default function App() {
     const syncKey = `${runtimeServerUrl}:${serverSession.accessToken}`;
     if (!runtimeServerUrl || syncHydrationRef.current === syncKey) return;
     syncHydrationRef.current = syncKey;
-    void syncNow(runtimeServerUrl, serverSession.accessToken).then(() => refreshLocalState());
+    void syncNow(runtimeServerUrl, serverSession.accessToken, currentSyncOptions()).then(() => refreshLocalState());
   }, [refreshLocalState, runtimeServerUrl, settings, serverSession]);
 
   useEffect(() => {
@@ -317,7 +336,7 @@ export default function App() {
     const syncKey = `${runtimeServerUrl}:${serverSession.accessToken}:${Math.floor(Date.now() / 60_000)}`;
     if (onlineSyncRef.current === syncKey) return;
     onlineSyncRef.current = syncKey;
-    void syncNow(runtimeServerUrl, serverSession.accessToken).then(() => refreshLocalState());
+    void syncNow(runtimeServerUrl, serverSession.accessToken, currentSyncOptions()).then(() => refreshLocalState());
   }, [isOnline, refreshLocalState, runtimeServerUrl, serverSession, settings]);
 
   useEffect(() => {
@@ -337,21 +356,29 @@ export default function App() {
   const knownEpisodes = useMemo(() => allKnownEpisodes(cachedEpisodes, episodes), [cachedEpisodes, episodes]);
   const offlineMode = !isOnline;
   const visibleEpisodes = useMemo(() => offlineMode ? knownEpisodes.filter((episode) => episode.state.downloaded) : knownEpisodes, [knownEpisodes, offlineMode]);
+  const liveVisibleEpisodes = useMemo(
+    () => overlayLiveProgress(visibleEpisodes, audio.current, audio.currentTime, audio.duration),
+    [audio.current?.id, audio.currentTime, audio.duration, visibleEpisodes]
+  );
+  const liveKnownEpisodes = useMemo(
+    () => overlayLiveProgress(knownEpisodes, audio.current, audio.currentTime, audio.duration),
+    [audio.current?.id, audio.currentTime, audio.duration, knownEpisodes]
+  );
   const downloadedEpisodes = useMemo(() => knownEpisodes.filter((episode) => episode.state.downloaded), [knownEpisodes]);
-  const visibleEpisodePodcastIds = useMemo(() => new Set(visibleEpisodes.map((episode) => episode.podcastId)), [visibleEpisodes]);
+  const visibleEpisodePodcastIds = useMemo(() => new Set(liveVisibleEpisodes.map((episode) => episode.podcastId)), [liveVisibleEpisodes]);
   const visibleFeeds = useMemo(() => offlineMode ? feeds.filter((podcast) => visibleEpisodePodcastIds.has(podcast.id)) : feeds, [feeds, offlineMode, visibleEpisodePodcastIds]);
   const visibleCachedPodcasts = useMemo(() => offlineMode ? cachedPodcasts.filter((podcast) => visibleEpisodePodcastIds.has(podcast.id)) : cachedPodcasts, [cachedPodcasts, offlineMode, visibleEpisodePodcastIds]);
-  const libraryPodcasts = useMemo(() => deriveLibraryPodcasts(visibleCachedPodcasts, visibleFeeds, visibleEpisodes), [visibleCachedPodcasts, visibleFeeds, visibleEpisodes]);
+  const libraryPodcasts = useMemo(() => deriveLibraryPodcasts(visibleCachedPodcasts, visibleFeeds, liveVisibleEpisodes), [visibleCachedPodcasts, visibleFeeds, liveVisibleEpisodes]);
   const podcastImageById = useMemo(() => {
     const next = new Map<string, string>();
     for (const podcast of [...visibleFeeds, ...visibleCachedPodcasts, ...libraryPodcasts]) {
       if (podcast.imageUrl) next.set(podcast.id, podcast.imageUrl);
     }
-    for (const episode of visibleEpisodes) {
+    for (const episode of liveVisibleEpisodes) {
       if (episode.imageUrl && !next.has(episode.podcastId)) next.set(episode.podcastId, episode.imageUrl);
     }
     return next;
-  }, [libraryPodcasts, visibleCachedPodcasts, visibleEpisodes, visibleFeeds]);
+  }, [libraryPodcasts, visibleCachedPodcasts, liveVisibleEpisodes, visibleFeeds]);
   const getPodcastImageUrl = useCallback((podcastId: string) => podcastImageById.get(podcastId), [podcastImageById]);
   const withPlaybackArtwork = useCallback(
     (episode: EpisodeWithState): EpisodeWithState => episode.imageUrl ? episode : { ...episode, imageUrl: getPodcastImageUrl(episode.podcastId) },
@@ -398,19 +425,36 @@ export default function App() {
       : null;
   }, [audio.current?.id, audio.isPlaying]);
 
+  useEffect(() => {
+    if (!audio.current) return;
+    const rounded = Math.max(0, Math.floor(audio.currentTime));
+    const lastPersisted = persistedProgressRef.current;
+    const shouldPersist =
+      lastPersisted?.episodeId !== audio.current.id ||
+      rounded === 0 ||
+      Math.abs(rounded - (lastPersisted?.second ?? -999)) >= 5;
+    if (!shouldPersist) return;
+    const timer = window.setTimeout(() => {
+      if (!audio.current) return;
+      persistedProgressRef.current = { episodeId: audio.current.id, second: rounded };
+      void updateEpisodeState(audio.current.id, { progressSec: rounded });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [audio.current?.id, audio.currentTime]);
+
   const inboxEpisodes = useMemo(
-    () => visibleEpisodes
+    () => liveVisibleEpisodes
       .filter((episode) => episode.state.inboxState === 'new' && !episode.state.played && !episode.state.queuePosition)
       .sort((a, b) => {
         if (settings?.inboxSortDirection === 'oldest') return sortOldest(a, b) || (a.state.inboxPosition || 0) - (b.state.inboxPosition || 0);
         return sortNewest(a, b) || (a.state.inboxPosition || 0) - (b.state.inboxPosition || 0);
       }),
-    [settings?.inboxSortDirection, visibleEpisodes]
+    [settings?.inboxSortDirection, liveVisibleEpisodes]
   );
 
   const queueEpisodes = useMemo(
-    () => visibleEpisodes.filter((episode) => episode.state.queuePosition).sort((a, b) => (a.state.queuePosition || 0) - (b.state.queuePosition || 0)),
-    [visibleEpisodes]
+    () => liveVisibleEpisodes.filter((episode) => episode.state.queuePosition).sort((a, b) => (a.state.queuePosition || 0) - (b.state.queuePosition || 0)),
+    [liveVisibleEpisodes]
   );
 
   useEffect(() => {
@@ -435,24 +479,62 @@ export default function App() {
 
   useEffect(() => {
     if (!settings?.smartSkipEnabled || !canUseServerSmartSkip || !serverAccessToken) return;
-    const candidates = [
-      ...queueEpisodes.slice(0, 5).map((episode) => ({ episode, reason: 'queue' as const })),
-      ...inboxEpisodes.slice(0, 5).map((episode) => ({ episode, reason: 'inbox' as const }))
-    ];
-    for (const { episode, reason } of candidates) {
+    const timer = window.setInterval(() => setSmartSkipPollTick((tick) => tick + 1), 2 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [canUseServerSmartSkip, serverAccessToken, settings?.smartSkipEnabled]);
+
+  useEffect(() => {
+    if (!settings?.smartSkipEnabled || !canUseServerSmartSkip || !serverAccessToken) return;
+    const byEpisodeId = new Map<string, { episode: EpisodeWithState; reason: 'queue' | 'inbox' }>();
+    for (const episode of inboxEpisodes) byEpisodeId.set(episode.id, { episode, reason: 'inbox' });
+    for (const episode of queueEpisodes) byEpisodeId.set(episode.id, { episode, reason: 'queue' });
+    const candidates = [...byEpisodeId.values()].filter(({ episode }) => {
       const preference = podcastPreferences.find((item) => item.podcastId === episode.podcastId);
-      if (preference?.smartSkipEnabled === false) continue;
-      void requestSmartSkipProcessing(episode, runtimeServerUrl, serverAccessToken, reason);
-    }
-  }, [canUseServerSmartSkip, inboxEpisodes, podcastPreferences, queueEpisodes, runtimeServerUrl, serverAccessToken, settings?.smartSkipEnabled]);
+      return preference?.smartSkipEnabled !== false && !readySmartSkipEpisodeIds.has(episode.id);
+    });
+    if (!candidates.length) return;
+    let cancelled = false;
+    void (async () => {
+      let changed = false;
+      for (const { episode, reason } of candidates) {
+        if (cancelled) return;
+        const cachedStatus = await getSmartSkipRequestStatus(episode).catch(() => null);
+        const throttleMs = cachedStatus === 'queued' || cachedStatus === 'processing' ? 2 * 60_000 : 30 * 60_000;
+        const lastRequestedAt = smartSkipRequestedAtRef.current.get(episode.id) || 0;
+        if (Date.now() - lastRequestedAt < throttleMs) continue;
+        smartSkipRequestedAtRef.current.set(episode.id, Date.now());
+        const map = cachedStatus === 'queued' || cachedStatus === 'processing'
+          ? await fetchSmartSkipSegmentMap(episode, runtimeServerUrl, serverAccessToken).catch(() => null)
+          : cachedStatus === 'ready'
+            ? null
+            : await requestSmartSkipProcessing(episode, runtimeServerUrl, serverAccessToken, reason).catch(() => null);
+        if (cachedStatus === 'ready') continue;
+        changed = true;
+        if (map?.status === 'ready') setReadySmartSkipEpisodeIds((current) => new Set(current).add(episode.id));
+        else setProcessingSmartSkipEpisodeIds((current) => new Set(current).add(episode.id));
+      }
+      if (!changed) return;
+      const [nextReady, nextProcessing] = await Promise.all([
+        listReadySmartSkipMapEpisodeIds(),
+        listSmartSkipMapEpisodeIdsByStatus(['queued', 'processing'])
+      ]);
+      if (!cancelled) {
+        setReadySmartSkipEpisodeIds(new Set(nextReady));
+        setProcessingSmartSkipEpisodeIds(new Set(nextProcessing));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canUseServerSmartSkip, inboxEpisodes, podcastPreferences, queueEpisodes, readySmartSkipEpisodeIds, runtimeServerUrl, serverAccessToken, settings?.smartSkipEnabled, smartSkipPollTick]);
 
   const selectedPodcast = useMemo(() => {
     if (!selectedPodcastId) return null;
     return libraryPodcasts.find((podcast) => podcast.id === selectedPodcastId) || null;
   }, [libraryPodcasts, selectedPodcastId]);
-  const selectedPodcastEpisodes = useMemo(() => selectedPodcastId ? visibleEpisodes.filter((episode) => episode.podcastId === selectedPodcastId) : [], [selectedPodcastId, visibleEpisodes]);
+  const selectedPodcastEpisodes = useMemo(() => selectedPodcastId ? liveVisibleEpisodes.filter((episode) => episode.podcastId === selectedPodcastId) : [], [selectedPodcastId, liveVisibleEpisodes]);
   const selectedPodcastPreference = useMemo(() => selectedPodcastId ? podcastPreferences.find((preference) => preference.podcastId === selectedPodcastId) || defaultPodcastPreference(selectedPodcastId) : null, [podcastPreferences, selectedPodcastId]);
-  const selectedEpisode = useMemo(() => selectedEpisodeId ? visibleEpisodes.find((episode) => episode.id === selectedEpisodeId) || null : null, [selectedEpisodeId, visibleEpisodes]);
+  const selectedEpisode = useMemo(() => selectedEpisodeId ? liveVisibleEpisodes.find((episode) => episode.id === selectedEpisodeId) || null : null, [selectedEpisodeId, liveVisibleEpisodes]);
   const selectedEpisodePodcast = useMemo(
     () => selectedEpisode ? visibleCachedPodcasts.find((podcast) => podcast.id === selectedEpisode.podcastId) || visibleFeeds.find((podcast) => podcast.id === selectedEpisode.podcastId) : null,
     [selectedEpisode, visibleCachedPodcasts, visibleFeeds]
@@ -479,15 +561,16 @@ export default function App() {
     if (!settings) return {};
     const preferences = new Map(podcastPreferences.map((preference) => [preference.podcastId, preference]));
     const badges: Record<string, string[]> = {};
-    for (const episode of visibleEpisodes) {
+    for (const episode of liveVisibleEpisodes) {
       const preference = preferences.get(episode.podcastId);
       const episodeBadges: string[] = [];
       if ((preference?.smartSkipEnabled ?? settings.smartSkipEnabled) && readySmartSkipEpisodeIds.has(episode.id)) episodeBadges.push('Smart Skip');
+      else if ((preference?.smartSkipEnabled ?? settings.smartSkipEnabled) && processingSmartSkipEpisodeIds.has(episode.id)) episodeBadges.push('Smart Skip queued');
       if ((episodeSilenceOverrides[episode.id] ?? preference?.silenceShortening ?? settings.silenceShortening) && readySilenceEpisodeIds.has(episode.id)) episodeBadges.push('Trim silence');
       if (episodeBadges.length) badges[episode.id] = episodeBadges;
     }
     return badges;
-  }, [episodeSilenceOverrides, podcastPreferences, readySilenceEpisodeIds, readySmartSkipEpisodeIds, settings, visibleEpisodes]);
+  }, [episodeSilenceOverrides, liveVisibleEpisodes, podcastPreferences, processingSmartSkipEpisodeIds, readySilenceEpisodeIds, readySmartSkipEpisodeIds, settings]);
   const effectivePlayerSettings = useMemo(() => {
     const preference = audio.current ? podcastPreferences.find((item) => item.podcastId === audio.current?.podcastId) : undefined;
     return {
@@ -506,6 +589,14 @@ export default function App() {
     }
     setSettings(next);
     await saveSettings(next);
+  }
+
+  function currentSyncOptions() {
+    return {
+      activeEpisodeId: audio.current?.id,
+      activeProgressSec: audio.currentTime,
+      activePlaying: audio.isPlaying
+    };
   }
 
   async function handleTestServer(serverUrlOverride?: string): Promise<boolean> {
@@ -548,7 +639,7 @@ export default function App() {
         setServerConnectionOk(true);
       }
       if (runtimeServerUrl && serverSession && !isServerSessionExpired(serverSession)) {
-        await syncNow(runtimeServerUrl, serverSession.accessToken);
+        await syncNow(runtimeServerUrl, serverSession.accessToken, currentSyncOptions());
         await refreshLocalState();
       }
       setStatus('Reconnected.');
@@ -704,6 +795,11 @@ export default function App() {
     await refreshLocalState();
   }
 
+  async function handleQueueTop(episode: EpisodeWithState) {
+    await addEpisodeToQueueTop(episode.id);
+    await refreshLocalState();
+  }
+
   async function handlePlayNext(episode: EpisodeWithState) {
     await addEpisodeToQueueNext(episode.id);
     await refreshLocalState();
@@ -715,9 +811,8 @@ export default function App() {
   }
 
   async function handleDismiss(episode: EpisodeWithState) {
-    await updateEpisodeState(episode.id, { inboxState: 'dismissed', inboxPosition: undefined });
+    await removeFromInbox(episode.id);
     if (settings) await deleteInactiveDownloadIfNeeded(episode.id, settings);
-    await normalizeInboxPositions();
     await refreshLocalState();
   }
 
@@ -896,7 +991,9 @@ export default function App() {
     }
     telemetryRef.current = { episodeId: audio.current.id, mediaAt: audio.currentTime, wallAt: now };
     const rounded = Math.floor(audio.currentTime);
-    if (rounded > 0 && rounded % 15 === 0) {
+    const lastPersisted = persistedProgressRef.current;
+    if (rounded > 0 && rounded % 15 === 0 && (lastPersisted?.episodeId !== audio.current.id || lastPersisted.second !== rounded)) {
+      persistedProgressRef.current = { episodeId: audio.current.id, second: rounded };
       await updateEpisodeState(audio.current.id, { progressSec: rounded });
     }
   }
@@ -1034,6 +1131,7 @@ export default function App() {
   const handlers = {
     onPlay: handlePlay,
     onQueue: handleQueue,
+    onQueueTop: handleQueueTop,
     onPlayNext: handlePlayNext,
     onQueueEnd: handleQueueEnd,
     onSendInbox: handleSendInbox,
@@ -1139,9 +1237,9 @@ export default function App() {
       case 'inbox':
         return <InboxPage episodes={inboxEpisodes} onRefreshFeeds={handleRefreshFeeds} getPodcastImageUrl={getPodcastImageUrl} episodeBadgesById={episodeBadgesById} handlers={handlers} />;
       case 'queue':
-        return <QueuePage episodes={queueEpisodes} onPlay={handlePlay} onMove={handleMoveQueue} onRemove={handleRemoveQueue} />;
+        return <QueuePage episodes={queueEpisodes} onPlay={handlePlay} onMove={handleMoveQueue} onQueueTop={handleQueueTop} onQueueEnd={handleQueueEnd} onSendInbox={handleSendInbox} onRemove={handleRemoveQueue} onTogglePlayed={handleTogglePlayed} />;
       case 'library':
-        return <LibraryPage podcasts={libraryPodcasts} subscribedFeeds={visibleFeeds} episodes={visibleEpisodes} onOpenPodcast={navigatePodcast} />;
+        return <LibraryPage podcasts={libraryPodcasts} subscribedFeeds={visibleFeeds} episodes={liveVisibleEpisodes} onOpenPodcast={navigatePodcast} />;
       case 'search':
         return (
           <SearchPage
@@ -1161,9 +1259,9 @@ export default function App() {
           />
         );
       case 'history':
-        return <HistoryPage episodes={knownEpisodes} getPodcastImageUrl={getPodcastImageUrl} handlers={handlers} />;
+        return <HistoryPage episodes={liveKnownEpisodes} getPodcastImageUrl={getPodcastImageUrl} handlers={handlers} />;
       case 'downloads':
-        return <DownloadsPage episodes={visibleEpisodes} getPodcastImageUrl={getPodcastImageUrl} handlers={handlers} />;
+        return <DownloadsPage episodes={liveVisibleEpisodes} getPodcastImageUrl={getPodcastImageUrl} handlers={handlers} />;
       case 'settings':
         return (
           <SettingsPage
@@ -1228,7 +1326,6 @@ export default function App() {
               onToggle={() => void audio.toggle()}
               onUndoSmartSkip={audio.undoSmartSkip}
               onSeek={audio.seek}
-              onSkipBy={audio.skipBy}
               onSettingsChange={(next) => void persistSettings(next)}
               onStopForSleep={audio.stop}
               onPlayNext={() => {
@@ -1323,6 +1420,23 @@ function StatusToast({ message, onDismiss }: { message: string; onDismiss: () =>
 
 function allKnownEpisodes(cached: EpisodeWithState[], subscribed: EpisodeWithState[]): EpisodeWithState[] {
   return [...new Map([...cached, ...subscribed].map((episode) => [episode.id, episode])).values()];
+}
+
+function overlayLiveProgress(episodes: EpisodeWithState[], current: EpisodeWithState | null, currentTime: number, duration: number): EpisodeWithState[] {
+  if (!current) return episodes;
+  const progressSec = Math.max(0, Math.floor(currentTime));
+  const durationSec = Math.max(duration || current.durationSec || 0, current.durationSec || 0);
+  return episodes.map((episode) => {
+    if (episode.id !== current.id) return episode;
+    return {
+      ...episode,
+      durationSec: durationSec || episode.durationSec,
+      state: {
+        ...episode.state,
+        progressSec
+      }
+    };
+  });
 }
 
 function defaultPodcastPreference(podcastId: string): PodcastPreference {

@@ -51,7 +51,7 @@ export function LibraryPage({
           />
         </div>
       </div>
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-3 py-3 sm:px-4 md:p-4">
         {sorted.length ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-5">
             {sorted.map((podcast) => (

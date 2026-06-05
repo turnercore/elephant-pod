@@ -1,5 +1,7 @@
 import { isHostedWebRuntime } from '@/lib/runtime';
 import { isTauriRuntime } from '@/lib/native/tauriBridge';
+import type { StoredServerSession } from '@/types/domain';
+import { db } from '@/lib/storage/db';
 
 const AUTH_STORAGE_KEY = 'elephant-pod-server-auth';
 const NATIVE_AUTH_CALLBACK_URL = 'elephant-pod://auth/callback';
@@ -92,6 +94,26 @@ export function loadServerSession(serverUrl?: string): ServerSession | null {
   }
 }
 
+export async function loadPersistedServerSession(serverUrl?: string): Promise<ServerSession | null> {
+  const session = loadServerSession(serverUrl);
+  if (session) return session;
+  const url = normalizeServerUrl(serverUrl);
+  if (!url) return null;
+  try {
+    const stored = await db.authSessions.get(url);
+    const restored = normalizeSession(stored ? fromStoredSession(stored) : undefined);
+    if (!restored) return null;
+    if (isServerSessionExpired(restored)) {
+      await clearStoredServerSession(url);
+      return null;
+    }
+    saveServerSession(url, restored);
+    return restored;
+  } catch {
+    return null;
+  }
+}
+
 export function saveServerSession(serverUrl: string, session: ServerSession): void {
   const url = normalizeServerUrl(serverUrl);
   if (!url) return;
@@ -105,6 +127,9 @@ export function saveServerSession(serverUrl: string, session: ServerSession): vo
   } catch {
     // Intentionally ignore storage failures; auth can continue for this session.
   }
+  void db.authSessions.put(toStoredSession(url, normalized)).catch(() => {
+    // IndexedDB is a persistence backup. A failed write should not interrupt sign-in.
+  });
 }
 
 export function clearServerSession(serverUrl: string): void {
@@ -123,6 +148,25 @@ export function clearServerSession(serverUrl: string): void {
   } catch {
     // Ignore storage failures to keep sign-out UX non-blocking.
   }
+  void clearStoredServerSession(url);
+}
+
+async function clearStoredServerSession(serverUrl: string): Promise<void> {
+  try {
+    await db.authSessions.delete(serverUrl);
+  } catch {
+    // Ignore IndexedDB failures to keep auth UX non-blocking.
+  }
+}
+
+function toStoredSession(serverUrl: string, session: ServerSession): StoredServerSession {
+  return { serverUrl, ...session };
+}
+
+function fromStoredSession(session: StoredServerSession): ServerSession {
+  const { serverUrl, ...rest } = session;
+  void serverUrl;
+  return rest;
 }
 
 export function consumeAuthTokenFromCallback(): ServerSession | null {

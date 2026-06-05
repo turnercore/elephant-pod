@@ -148,6 +148,22 @@ create table if not exists public.sync_tombstones (
   check (table_name in ('subscriptions', 'episodes', 'episode_states', 'clips'))
 );
 
+create table if not exists public.sync_actions (
+  id text primary key,
+  user_id uuid not null,
+  device_id text not null,
+  sequence bigint not null default 0,
+  entity_type text not null,
+  entity_id text not null,
+  action_type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  pushed_at timestamptz,
+  applied_at timestamptz,
+  check (entity_type in ('episode_state')),
+  check (action_type in ('episode-state-updated'))
+);
+
 create table if not exists public.public_clips (
   id text primary key,
   title text not null,
@@ -177,6 +193,8 @@ create index if not exists idx_episode_states_inbox on public.episode_states(use
 create index if not exists idx_podcast_preferences_user_updated on public.podcast_preferences(user_id, updated_at desc);
 create index if not exists idx_clips_user_episode on public.clips(user_id, episode_local_id);
 create index if not exists idx_tombstones_user_deleted on public.sync_tombstones(user_id, deleted_at desc);
+create index if not exists idx_sync_actions_user_created on public.sync_actions(user_id, created_at, sequence);
+create index if not exists idx_sync_actions_user_entity on public.sync_actions(user_id, entity_type, entity_id, created_at desc);
 
 create table if not exists public.smart_skip_media_versions (
   id text primary key,

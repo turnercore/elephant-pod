@@ -1,9 +1,8 @@
-import { LuArchiveX as ArchiveX, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRefreshCw as RefreshCw, LuRss as Rss } from 'react-icons/lu';
-import { useRef, useState } from 'react';
+import { LuArchiveX as ArchiveX, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRefreshCw as RefreshCw, LuRss as Rss, LuSparkles as Sparkles } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
 import { EmptyState } from '@/components/EmptyState';
-import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { SwipeActionRow } from '@/components/Gestures/SwipeActionRow';
 import { IconButton } from '@/components/ui/IconButton';
 import { Panel } from '@/components/ui/Panel';
 import { formatDuration, formatEpisodeReleaseDate } from '@/lib/dates';
@@ -53,37 +52,28 @@ export function InboxPage({ episodes, onRefreshFeeds, getPodcastImageUrl, episod
 }
 
 function InboxTriageRow({ episode, podcastImageUrl, processedBadges = [], handlers }: { episode: EpisodeWithState; podcastImageUrl?: string; processedBadges?: string[]; handlers: InboxPageProps['handlers'] }) {
-  const startX = useRef<number | null>(null);
-  const [revealed, setRevealed] = useState(false);
   const artworkUrl = episode.imageUrl || podcastImageUrl;
   const isCurrentEpisode = handlers.currentEpisodeId === episode.id;
   const PlayIcon = isCurrentEpisode && handlers.isCurrentPlaying ? Pause : Play;
   const playLabel = isCurrentEpisode && handlers.isCurrentPlaying ? 'Pause episode' : 'Play now';
 
-  function onTouchEnd(clientX: number) {
-    if (startX.current === null) return;
-    const delta = clientX - startX.current;
-    startX.current = null;
-    if (delta < -80) {
-      handlers.onDismiss?.(episode);
-      return;
-    }
-    if (delta > 130) {
-      (handlers.onQueueEnd || handlers.onPlayNext)?.(episode);
-      return;
-    }
-    if (delta > 50) setRevealed(true);
-  }
-
   return (
-    <article
-      className="rounded-eh border border-bone/15 bg-surface/80 p-3 transition hover:border-yellow/35"
-      onTouchStart={(event) => {
-        startX.current = event.changedTouches[0]?.clientX ?? null;
-      }}
-      onTouchEnd={(event) => onTouchEnd(event.changedTouches[0]?.clientX ?? 0)}
+    <SwipeActionRow
+      ariaLabel={`${episode.title} inbox row`}
+      className="rounded-eh border border-bone/15 bg-canvas transition hover:border-yellow/35"
+      contentClassName="rounded-eh"
+      leftActions={[
+        { key: 'queue-end', label: 'Queue', icon: <ListEnd size={18} aria-hidden />, tone: 'primary', onAction: () => handlers.onQueueEnd?.(episode) },
+        { key: 'play-next', label: 'Next', icon: <ListStart size={18} aria-hidden />, tone: 'default', onAction: () => handlers.onPlayNext?.(episode) }
+      ]}
+      rightActions={[
+        { key: 'remove-inbox', label: 'Remove', icon: <ArchiveX size={18} aria-hidden />, tone: 'danger', onAction: () => handlers.onDismiss?.(episode) }
+      ]}
+      fullSwipeLeft={() => handlers.onDismiss?.(episode)}
+      fullSwipeRight={() => handlers.onQueueEnd?.(episode)}
     >
-      <div className="grid gap-3 md:grid-cols-[auto_1fr_auto] md:items-center">
+      <article className="p-3">
+        <div className="grid gap-3 md:grid-cols-[auto_1fr_auto] md:items-center">
         <div className="hidden gap-2 md:flex">
           <IconButton label="Dismiss from inbox" danger onClick={() => handlers.onDismiss?.(episode)}>
             <ArchiveX size={18} aria-hidden />
@@ -95,7 +85,7 @@ function InboxTriageRow({ episode, podcastImageUrl, processedBadges = [], handle
             {processedBadges.length ? (
               <span className="mb-1 flex flex-wrap gap-1.5">
                 {processedBadges.map((badge) => (
-                  <Badge key={badge} tone={badge === 'Smart Skip' ? 'teal' : 'mauve'}>{badge}</Badge>
+                  <InboxBadge key={badge} badge={badge} />
                 ))}
               </span>
             ) : null}
@@ -119,18 +109,32 @@ function InboxTriageRow({ episode, podcastImageUrl, processedBadges = [], handle
             <ArchiveX size={18} aria-hidden />
           </IconButton>
         </div>
-      </div>
-      {revealed ? (
-        <div className="mt-3 flex gap-2 rounded-eh border border-yellow/20 bg-yellow/10 p-2 md:hidden">
-          <Button size="sm" variant="primary" onClick={() => handlers.onPlay(episode)}>{isCurrentEpisode && handlers.isCurrentPlaying ? 'Pause' : 'Play now'}</Button>
-          <Button size="sm" onClick={() => handlers.onPlayNext?.(episode)}>Next</Button>
-          <Button size="sm" onClick={() => handlers.onQueueEnd?.(episode)}>End</Button>
         </div>
-      ) : null}
-    </article>
+      </article>
+    </SwipeActionRow>
   );
 }
 
 function stripHtml(input: string): string {
   return input.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function InboxBadge({ badge }: { badge: string }) {
+  if (badge === 'Smart Skip') {
+    return (
+      <Badge tone="teal" className="gap-1" title="Smart Skip processed">
+        <Sparkles size={12} aria-hidden />
+        <span>Smart Skip</span>
+      </Badge>
+    );
+  }
+  if (badge === 'Smart Skip queued') {
+    return (
+      <Badge tone="mauve" className="gap-1" title="Smart Skip queued">
+        <Sparkles size={12} aria-hidden />
+        <span>Queued</span>
+      </Badge>
+    );
+  }
+  return <Badge tone="mauve">{badge}</Badge>;
 }

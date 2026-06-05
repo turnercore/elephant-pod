@@ -19,7 +19,17 @@ struct NowPlayingEnvelope: Decodable {
   let payload: NowPlayingPayload
 }
 
+struct SeekArgs: Decodable {
+  let seconds: Double?
+  let positionSec: Double?
+}
+
+struct RateArgs: Decodable {
+  let playbackRate: Double
+}
+
 struct NowPlayingPayload: Decodable {
+  let episodeId: String?
   let title: String
   let podcastTitle: String
   let artworkUrl: String?
@@ -80,14 +90,16 @@ public class ElephantAudioPlugin: Plugin {
   }
 
   @objc public func play(_ invoke: Invoke) {
-    player?.play()
-    updateNowPlaying(elapsed: currentSeconds(), playing: true, playbackRate: Double(player?.rate ?? 1))
+    guard let player else { invoke.resolve(false); return }
+    player.play()
+    updateNowPlaying(elapsed: currentSeconds(), playing: true, playbackRate: Double(player.rate == 0 ? 1 : player.rate))
     invoke.resolve(true)
   }
 
   @objc public func pause(_ invoke: Invoke) {
-    player?.pause()
-    updateNowPlaying(elapsed: currentSeconds(), playing: false, playbackRate: Double(player?.rate ?? 1))
+    guard let player else { invoke.resolve(false); return }
+    player.pause()
+    updateNowPlaying(elapsed: currentSeconds(), playing: false, playbackRate: Double(player.rate == 0 ? 1 : player.rate))
     invoke.resolve(true)
   }
 
@@ -99,17 +111,28 @@ public class ElephantAudioPlugin: Plugin {
   }
 
   @objc public func seek(_ invoke: Invoke) {
-    let seconds = invoke.getDouble("seconds") ?? 0
-    player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
-    updateNowPlaying(elapsed: seconds, playing: player?.timeControlStatus == .playing, playbackRate: Double(player?.rate ?? 1))
-    invoke.resolve(statusPayload())
+    guard let player else { invoke.resolve(statusPayload()); return }
+    do {
+      let args = try invoke.parseArgs(SeekArgs.self)
+      let seconds = max(0, args.seconds ?? args.positionSec ?? 0)
+      player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
+      updateNowPlaying(elapsed: seconds, playing: player.timeControlStatus == .playing, playbackRate: Double(player.rate == 0 ? 1 : player.rate))
+      invoke.resolve(statusPayload())
+    } catch {
+      invoke.reject(error.localizedDescription)
+    }
   }
 
   @objc(set_rate:) public func set_rate(_ invoke: Invoke) {
-    let playbackRate = invoke.getDouble("playbackRate") ?? 1
-    player?.rate = Float(playbackRate)
-    updateNowPlaying(elapsed: currentSeconds(), playing: player?.timeControlStatus == .playing, playbackRate: playbackRate)
-    invoke.resolve(true)
+    guard let player else { invoke.resolve(false); return }
+    do {
+      let args = try invoke.parseArgs(RateArgs.self)
+      player.rate = Float(args.playbackRate)
+      updateNowPlaying(elapsed: currentSeconds(), playing: player.timeControlStatus == .playing, playbackRate: args.playbackRate)
+      invoke.resolve(true)
+    } catch {
+      invoke.reject(error.localizedDescription)
+    }
   }
 
   @objc public func status(_ invoke: Invoke) {
@@ -119,6 +142,9 @@ public class ElephantAudioPlugin: Plugin {
   @objc(now_playing:) public func now_playing(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(NowPlayingEnvelope.self).payload
+      if let payloadEpisodeId = args.episodeId {
+        episodeId = payloadEpisodeId
+      }
       title = args.title
       podcastTitle = args.podcastTitle
       durationSec = args.durationSec
@@ -130,17 +156,14 @@ public class ElephantAudioPlugin: Plugin {
       updateNowPlaying(elapsed: args.elapsedSec, playing: args.playing, playbackRate: args.playbackRate)
       invoke.resolve()
     } catch {
-      if let elapsed = invoke.getDouble("elapsedSec") {
-        updateNowPlaying(elapsed: elapsed, playing: player?.timeControlStatus == .playing, playbackRate: Double(player?.rate ?? 1))
-      }
-      invoke.resolve()
+      invoke.reject(error.localizedDescription)
     }
   }
 
   private func configureAudioSession() {
     do {
       let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.playback, mode: .spokenAudio, options: [.allowAirPlay, .allowBluetooth])
+      try session.setCategory(.playback, mode: .spokenAudio, options: [.allowAirPlay, .allowBluetoothHFP])
       try session.setActive(true)
     } catch {
       NSLog("ElephantAudioPlugin audio session error: \(error)")
@@ -231,4 +254,9 @@ public class ElephantAudioPlugin: Plugin {
   @objc private func handleRouteChange(notification: Notification) {
     // Hook for headphones unplugged / Bluetooth route changes.
   }
+}
+
+@_cdecl("init_plugin_elephant_audio")
+func initPlugin() -> Plugin {
+  return ElephantAudioPlugin()
 }
