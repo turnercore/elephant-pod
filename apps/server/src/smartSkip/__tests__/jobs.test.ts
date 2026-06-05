@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createOrGetSmartSkipJob, priorityByReason } from '../jobs.js';
-import { claimNextJob, getExternalTaskForJob, getJob, recoverStaleJobs, upsertExternalTask, upsertJob } from '../storage.js';
+import { claimNextJob, getExternalTaskForJob, getJob, normalizeDbTimestamp, recoverStaleJobs, upsertExternalTask, upsertJob } from '../storage.js';
 import type { SmartSkipConfig } from '../config.js';
 import type { SmartSkipJob, SmartSkipProcessRequest } from '../types.js';
 
@@ -60,6 +60,18 @@ describe('Smart Skip jobs', () => {
     const task = await getExternalTaskForJob('ssk_job_external_test', 'segmenter_batch');
     assert.equal(task?.externalId, 'batch_test');
     assert.equal(task?.status, 'in_progress');
+  });
+
+  it('normalizes Postgres timestamps to ISO strings', () => {
+    const iso = '2026-06-05T08:45:00.123Z';
+
+    assert.equal(normalizeDbTimestamp(new Date(iso), 'smart_skip_jobs.locked_until'), iso);
+    assert.equal(normalizeDbTimestamp('2026-06-05 08:45:00.123+00', 'smart_skip_jobs.next_attempt_at'), iso);
+    assert.equal(normalizeDbTimestamp(null, 'smart_skip_jobs.last_heartbeat_at'), undefined);
+    assert.throws(
+      () => normalizeDbTimestamp('not a timestamp', 'smart_skip_jobs.updated_at'),
+      /Invalid Postgres timestamp/
+    );
   });
 });
 

@@ -398,13 +398,13 @@ function rowToJob(row: Record<string, unknown>): SmartSkipJob {
     request: row.request as SmartSkipJob['request'],
     error: typeof row.error === 'string' ? row.error : undefined,
     attempts: Number(row.attempts || 0),
-    lockedAt: row.locked_at ? String(row.locked_at) : undefined,
-    lockedUntil: row.locked_until ? String(row.locked_until) : undefined,
+    lockedAt: normalizeDbTimestamp(row.locked_at, 'smart_skip_jobs.locked_at'),
+    lockedUntil: normalizeDbTimestamp(row.locked_until, 'smart_skip_jobs.locked_until'),
     workerId: typeof row.worker_id === 'string' ? row.worker_id : undefined,
-    nextAttemptAt: row.next_attempt_at ? String(row.next_attempt_at) : undefined,
-    lastHeartbeatAt: row.last_heartbeat_at ? String(row.last_heartbeat_at) : undefined,
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at)
+    nextAttemptAt: normalizeDbTimestamp(row.next_attempt_at, 'smart_skip_jobs.next_attempt_at'),
+    lastHeartbeatAt: normalizeDbTimestamp(row.last_heartbeat_at, 'smart_skip_jobs.last_heartbeat_at'),
+    createdAt: requireDbTimestamp(row.created_at, 'smart_skip_jobs.created_at'),
+    updatedAt: requireDbTimestamp(row.updated_at, 'smart_skip_jobs.updated_at')
   };
 }
 
@@ -422,11 +422,11 @@ function rowToExternalTask(row: Record<string, unknown>): SmartSkipExternalTask 
     errorFileId: typeof row.error_file_id === 'string' ? row.error_file_id : undefined,
     resultJson: resultJson === null || resultJson === undefined ? undefined : resultJson,
     error: typeof row.error === 'string' ? row.error : undefined,
-    submittedAt: row.submitted_at ? String(row.submitted_at) : undefined,
-    lastCheckedAt: row.last_checked_at ? String(row.last_checked_at) : undefined,
-    nextCheckAt: row.next_check_at ? String(row.next_check_at) : undefined,
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at)
+    submittedAt: normalizeDbTimestamp(row.submitted_at, 'smart_skip_external_tasks.submitted_at'),
+    lastCheckedAt: normalizeDbTimestamp(row.last_checked_at, 'smart_skip_external_tasks.last_checked_at'),
+    nextCheckAt: normalizeDbTimestamp(row.next_check_at, 'smart_skip_external_tasks.next_check_at'),
+    createdAt: requireDbTimestamp(row.created_at, 'smart_skip_external_tasks.created_at'),
+    updatedAt: requireDbTimestamp(row.updated_at, 'smart_skip_external_tasks.updated_at')
   };
 }
 
@@ -438,7 +438,7 @@ function rowToMap(row: Record<string, unknown>): SmartSkipSegmentMap {
     mediaVersionId: String(row.media_version_id),
     audioUrl: String(row.audio_url),
     durationMs: row.duration_ms ? Number(row.duration_ms) : undefined,
-    generatedAt: new Date(String(row.generated_at)).toISOString(),
+    generatedAt: requireDbTimestamp(row.generated_at, 'smart_skip_segment_maps.generated_at'),
     status: row.status as SmartSkipSegmentMap['status'],
     segments: Array.isArray(row.segments) ? row.segments.map((segment) => ({
       ...(segment as SmartSkipSegmentMap['segments'][number]),
@@ -449,4 +449,31 @@ function rowToMap(row: Record<string, unknown>): SmartSkipSegmentMap {
 
 function isStaleLeasedJob(job: SmartSkipJob): boolean {
   return (job.status === 'leased' || job.status === 'processing') && Boolean(job.lockedUntil) && new Date(job.lockedUntil!).getTime() < Date.now();
+}
+
+export function normalizeDbTimestamp(value: unknown, columnName: string): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) throw new Error(`Invalid Postgres timestamp in ${columnName}.`);
+    return value.toISOString();
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const parsed = Date.parse(trimmed);
+    if (Number.isNaN(parsed)) throw new Error(`Invalid Postgres timestamp in ${columnName}: ${trimmed}`);
+    return new Date(parsed).toISOString();
+  }
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) throw new Error(`Invalid Postgres timestamp in ${columnName}.`);
+    return date.toISOString();
+  }
+  throw new Error(`Unsupported Postgres timestamp value in ${columnName}.`);
+}
+
+function requireDbTimestamp(value: unknown, columnName: string): string {
+  const timestamp = normalizeDbTimestamp(value, columnName);
+  if (!timestamp) throw new Error(`Missing Postgres timestamp in ${columnName}.`);
+  return timestamp;
 }
