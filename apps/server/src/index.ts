@@ -18,6 +18,7 @@ import { startSmartSkipQueue } from './smartSkip/jobs.js';
 import { registerSmartSkipRoutes } from './smartSkip/routes.js';
 import { startSmartSkipScheduler } from './smartSkip/scheduler.js';
 import { handleYoutubeAudio, handleYoutubeEnrich, handleYoutubeExtract, handleYoutubeFeed, handleYoutubeImport, handleYoutubeRefresh, isYoutubeImportConfigured } from './youtubeImport.js';
+import { readServerMaxJobs, serverJobLimiter } from './serverJobs.js';
 
 loadDotenv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 loadDotenv();
@@ -38,7 +39,18 @@ app.use(express.json({ limit: '2mb' }));
 app.use(morgan('tiny'));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'elephant-pod', time: new Date().toISOString(), ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg', smartSkip: { enabled: smartSkipConfig.enabled } });
+  res.json({
+    ok: true,
+    service: 'elephant-pod',
+    time: new Date().toISOString(),
+    ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg',
+    serverJobs: {
+      max: readServerMaxJobs(),
+      active: serverJobLimiter.activeCount(),
+      queued: serverJobLimiter.queuedCount()
+    },
+    smartSkip: { enabled: smartSkipConfig.enabled }
+  });
 });
 
 app.get('/api/capabilities', (_req, res) => {

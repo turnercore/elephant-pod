@@ -100,13 +100,15 @@ The server is required for the hosted browser build because that runtime is acco
 
 YouTube import is optional and can be disabled with `YOUTUBE_IMPORT_ENABLED=false`. Elephant Pod owns YouTube sources as canonical synthetic podcast feeds (`youtube-channel`, `youtube-playlist`, or `youtube-ad-hoc`) plus normal episode rows and a fake RSS-style feed URL. Source import and refresh fetch metadata only. Playlist/channel metadata uses server-side `yt-dlp --flat-playlist` so synthetic feeds can include more than YouTube RSS exposes. Opening an episode runs single-episode metadata enrichment and stores it in the server media cache for future fake RSS generation. Audio extraction runs only after a user explicitly imports, plays, downloads, or requests the RSS enclosure for an episode; final episode playback uses stable app-server `/media/youtube/:id.mp3` URLs backed by cached server audio.
 
+Expensive app-server subprocess work runs through a shared in-process limiter. `SERVER_MAX_JOBS` defaults to `1` and caps concurrent `yt-dlp` metadata/audio extraction plus ffmpeg clip, silence-shortening, and silence-map jobs. Smart Skip keeps its durable queue and `SMART_SKIP_PROCESSING_CONCURRENCY` setting, but its ffmpeg silence analysis still participates in the shared subprocess limiter.
+
 Future server jobs should include:
 
 - scheduled feed refresh
 - push notifications
 - web-push subscription management
 - optional server-side search index
-- durable background queues for clip/silence rendering
+- durable persisted background queues for clip/silence/YouTube rendering across restarts
 - active-user discovery for proactive Smart Skip processing
 
 ## Sync model

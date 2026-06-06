@@ -49,7 +49,7 @@ When the app opens or finishes sync/login hydration, the first queued episode is
 - signed-in silence-map analysis jobs
 - nondestructive silence-map analysis reused by Smart Skip boundary refinement
 
-Clip rendering uses `ffmpeg -ss`, `-t`, `-vn`, and MP3 output. Silence maps use ffmpeg's `silencedetect` filter and cache JSON under the media directory. A segment shortens long silence rather than deleting it: by default a silence over `0.7s` keeps `0.25s` and skips the rest. These defaults are controlled by `SILENCE_THRESHOLD_DB`, `SILENCE_MINIMUM_SEC`, `SILENCE_RETAINED_SEC`, and `SILENCE_ANALYZER_VERSION`.
+Clip rendering uses `ffmpeg -ss`, `-t`, `-vn`, and MP3 output. Silence maps use ffmpeg's `silencedetect` filter and cache JSON under the media directory. A segment shortens long silence rather than deleting it: by default a silence over `0.7s` keeps `0.25s` and skips the rest. These defaults are controlled by `SILENCE_THRESHOLD_DB`, `SILENCE_MINIMUM_SEC`, `SILENCE_RETAINED_SEC`, and `SILENCE_ANALYZER_VERSION`. ffmpeg jobs share the app-server subprocess limiter with YouTube `yt-dlp`; `SERVER_MAX_JOBS` defaults to `1`.
 
 ## Silence shortening
 

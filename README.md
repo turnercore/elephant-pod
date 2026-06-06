@@ -72,6 +72,7 @@ Set these in the app server environment (example in `.env.example`):
 - `PODCASTINDEX_API_SECRET`
 - `PODCASTINDEX_USER_AGENT`
 - `YOUTUBE_IMPORT_ENABLED=false` disables signed-in YouTube import. The server container includes `yt-dlp` by default.
+- `SERVER_MAX_JOBS` caps expensive app-server subprocess work such as YouTube `yt-dlp` metadata/audio extraction and ffmpeg clip/silence processing. It defaults to `1` so one heavy job runs at a time.
 - `YTDLP_PATH`, `YOUTUBE_METADATA_MAX_ENTRIES`, and `YOUTUBE_AUDIO_QUALITY` optionally tune server-side YouTube metadata crawling and audio caching. The default metadata crawl limit is 500 entries and cached audio is stored as MP3 for stable RSS enclosures.
 - `GOTRUE_EXTERNAL_GITHUB_ENABLED`
 - `GOTRUE_EXTERNAL_GITHUB_CLIENT_ID`

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { serverJobLimiter } from './serverJobs.js';
 import type { ServerClip, SilenceJob, SilenceMapJob, SilenceMapSegment } from './types.js';
 
 export interface MediaJobOptions {
@@ -28,7 +29,7 @@ export async function renderClipFile(clip: ServerClip, options: MediaJobOptions)
   const ffmpeg = options.ffmpegPath || process.env.FFMPEG_PATH || 'ffmpeg';
 
   try {
-    await runFfmpeg(
+    await serverJobLimiter.run('clip-render', () => runFfmpeg(
       ffmpeg,
       [
         '-hide_banner',
@@ -49,7 +50,7 @@ export async function renderClipFile(clip: ServerClip, options: MediaJobOptions)
         outputPath
       ],
       options.timeoutMs || Number(process.env.CLIP_RENDER_TIMEOUT_MS || 120_000)
-    );
+    ));
     const stat = await fs.stat(outputPath);
     return {
       renderStatus: 'ready',
@@ -195,58 +196,61 @@ export async function getSilenceMapJob(id: string, options: MediaJobOptions): Pr
 
 async function renderSilenceJob(job: SilenceJob, options: MediaJobOptions): Promise<SilenceJob> {
   const ffmpeg = options.ffmpegPath || process.env.FFMPEG_PATH || 'ffmpeg';
-  const now = new Date().toISOString();
-  const rendering = { ...job, status: 'rendering' as const, updatedAt: now };
-  runningSilenceJobs.set(job.jobId, rendering);
-
   const filter = `silenceremove=stop_periods=-1:stop_duration=${job.minimumDurationSec}:stop_threshold=${job.thresholdDb}dB`;
   try {
-    await runFfmpeg(
-      ffmpeg,
-      [
-        '-hide_banner',
-        '-y',
-        '-i',
-        job.audioUrl,
-        '-vn',
-        '-af',
-        filter,
-        '-map_metadata',
-        '-1',
-        '-acodec',
-        'libmp3lame',
-        '-b:a',
-        job.bitRate,
-        job.outputPath
-      ],
-      options.timeoutMs || Number(process.env.SILENCE_RENDER_TIMEOUT_MS || 900_000)
-    );
+    const rendering = await serverJobLimiter.run('silence-render', async () => {
+      const next = { ...job, status: 'rendering' as const, updatedAt: new Date().toISOString() };
+      runningSilenceJobs.set(job.jobId, next);
+      await runFfmpeg(
+        ffmpeg,
+        [
+          '-hide_banner',
+          '-y',
+          '-i',
+          job.audioUrl,
+          '-vn',
+          '-af',
+          filter,
+          '-map_metadata',
+          '-1',
+          '-acodec',
+          'libmp3lame',
+          '-b:a',
+          job.bitRate,
+          job.outputPath
+        ],
+        options.timeoutMs || Number(process.env.SILENCE_RENDER_TIMEOUT_MS || 900_000)
+      );
+      return next;
+    });
     return { ...rendering, status: 'ready', publicAudioUrl: `${options.publicUrl}/media/silence/${encodeURIComponent(job.jobId)}.mp3`, updatedAt: new Date().toISOString() };
   } catch (error) {
-    return { ...rendering, status: 'failed', error: error instanceof Error ? error.message : 'ffmpeg silence render failed.', updatedAt: new Date().toISOString() };
+    return { ...job, status: 'failed', error: error instanceof Error ? error.message : 'ffmpeg silence render failed.', updatedAt: new Date().toISOString() };
   }
 }
 
 async function renderSilenceMapJob(job: SilenceMapJob, outputPath: string, options: MediaJobOptions): Promise<SilenceMapJob> {
   const ffmpeg = options.ffmpegPath || process.env.FFMPEG_PATH || 'ffmpeg';
-  const processing = { ...job, status: 'processing' as const, updatedAt: new Date().toISOString() };
-  runningSilenceMapJobs.set(job.id, processing);
-
   try {
-    const stderr = await runFfmpegForOutput(
-      ffmpeg,
-      [
-        '-hide_banner',
-        '-i',
-        job.audioUrl,
-        '-af',
-        `silencedetect=noise=${job.thresholdDb}dB:d=${job.minimumSilenceSec}`,
-        '-f',
-        'null',
-        '-'
-      ],
-      options.timeoutMs || Number(process.env.SILENCE_MAP_TIMEOUT_MS || 900_000)
-    );
+    const { stderr, processing } = await serverJobLimiter.run('silence-map', async () => {
+      const next = { ...job, status: 'processing' as const, updatedAt: new Date().toISOString() };
+      runningSilenceMapJobs.set(job.id, next);
+      const output = await runFfmpegForOutput(
+        ffmpeg,
+        [
+          '-hide_banner',
+          '-i',
+          job.audioUrl,
+          '-af',
+          `silencedetect=noise=${job.thresholdDb}dB:d=${job.minimumSilenceSec}`,
+          '-f',
+          'null',
+          '-'
+        ],
+        options.timeoutMs || Number(process.env.SILENCE_MAP_TIMEOUT_MS || 900_000)
+      );
+      return { stderr: output, processing: next };
+    });
     const parsed = parseSilenceDetect(stderr, job.minimumSilenceSec, job.retainedSilenceSec);
     const ready: SilenceMapJob = {
       ...processing,
@@ -259,7 +263,7 @@ async function renderSilenceMapJob(job: SilenceMapJob, outputPath: string, optio
     return ready;
   } catch (error) {
     const failed: SilenceMapJob = {
-      ...processing,
+      ...job,
       status: 'failed',
       error: error instanceof Error ? error.message : 'ffmpeg silence-map analysis failed.',
       updatedAt: new Date().toISOString()

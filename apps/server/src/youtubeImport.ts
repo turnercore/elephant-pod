@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import { z } from 'zod';
+import { serverJobLimiter } from './serverJobs.js';
 
 type PodcastSourceType = 'youtube-channel' | 'youtube-playlist' | 'youtube-ad-hoc';
 type YoutubeSourceKind = 'video' | 'playlist' | 'channel' | 'unknown';
@@ -357,25 +358,7 @@ async function runYtDlpFlatPlaylist(sourceUrl: string): Promise<Record<string, u
     `1:${limit}`,
     sourceUrl
   ];
-  const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk) => {
-    stdout += chunk;
-  });
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk;
-  });
-  const exitCode = await new Promise<number | null>((resolve, reject) => {
-    child.on('error', reject);
-    child.on('close', resolve);
-  });
-  const rows = parseYtDlpJsonLines(stdout);
-  if (rows.length) return rows;
-  if (exitCode && exitCode !== 0) throw new Error(stderr.trim() || `yt-dlp metadata crawl failed with ${exitCode}.`);
-  return [];
+  return serverJobLimiter.run('youtube-metadata', () => runYtDlpJsonLines(executable, args, 'yt-dlp metadata crawl'));
 }
 
 function parseYtDlpJsonLines(output: string): Record<string, unknown>[] {
@@ -396,6 +379,28 @@ function parseYtDlpJsonLines(output: string): Record<string, unknown>[] {
     const entries = asArray(row.entries).filter(isRecord);
     return entries.length ? entries : [row];
   });
+}
+
+async function runYtDlpJsonLines(executable: string, args: string[], label: string): Promise<Record<string, unknown>[]> {
+  const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', resolve);
+  });
+  const rows = parseYtDlpJsonLines(stdout);
+  if (rows.length) return rows;
+  if (exitCode && exitCode !== 0) throw new Error(stderr.trim() || `${label} failed with ${exitCode}.`);
+  return [];
 }
 
 function normalizeYtDlpFlatEntry(row: Record<string, unknown>, rss?: Record<string, unknown>): Record<string, unknown> {
@@ -448,33 +453,20 @@ async function runYtDlpEpisode(sourceUrl: string): Promise<Record<string, unknow
     '--no-warnings',
     sourceUrl
   ];
-  const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk) => {
-    stdout += chunk;
-  });
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk;
-  });
-  const exitCode = await new Promise<number | null>((resolve, reject) => {
-    child.on('error', reject);
-    child.on('close', resolve);
-  });
-  const rows = parseYtDlpJsonLines(stdout);
-  if (rows.length) return rows;
-  if (exitCode && exitCode !== 0) throw new Error(stderr.trim() || `yt-dlp episode enrichment failed with ${exitCode}.`);
-  return [];
+  return serverJobLimiter.run('youtube-metadata', () => runYtDlpJsonLines(executable, args, 'yt-dlp episode enrichment'));
 }
 
 function queueYoutubeAudioDownload(episodeId: string, sourceUrl: string, options: YoutubeImportOptions): Promise<void> {
   const existing = youtubeAudioJobs.get(episodeId);
   if (existing) return existing;
-  const job = downloadYoutubeAudio(episodeId, sourceUrl, options)
+  const job = updateStoredEpisodeEnrichment(episodeId, { extractionStatus: 'processing', updatedAt: new Date().toISOString() }, options)
+    .then(() => downloadYoutubeAudio(episodeId, sourceUrl, options))
     .then(async () => {
       await updateStoredEpisodeEnrichment(episodeId, { extractionStatus: 'ready', updatedAt: new Date().toISOString() }, options);
+    })
+    .catch(async (error: unknown) => {
+      await updateStoredEpisodeEnrichment(episodeId, { extractionStatus: 'failed', updatedAt: new Date().toISOString() }, options);
+      console.error('YouTube audio extraction failed', { episodeId, error: error instanceof Error ? error.message : error });
     })
     .finally(() => {
       youtubeAudioJobs.delete(episodeId);
@@ -498,18 +490,20 @@ async function downloadYoutubeAudio(episodeId: string, sourceUrl: string, option
     outputPath.replace(/\.mp3$/, '.%(ext)s'),
     sourceUrl
   ];
-  const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  let stderr = '';
-  child.stderr.setEncoding('utf8');
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk;
+  await serverJobLimiter.run('youtube-audio', async () => {
+    const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', resolve);
+    });
+    if (exitCode && exitCode !== 0) throw new Error(stderr.trim() || `yt-dlp audio download failed with ${exitCode}.`);
+    if (!(await youtubeAudioFileExists(episodeId, options))) throw new Error('yt-dlp finished but the expected audio file was not written.');
   });
-  const exitCode = await new Promise<number | null>((resolve, reject) => {
-    child.on('error', reject);
-    child.on('close', resolve);
-  });
-  if (exitCode && exitCode !== 0) throw new Error(stderr.trim() || `yt-dlp audio download failed with ${exitCode}.`);
-  if (!(await youtubeAudioFileExists(episodeId, options))) throw new Error('yt-dlp finished but the expected audio file was not written.');
 }
 
 async function youtubeAudioFileExists(episodeId: string, options: YoutubeImportOptions): Promise<boolean> {

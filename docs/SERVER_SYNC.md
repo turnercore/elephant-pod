@@ -107,8 +107,9 @@ Server-only env:
 - `YTDLP_PATH`
 - `YOUTUBE_METADATA_MAX_ENTRIES`
 - `YOUTUBE_AUDIO_QUALITY`
+- `SERVER_MAX_JOBS`
 
-The app server fetches lightweight YouTube text/image metadata during source import and refresh. For playlist and channel sources, it uses `yt-dlp --flat-playlist --dump-json` when available so synthetic feeds are not limited to YouTube's short RSS window. `YOUTUBE_METADATA_MAX_ENTRIES` defaults to 500. Large flat crawls use metadata-only Shorts filtering to avoid one HTML request per episode.
+The app server fetches lightweight YouTube text/image metadata during source import and refresh. For playlist and channel sources, it uses `yt-dlp --flat-playlist --dump-json` when available so synthetic feeds are not limited to YouTube's short RSS window. `YOUTUBE_METADATA_MAX_ENTRIES` defaults to 500. Large flat crawls use metadata-only Shorts filtering to avoid one HTML request per episode. `SERVER_MAX_JOBS` defaults to `1` and limits concurrent `yt-dlp` and ffmpeg subprocess work so bursts of YouTube extraction requests queue instead of spawning parallel downloads.
 
 Opening a YouTube episode page triggers `POST /api/youtube/episodes/:id/enrich`, which runs a single-episode `yt-dlp --dump-json --skip-download` metadata enrichment and stores the result under the server media data directory. Later fake RSS generation merges that cached enrichment so title, description, duration, image, and published date improvements persist for other clients.
 
