@@ -64,7 +64,7 @@ Subscriptions and episodes include optional source metadata for RSS and YouTube 
 | Episode state | Newer `updated_at` row wins. |
 | Queue | Queue fields are part of episode state and are also logged in `sync_actions`; recent local actions beat older remote snapshots. |
 | Settings | Newer settings blob wins. |
-| Podcast preferences | Newer per-podcast row wins, including speed, skip forward/back, skip intro/outro, silence, sort, and new-episode Inbox behavior. |
+| Podcast preferences | Newer per-podcast row wins, including Library membership, resubscribe-after-removal intent, speed, skip forward/back, skip intro/outro, silence, sort, and new-episode Inbox behavior. |
 | Clips | Newer clip row wins. |
 | Tombstones | Pulled tombstones delete matching local rows. |
 | Sync actions | Episode-state actions are ordered by `created_at`, `sequence`, and `device_id`; actions are idempotent by `id`. |
@@ -78,7 +78,7 @@ Episode-state mutations also append to a local `syncActions` queue before the ne
 
 Downloaded episodes are the offline contract. When the browser reports offline, the app shows an offline banner and filters Library, Inbox, Queue, Downloads, and detail navigation to downloaded episodes and their parent podcasts. Episode state mutations still write to local IndexedDB while offline. When connectivity and a valid session return, the client runs sync again so played, progress, queue, Inbox, settings, and subscription changes can be pushed through the normal merge path.
 
-Library membership is broader than subscription membership. A podcast belongs in Library when it is subscribed, cached, downloaded, queued, in Inbox, or otherwise has retained local episode state. Subscription controls automatic feed refresh and whether new releases are added to Inbox. Unsubscribing removes only that automatic subscription; it must not remove retained downloaded, queued, inboxed, cached, or historical episodes.
+Library membership is explicit and broader than subscription membership. A podcast belongs in Library when the user adds it or when it is subscribed; subscribing always adds the podcast to Library, but Library membership does not require subscription. Subscription controls automatic feed refresh and whether future RSS releases are added to Inbox. Subscribing archives episodes that already exist locally at the moment of subscription so only later discovered episodes are treated as new Inbox items. Unsubscribing removes only automatic refresh. Removing a podcast from Library also unsubscribes it immediately, then gives the user a 30-second undo window before clearing that podcast's downloaded, Inbox, and Queue episode state.
 
 Listening stats are also local-only. They are profile facts on the device and can be exported in JSON backup, but they are not currently merged through Supabase/server sync.
 

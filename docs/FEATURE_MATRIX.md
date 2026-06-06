@@ -18,7 +18,7 @@
 | Listening stats | Implemented local | Tracks real listening time, per-podcast totals, speed-up savings, and silence-skip savings in local profile stats. |
 | RSS-first/no lock-in | Implemented | Add RSS URL, OPML import/export, JSON backup. |
 | Episode artwork | Implemented | RSS item-level `<itunes:image>` and `media:thumbnail` artwork is preserved; episode views fall back to show artwork when item art is absent. |
-| Library filter | Implemented | Library has local subscribed-show filtering by title, author, tags, description, and feed/source URL. |
+| Library filter | Implemented | Library has explicit show membership, subscription/library badges, and local filtering by title, author, tags, description, and feed/source URL. |
 | Add Podcast omnibar | Implemented | Add flow accepts RSS URLs, PodcastIndex search terms, and YouTube URLs. Already-subscribed results show a check and open the show page. |
 | Search (PodcastIndex discovery) | Logged-in only | Server-mediated discovery for new feeds using PodcastIndex credentials. |
 | YouTube source import | Optional server feature | Signed-in manual URL import creates and maintains synthetic RSS-style podcasts. Episode audio extraction is user-triggered and cached by the app server through yt-dlp. |

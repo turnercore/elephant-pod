@@ -39,6 +39,14 @@ body {
   overscroll-behavior-x: none;
 }
 
+@media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    overflow-x: clip;
+  }
+}
+
 button,
 input,
 select,
@@ -215,6 +223,12 @@ textarea:focus-visible,
 @media (max-width: 767px) {
   .eh-tooltip::after {
     display: none;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .touch\:hidden {
+    display: none !important;
   }
 }
 

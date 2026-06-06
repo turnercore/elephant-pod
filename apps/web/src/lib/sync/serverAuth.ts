@@ -301,7 +301,10 @@ function getTokenFromParams(params: URLSearchParams): string | null {
 function sessionFromParams(params: URLSearchParams): ServerSession | null {
   const accessToken = getTokenFromParams(params);
   if (!accessToken) return null;
-  const expiresAt = numberParam(params, 'expires_at') || numberParam(params, 'expiresAt') || expiresAtFromDuration(numberParam(params, 'expires_in') || numberParam(params, 'expiresIn'));
+  const expiresAt = normalizeCallbackExpiry(
+    numberParam(params, 'expires_at') || numberParam(params, 'expiresAt'),
+    numberParam(params, 'expires_in') || numberParam(params, 'expiresIn')
+  );
   return {
     accessToken,
     refreshToken: params.get('refresh_token') || params.get('refreshToken') || undefined,
@@ -346,6 +349,15 @@ function numberParam(params: URLSearchParams, key: string): number | undefined {
 function expiresAtFromDuration(expiresIn?: number): number | undefined {
   if (!expiresIn) return undefined;
   return Math.floor(Date.now() / 1000) + expiresIn;
+}
+
+function normalizeCallbackExpiry(expiresAt?: number, expiresIn?: number): number | undefined {
+  const now = Math.floor(Date.now() / 1000);
+  const normalizedExpiresAt = expiresAt && expiresAt > 10_000_000_000 ? Math.floor(expiresAt / 1000) : expiresAt;
+  if (normalizedExpiresAt && normalizedExpiresAt > now) return normalizedExpiresAt;
+  const durationExpiry = expiresAtFromDuration(expiresIn);
+  if (durationExpiry && durationExpiry > now) return durationExpiry;
+  return undefined;
 }
 
 function selectAuthUrl(body: unknown): string | null {

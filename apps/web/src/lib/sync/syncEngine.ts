@@ -323,6 +323,10 @@ function normalizeRemotePodcastPreference(row: unknown): PodcastPreference | nul
   const sortDirection = record.sort_direction ?? record.sortDirection;
   return {
     podcastId,
+    inLibrary: typeof (record.in_library ?? record.inLibrary) === 'boolean' ? Boolean(record.in_library ?? record.inLibrary) : undefined,
+    wasSubscribedBeforeLibraryRemoval: typeof (record.was_subscribed_before_library_removal ?? record.wasSubscribedBeforeLibraryRemoval) === 'boolean'
+      ? Boolean(record.was_subscribed_before_library_removal ?? record.wasSubscribedBeforeLibraryRemoval)
+      : undefined,
     playbackRate: asNumber(record.playback_rate ?? record.playbackRate),
     skipForwardSec: asNumber(record.skip_forward_sec ?? record.skipForwardSec),
     skipBackSec: asNumber(record.skip_back_sec ?? record.skipBackSec),

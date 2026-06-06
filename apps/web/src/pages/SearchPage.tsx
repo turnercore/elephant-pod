@@ -217,7 +217,7 @@ export function SearchPage({
           />
         </div>
       </div>
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
+      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-3 py-3 md:p-4">
         {offline ? (
           <article className="mb-4 flex items-start gap-3 rounded-eh border border-yellow/25 bg-yellow/10 p-3 text-yellow">
             <WifiOff size={18} className="mt-0.5 shrink-0" aria-hidden />

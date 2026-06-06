@@ -1,8 +1,9 @@
-import { LuArchiveX as ArchiveX, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRefreshCw as RefreshCw, LuRss as Rss, LuSparkles as Sparkles } from 'react-icons/lu';
+import { LuArchiveX as ArchiveX, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRss as Rss, LuSparkles as Sparkles } from 'react-icons/lu';
 import type { EpisodeWithState } from '@/types/domain';
 import { EmptyState } from '@/components/EmptyState';
 import { Badge } from '@/components/ui/Badge';
 import { SwipeActionRow } from '@/components/Gestures/SwipeActionRow';
+import { PullToRefresh } from '@/components/Gestures/PullToRefresh';
 import { IconButton } from '@/components/ui/IconButton';
 import { Panel } from '@/components/ui/Panel';
 import { formatDuration, formatEpisodeReleaseDate } from '@/lib/dates';
@@ -27,14 +28,9 @@ export function InboxPage({ episodes, onRefreshFeeds, getPodcastImageUrl, episod
   return (
     <Panel
       title="Inbox"
-      action={
-        <IconButton label="Refresh feeds" onClick={onRefreshFeeds}>
-          <RefreshCw size={17} aria-hidden />
-        </IconButton>
-      }
       className="h-full"
     >
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
+      <PullToRefresh onRefresh={onRefreshFeeds} className="px-0 py-3 md:p-4">
         {episodes.length ? (
           <div className="grid gap-3">
             {episodes.map((episode) => (
@@ -46,7 +42,7 @@ export function InboxPage({ episodes, onRefreshFeeds, getPodcastImageUrl, episod
             New subscribed episodes land here for triage.
           </EmptyState>
         )}
-      </div>
+      </PullToRefresh>
     </Panel>
   );
 }

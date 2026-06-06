@@ -80,6 +80,8 @@ create table if not exists public.podcast_preferences (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
   podcast_local_id text not null,
+  in_library boolean not null default false,
+  was_subscribed_before_library_removal boolean not null default false,
   playback_rate numeric,
   skip_forward_sec integer,
   skip_back_sec integer,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LuGithub as Github } from 'react-icons/lu';
+import { FaUndo } from 'react-icons/fa';
 import type { AppSettings, BackupFile, CachedPodcast, EpisodeWithState, ListeningStats, Podcast, PodcastPreference, SectionKey } from '@/types/domain';
 import { AppShell } from '@/components/Layout/AppShell';
 import { PlayerBar } from '@/components/Player/PlayerBar';
@@ -28,6 +29,7 @@ import { ensureSeedData } from '@/lib/storage/db';
 import { clearServerSession, consumeAuthTokenFromCallback, fetchServerSessionProfile, isServerSessionExpired, loadPersistedServerSession, loadServerSession, normalizeServerUrl, readAuthSessionFromUrl, resolveBrowserServerUrl, saveServerSession, startGithubSignIn, testServerConnection, type ServerSession } from '@/lib/sync/serverAuth';
 import {
   exportBackup,
+  addPodcastToLibrary,
   addEpisodeToQueueEnd,
   addEpisodeToQueueNext,
   addEpisodeToQueueTop,
@@ -50,6 +52,8 @@ import {
   markAllInFeedUnplayed,
   moveInQueue,
   playEpisodeAtQueueTop,
+  purgePodcastFromLibrary,
+  removePodcastFromLibrary,
   removeFromInbox,
   removeFromQueue,
   reorderQueue,
@@ -75,6 +79,15 @@ type ViewSnapshot = {
   selectedEpisodeId: string | null;
 };
 
+const MANUAL_FEED_REFRESH_COOLDOWN_MS = 30_000;
+const MANUAL_PODCAST_REFRESH_COOLDOWN_MS = 20_000;
+
+type PendingLibraryRemoval = {
+  podcast: CachedPodcast;
+  wasSubscribed: boolean;
+  downloadedEpisodes: EpisodeWithState[];
+};
+
 export default function App() {
   const [active, setActive] = useState<SectionKey>('inbox');
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -88,6 +101,8 @@ export default function App() {
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [navStack, setNavStack] = useState<ViewSnapshot[]>([]);
   const [episodeSilenceOverrides, setEpisodeSilenceOverrides] = useState<Record<string, boolean>>({});
+  const [pendingLibraryRemoval, setPendingLibraryRemoval] = useState<PendingLibraryRemoval | null>(null);
+  const pendingLibraryRemovalTimerRef = useRef<number | null>(null);
   const [downloadingEpisodeIds, setDownloadingEpisodeIds] = useState<Set<string>>(new Set());
   const [confirmDeleteDownloadEpisodeId, setConfirmDeleteDownloadEpisodeId] = useState<string | null>(null);
   const [readySilenceEpisodeIds, setReadySilenceEpisodeIds] = useState<Set<string>>(new Set());
@@ -96,9 +111,12 @@ export default function App() {
   const [smartSkipPollTick, setSmartSkipPollTick] = useState(0);
   const [playerCollapseToken, setPlayerCollapseToken] = useState(0);
   const [status, setStatus] = useState('');
+  const [statusDurationMs, setStatusDurationMs] = useState(3200);
+  const [statusAction, setStatusAction] = useState<(() => void) | null>(null);
   const [serverTestStatus, setServerTestStatus] = useState('');
   const [serverConnectionOk, setServerConnectionOk] = useState(false);
   const [serverSession, setServerSession] = useState<ServerSession | null>(null);
+  const [serverSessionHydrating, setServerSessionHydrating] = useState(true);
   const [pendingCallbackSession, setPendingCallbackSession] = useState<ServerSession | null>(null);
   const [youtubeImportEnabled, setYoutubeImportEnabled] = useState(false);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -112,6 +130,8 @@ export default function App() {
   const youtubeEnrichmentRef = useRef<Set<string>>(new Set());
   const startupCueEpisodeRef = useRef<string | null>(null);
   const smartSkipRequestedAtRef = useRef<Map<string, number>>(new Map());
+  const lastManualFeedRefreshAtRef = useRef(0);
+  const lastPodcastRefreshAtRef = useRef<Map<string, number>>(new Map());
 
   const hostedWebRuntime = isHostedWebRuntime();
   const runtimeServerUrl = resolveBrowserServerUrl(resolveConfiguredServerUrl(settings?.serverUrl));
@@ -221,9 +241,11 @@ export default function App() {
   useEffect(() => {
     const callbackSession = consumeAuthTokenFromCallback();
     if (callbackSession) {
+      setServerSessionHydrating(false);
       if (runtimeServerUrl) {
         saveServerSession(runtimeServerUrl, callbackSession);
         setServerSession(callbackSession);
+        void hydrateCallbackSession(runtimeServerUrl, callbackSession);
         setPendingCallbackSession(null);
       } else {
         setPendingCallbackSession(callbackSession);
@@ -235,28 +257,38 @@ export default function App() {
     if (!runtimeServerUrl) {
       if (serverSession) setServerSession(null);
       profileHydrationRef.current = null;
+      setServerSessionHydrating(false);
       return;
     }
 
     if (pendingCallbackSession) {
+      setServerSessionHydrating(false);
       saveServerSession(runtimeServerUrl, pendingCallbackSession);
       setServerSession(pendingCallbackSession);
+      void hydrateCallbackSession(runtimeServerUrl, pendingCallbackSession);
       setPendingCallbackSession(null);
       setStatus('Signed in with GitHub.');
       return;
     }
 
     const immediateSession = loadServerSession(runtimeServerUrl);
-    setServerSession(immediateSession);
-    if (!immediateSession) {
-      let cancelled = false;
-      void loadPersistedServerSession(runtimeServerUrl).then((persistedSession) => {
-        if (!cancelled && persistedSession) setServerSession(persistedSession);
-      });
-      return () => {
-        cancelled = true;
-      };
+    if (immediateSession) {
+      setServerSession(immediateSession);
+      setServerSessionHydrating(false);
+      return;
     }
+
+    setServerSessionHydrating(true);
+    let cancelled = false;
+    void loadPersistedServerSession(runtimeServerUrl).then((persistedSession) => {
+      if (cancelled) return;
+      if (persistedSession) setServerSession((current) => current || persistedSession);
+    }).finally(() => {
+      if (!cancelled) setServerSessionHydrating(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [pendingCallbackSession, runtimeServerUrl]);
 
   useEffect(() => {
@@ -270,6 +302,7 @@ export default function App() {
       if (runtimeServerUrl) {
         saveServerSession(runtimeServerUrl, callbackSession);
         setServerSession(callbackSession);
+        void hydrateCallbackSession(runtimeServerUrl, callbackSession);
         setPendingCallbackSession(null);
       } else {
         setPendingCallbackSession(callbackSession);
@@ -302,7 +335,7 @@ export default function App() {
       if (!profile) return;
       const nextSession = { ...serverSession, ...profile, updatedAt: new Date().toISOString() };
       saveServerSession(runtimeServerUrl, nextSession);
-      setServerSession(nextSession);
+      setServerSession((current) => current?.accessToken === serverSession.accessToken ? nextSession : current);
     });
   }, [runtimeServerUrl, serverSession]);
 
@@ -349,9 +382,25 @@ export default function App() {
 
   useEffect(() => {
     if (!status || status.endsWith('...') || status.endsWith('…')) return;
-    const timer = window.setTimeout(() => setStatus(''), 3200);
+    if (pendingLibraryRemoval) return;
+    const timer = window.setTimeout(() => {
+      setStatus('');
+      setStatusDurationMs(3200);
+      setStatusAction(null);
+    }, statusDurationMs);
     return () => window.clearTimeout(timer);
-  }, [status]);
+  }, [pendingLibraryRemoval, status, statusDurationMs]);
+
+  useEffect(() => {
+    if (!audio.smartSkipNotice) return;
+    setStatus(`Skipped ${audio.smartSkipNotice.segment.label.toLowerCase()}`);
+    setStatusDurationMs(750);
+    setStatusAction(() => audio.undoSmartSkip);
+  }, [audio.smartSkipNotice, audio.undoSmartSkip]);
+
+  useEffect(() => {
+    return () => clearPendingLibraryRemovalTimer();
+  }, []);
 
   const knownEpisodes = useMemo(() => allKnownEpisodes(cachedEpisodes, episodes), [cachedEpisodes, episodes]);
   const offlineMode = !isOnline;
@@ -368,7 +417,7 @@ export default function App() {
   const visibleEpisodePodcastIds = useMemo(() => new Set(liveVisibleEpisodes.map((episode) => episode.podcastId)), [liveVisibleEpisodes]);
   const visibleFeeds = useMemo(() => offlineMode ? feeds.filter((podcast) => visibleEpisodePodcastIds.has(podcast.id)) : feeds, [feeds, offlineMode, visibleEpisodePodcastIds]);
   const visibleCachedPodcasts = useMemo(() => offlineMode ? cachedPodcasts.filter((podcast) => visibleEpisodePodcastIds.has(podcast.id)) : cachedPodcasts, [cachedPodcasts, offlineMode, visibleEpisodePodcastIds]);
-  const libraryPodcasts = useMemo(() => deriveLibraryPodcasts(visibleCachedPodcasts, visibleFeeds, liveVisibleEpisodes), [visibleCachedPodcasts, visibleFeeds, liveVisibleEpisodes]);
+  const libraryPodcasts = useMemo(() => deriveLibraryPodcasts(visibleCachedPodcasts, visibleFeeds, liveVisibleEpisodes, podcastPreferences), [visibleCachedPodcasts, visibleFeeds, liveVisibleEpisodes, podcastPreferences]);
   const podcastImageById = useMemo(() => {
     const next = new Map<string, string>();
     for (const podcast of [...visibleFeeds, ...visibleCachedPodcasts, ...libraryPodcasts]) {
@@ -530,8 +579,11 @@ export default function App() {
 
   const selectedPodcast = useMemo(() => {
     if (!selectedPodcastId) return null;
-    return libraryPodcasts.find((podcast) => podcast.id === selectedPodcastId) || null;
-  }, [libraryPodcasts, selectedPodcastId]);
+    const cached = libraryPodcasts.find((podcast) => podcast.id === selectedPodcastId) || visibleCachedPodcasts.find((podcast) => podcast.id === selectedPodcastId);
+    if (cached) return cached;
+    const feed = visibleFeeds.find((podcast) => podcast.id === selectedPodcastId);
+    return feed ? toCachedPodcastView(feed) : null;
+  }, [libraryPodcasts, selectedPodcastId, visibleCachedPodcasts, visibleFeeds]);
   const selectedPodcastEpisodes = useMemo(() => selectedPodcastId ? liveVisibleEpisodes.filter((episode) => episode.podcastId === selectedPodcastId) : [], [selectedPodcastId, liveVisibleEpisodes]);
   const selectedPodcastPreference = useMemo(() => selectedPodcastId ? podcastPreferences.find((preference) => preference.podcastId === selectedPodcastId) || defaultPodcastPreference(selectedPodcastId) : null, [podcastPreferences, selectedPodcastId]);
   const selectedEpisode = useMemo(() => selectedEpisodeId ? liveVisibleEpisodes.find((episode) => episode.id === selectedEpisodeId) || null : null, [selectedEpisodeId, liveVisibleEpisodes]);
@@ -666,6 +718,7 @@ export default function App() {
   function handleSessionChange(nextSession: ServerSession | null) {
     if (!runtimeServerUrl) {
       setServerSession(null);
+      setServerSessionHydrating(false);
       return;
     }
     if (nextSession) {
@@ -674,10 +727,27 @@ export default function App() {
       clearServerSession(runtimeServerUrl);
     }
     setServerSession(nextSession);
+    setServerSessionHydrating(false);
   }
 
-  async function handleRefreshFeeds() {
+  async function hydrateCallbackSession(serverUrl: string, session: ServerSession) {
+    const profile = await fetchServerSessionProfile(serverUrl, session.accessToken).catch(() => null);
+    if (!profile) {
+      setStatus('Signed in with GitHub.');
+      return;
+    }
+    const nextSession = { ...session, ...profile, updatedAt: new Date().toISOString() };
+    saveServerSession(serverUrl, nextSession);
+    setServerSession((current) => current?.accessToken === session.accessToken ? nextSession : current);
+  }
+
+  async function handleRefreshFeeds(options: { manual?: boolean } = {}) {
     if (!settings || feeds.length === 0) return;
+    if (options.manual && Date.now() - lastManualFeedRefreshAtRef.current < MANUAL_FEED_REFRESH_COOLDOWN_MS) {
+      setStatus('Feeds were just refreshed. Try again in a moment.');
+      return;
+    }
+    if (options.manual) lastManualFeedRefreshAtRef.current = Date.now();
     if (!isOnline) {
       setStatus('Offline. Showing downloaded episodes only.');
       return;
@@ -727,44 +797,49 @@ export default function App() {
     setStatus('Signed out. Local data remains on this device.');
   }
 
-  const browserNeedsSignIn = hostedWebRuntime && Boolean(settings) && !isTauriRuntime() && (!serverSession || isServerSessionExpired(serverSession));
+  const browserNeedsSignIn = hostedWebRuntime && Boolean(settings) && !isTauriRuntime() && !serverSessionHydrating && (!serverSession || isServerSessionExpired(serverSession));
 
   async function handlePlay(episode: EpisodeWithState) {
     const playableEpisode = await ensureYoutubeAudioReady(episode);
     if (!playableEpisode) return;
-    if (audio.current?.id === playableEpisode.id) {
-      const willResume = !audio.isPlaying;
-      await audio.toggle();
-      if (willResume) await updateEpisodeState(playableEpisode.id, { lastPlayedAt: nowIso() });
+    try {
+      if (audio.current?.id === playableEpisode.id) {
+        const willResume = !audio.isPlaying;
+        await audio.toggle();
+        if (willResume) await updateEpisodeState(playableEpisode.id, { lastPlayedAt: nowIso() });
+        await refreshLocalState();
+        return;
+      }
+      const displacedEpisode = audio.current;
+      const displacedTime = audio.currentTime;
+      const displacedDuration = audio.duration || displacedEpisode?.durationSec || 0;
+      await audio.playEpisode(withPlaybackArtwork(playableEpisode));
+      if (displacedEpisode) await handleDisplaceEpisodeIfNeeded(displacedEpisode, displacedTime, displacedDuration);
+      await playEpisodeAtQueueTop(playableEpisode.id);
       await refreshLocalState();
-      return;
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not start playback.');
     }
-    await handleDisplaceCurrentIfNeeded(playableEpisode);
-    await playEpisodeAtQueueTop(playableEpisode.id);
-    await audio.playEpisode(withPlaybackArtwork(playableEpisode));
-    await refreshLocalState();
   }
 
-  async function handleDisplaceCurrentIfNeeded(nextEpisode: EpisodeWithState) {
-    if (!audio.current || audio.current.id === nextEpisode.id) return;
-    const currentDuration = audio.duration || audio.current.durationSec || 0;
-    const completion = currentDuration > 0 ? audio.currentTime / currentDuration : 0;
+  async function handleDisplaceEpisodeIfNeeded(episode: EpisodeWithState, currentTime: number, currentDuration: number) {
+    const completion = currentDuration > 0 ? currentTime / currentDuration : 0;
     if (completion >= 0.9) {
-      await updateEpisodeState(audio.current.id, {
+      await updateEpisodeState(episode.id, {
         played: true,
         playedAt: nowIso(),
         lastPlayedAt: nowIso(),
-        progressSec: currentDuration || audio.currentTime,
+        progressSec: currentDuration || currentTime,
         inboxState: 'archived',
         inboxPosition: undefined,
         queuePosition: undefined,
         queuedAt: undefined
       });
-      if (settings) await deleteInactiveDownloadIfNeeded(audio.current.id, settings);
+      if (settings) await deleteInactiveDownloadIfNeeded(episode.id, settings);
       return;
     }
-    await updateEpisodeState(audio.current.id, { progressSec: Math.floor(audio.currentTime) });
-    await addEpisodeToQueueNext(audio.current.id);
+    await updateEpisodeState(episode.id, { progressSec: Math.floor(currentTime) });
+    await addEpisodeToQueueNext(episode.id);
   }
 
   async function handleTogglePlayed(episode: EpisodeWithState) {
@@ -810,10 +885,26 @@ export default function App() {
     await refreshLocalState();
   }
 
+  function applyOptimisticEpisodeState(episodeId: string, patch: Partial<EpisodeWithState['state']>) {
+    const timestamp = nowIso();
+    const update = (episode: EpisodeWithState) => episode.id === episodeId
+      ? { ...episode, state: { ...episode.state, ...patch, updatedAt: timestamp } }
+      : episode;
+    setEpisodes((current) => current.map(update));
+    setCachedEpisodes((current) => current.map(update));
+  }
+
   async function handleDismiss(episode: EpisodeWithState) {
-    await removeFromInbox(episode.id);
-    if (settings) await deleteInactiveDownloadIfNeeded(episode.id, settings);
-    await refreshLocalState();
+    setEpisodes((current) => current.filter((item) => item.id !== episode.id));
+    setCachedEpisodes((current) => current.filter((item) => item.id !== episode.id));
+    void removeFromInbox(episode.id)
+      .then(() => window.setTimeout(() => {
+        void refreshLocalState();
+      }, 600))
+      .catch((error) => {
+        setStatus(error instanceof Error ? error.message : 'Could not remove episode from Inbox.');
+        void refreshLocalState();
+      });
   }
 
   async function handleDownload(episode: EpisodeWithState) {
@@ -979,7 +1070,7 @@ export default function App() {
       if (mediaDelta >= 5 && mediaDelta < 120 && wallDelta >= 2 && wallDelta < 120) {
         const rate = Math.max(1, effectivePlayerSettings.playbackRate || 1);
         const speedSavedSec = Math.max(0, wallDelta * (rate - 1));
-        const silenceSavedSec = currentSkipSilence ? Math.max(0, mediaDelta - wallDelta * rate) : 0;
+        const silenceSavedSec = effectivePlayerSettings.silenceShortening ? Math.max(0, mediaDelta - wallDelta * rate) : 0;
         await addListeningSample({
           episode: audio.current,
           listeningSec: wallDelta,
@@ -1080,6 +1171,12 @@ export default function App() {
 
   async function handleRefreshSelectedPodcast() {
     if (!settings || !selectedPodcast) return;
+    const lastRefreshAt = lastPodcastRefreshAtRef.current.get(selectedPodcast.id) || 0;
+    if (Date.now() - lastRefreshAt < MANUAL_PODCAST_REFRESH_COOLDOWN_MS) {
+      setStatus(`${selectedPodcast.title} was just refreshed. Try again in a moment.`);
+      return;
+    }
+    lastPodcastRefreshAtRef.current.set(selectedPodcast.id, Date.now());
     setStatus(`Refreshing ${selectedPodcast.title}...`);
     try {
       const parsed = selectedPodcast.sourceType?.startsWith('youtube')
@@ -1101,13 +1198,83 @@ export default function App() {
   }
 
   async function handleSubscribePodcast(podcastId: string) {
+    if (pendingLibraryRemoval?.podcast.id === podcastId) {
+      clearPendingLibraryRemovalTimer();
+      setPendingLibraryRemoval(null);
+    }
+    const podcast = selectedPodcast?.id === podcastId ? selectedPodcast : visibleCachedPodcasts.find((item) => item.id === podcastId) || libraryPodcasts.find((item) => item.id === podcastId);
+    if (podcast) {
+      setFeeds((current) => current.some((feed) => feed.id === podcastId) ? current : [...current, toPodcastView(podcast)]);
+      setPodcastPreferences((current) => upsertPodcastPreference(current, podcastId, { inLibrary: true, wasSubscribedBeforeLibraryRemoval: false }));
+    }
     await subscribeCachedPodcast(podcastId);
     await refreshLocalState();
   }
 
   async function handleUnsubscribePodcast(podcastId: string) {
+    setFeeds((current) => current.filter((feed) => feed.id !== podcastId));
+    setPodcastPreferences((current) => upsertPodcastPreference(current, podcastId, { inLibrary: true }));
     await unsubscribePodcast(podcastId);
     await refreshLocalState();
+  }
+
+  async function handleAddPodcastToLibrary(podcastId: string) {
+    if (pendingLibraryRemoval?.podcast.id === podcastId) {
+      undoPendingLibraryRemoval();
+      return;
+    }
+    const preference = podcastPreferences.find((item) => item.podcastId === podcastId);
+    const podcast = selectedPodcast?.id === podcastId ? selectedPodcast : visibleCachedPodcasts.find((item) => item.id === podcastId) || libraryPodcasts.find((item) => item.id === podcastId);
+    setPodcastPreferences((current) => upsertPodcastPreference(current, podcastId, { inLibrary: true, wasSubscribedBeforeLibraryRemoval: false }));
+    if (preference?.wasSubscribedBeforeLibraryRemoval && podcast) {
+      setFeeds((current) => current.some((feed) => feed.id === podcastId) ? current : [...current, toPodcastView(podcast)]);
+    }
+    await addPodcastToLibrary(podcastId);
+    await refreshLocalState();
+  }
+
+  async function handleRemovePodcastFromLibrary(podcast: CachedPodcast) {
+    const wasSubscribed = feeds.some((feed) => feed.id === podcast.id);
+    const downloadedEpisodes = liveVisibleEpisodes.filter((episode) => episode.podcastId === podcast.id && episode.state.downloaded);
+    clearPendingLibraryRemovalTimer();
+    setPendingLibraryRemoval({ podcast, wasSubscribed, downloadedEpisodes });
+    setPodcastPreferences((current) => upsertPodcastPreference(current, podcast.id, { inLibrary: false, wasSubscribedBeforeLibraryRemoval: wasSubscribed }));
+    setFeeds((current) => current.filter((feed) => feed.id !== podcast.id));
+    setStatus(`Removed ${podcast.title} from Library. Undo within 30s.`);
+    await removePodcastFromLibrary(podcast.id, wasSubscribed);
+    pendingLibraryRemovalTimerRef.current = window.setTimeout(() => {
+      void finalizePodcastLibraryRemoval(podcast.id, downloadedEpisodes);
+    }, 30_000);
+  }
+
+  function undoPendingLibraryRemoval() {
+    const pending = pendingLibraryRemoval;
+    if (!pending) return;
+    clearPendingLibraryRemovalTimer();
+    setPendingLibraryRemoval(null);
+    setPodcastPreferences((current) => upsertPodcastPreference(current, pending.podcast.id, { inLibrary: true, wasSubscribedBeforeLibraryRemoval: false }));
+    if (pending.wasSubscribed) {
+      setFeeds((current) => current.some((feed) => feed.id === pending.podcast.id) ? current : [...current, toPodcastView(pending.podcast)]);
+    }
+    setStatus(`Restored ${pending.podcast.title}.`);
+    void addPodcastToLibrary(pending.podcast.id).then(refreshLocalState);
+  }
+
+  async function finalizePodcastLibraryRemoval(podcastId: string, downloadedEpisodes: EpisodeWithState[]) {
+    clearPendingLibraryRemovalTimer();
+    setPendingLibraryRemoval((pending) => pending?.podcast.id === podcastId ? null : pending);
+    setEpisodes((current) => current.map((episode) => episode.podcastId === podcastId ? withoutLibraryRemovalState(episode) : episode));
+    setCachedEpisodes((current) => current.map((episode) => episode.podcastId === podcastId ? withoutLibraryRemovalState(episode) : episode));
+    await Promise.all(downloadedEpisodes.map((episode) => deleteEpisodeFromCache(episode).catch(() => undefined)));
+    await purgePodcastFromLibrary(podcastId);
+    await refreshLocalState();
+  }
+
+  function clearPendingLibraryRemovalTimer() {
+    if (pendingLibraryRemovalTimerRef.current !== null) {
+      window.clearTimeout(pendingLibraryRemovalTimerRef.current);
+      pendingLibraryRemovalTimerRef.current = null;
+    }
   }
 
   async function handleSavePodcastPreference(preference: PodcastPreference) {
@@ -1216,12 +1383,17 @@ export default function App() {
       return (
         <PodcastDetailPage
           podcast={selectedPodcast}
+          inLibrary={visibleFeeds.some((feed) => feed.id === selectedPodcast.id) || selectedPodcastPreference.inLibrary !== false}
           subscribed={visibleFeeds.some((feed) => feed.id === selectedPodcast.id)}
+          pendingLibraryRemoval={pendingLibraryRemoval?.podcast.id === selectedPodcast.id}
           episodes={selectedPodcastEpisodes}
           preference={selectedPodcastPreference}
           smartSkipDefaults={runtimeSettings}
           onSubscribe={() => void handleSubscribePodcast(selectedPodcast.id)}
           onUnsubscribe={() => void handleUnsubscribePodcast(selectedPodcast.id)}
+          onAddToLibrary={() => void handleAddPodcastToLibrary(selectedPodcast.id)}
+          onRemoveFromLibrary={() => void handleRemovePodcastFromLibrary(selectedPodcast)}
+          onUndoRemoveFromLibrary={undoPendingLibraryRemoval}
           onRefresh={() => void handleRefreshSelectedPodcast()}
           onPreferenceChange={(preference) => void handleSavePodcastPreference(preference)}
           onSendAllUnplayedToInbox={() => void handleSendAllUnplayedSelectedToInbox()}
@@ -1235,11 +1407,11 @@ export default function App() {
 
     switch (active) {
       case 'inbox':
-        return <InboxPage episodes={inboxEpisodes} onRefreshFeeds={handleRefreshFeeds} getPodcastImageUrl={getPodcastImageUrl} episodeBadgesById={episodeBadgesById} handlers={handlers} />;
+        return <InboxPage episodes={inboxEpisodes} onRefreshFeeds={() => void handleRefreshFeeds({ manual: true })} getPodcastImageUrl={getPodcastImageUrl} episodeBadgesById={episodeBadgesById} handlers={handlers} />;
       case 'queue':
         return <QueuePage episodes={queueEpisodes} onPlay={handlePlay} onMove={handleMoveQueue} onQueueTop={handleQueueTop} onQueueEnd={handleQueueEnd} onSendInbox={handleSendInbox} onRemove={handleRemoveQueue} onTogglePlayed={handleTogglePlayed} />;
       case 'library':
-        return <LibraryPage podcasts={libraryPodcasts} subscribedFeeds={visibleFeeds} episodes={liveVisibleEpisodes} onOpenPodcast={navigatePodcast} />;
+        return <LibraryPage podcasts={libraryPodcasts} subscribedFeeds={visibleFeeds} episodes={liveVisibleEpisodes} onRefreshFeeds={() => void handleRefreshFeeds({ manual: true })} onOpenPodcast={navigatePodcast} />;
       case 'search':
         return (
           <SearchPage
@@ -1289,10 +1461,6 @@ export default function App() {
     }
   })();
 
-  const currentSkipSilence = canUseServerSilence && audio.current
-    ? episodeSilenceOverrides[audio.current.id] ?? (settings ? isSmartSkipSilenceEnabled(audio.current, settings, podcastPreferences) : false)
-    : false;
-
   return (
     <>
       <AppShell
@@ -1306,6 +1474,7 @@ export default function App() {
         onBack={navigateBack}
         offline={offlineMode}
         onReconnect={() => void handleReconnect()}
+        inboxCount={inboxEpisodes.length}
         player={
           settings && (
             <PlayerBar
@@ -1315,16 +1484,8 @@ export default function App() {
               currentTime={audio.currentTime}
               duration={audio.duration}
               settings={settings}
-              currentSkipSilence={currentSkipSilence}
-              canUseSilenceShortening={Boolean(canUseServerSilence && audio.current && settings && isSmartSkipSilenceEnabled(audio.current, settings, podcastPreferences))}
-              smartSkipNotice={audio.smartSkipNotice}
               collapseToken={playerCollapseToken}
-              onCurrentSkipSilenceChange={(enabled) => {
-                if (!audio.current) return;
-                setEpisodeSilenceOverrides((overrides) => ({ ...overrides, [audio.current!.id]: enabled }));
-              }}
               onToggle={() => void audio.toggle()}
-              onUndoSmartSkip={audio.undoSmartSkip}
               onSeek={audio.seek}
               onSettingsChange={(next) => void persistSettings(next)}
               onStopForSleep={audio.stop}
@@ -1351,7 +1512,17 @@ export default function App() {
       >
         {page}
       </AppShell>
-      {status ? <StatusToast message={status} onDismiss={() => setStatus('')} /> : null}
+      {status ? (
+        <StatusToast
+          message={status}
+          onDismiss={() => {
+            setStatus('');
+            setStatusDurationMs(3200);
+            setStatusAction(null);
+          }}
+          onUndo={pendingLibraryRemoval ? undoPendingLibraryRemoval : statusAction || undefined}
+        />
+      ) : null}
       <audio ref={audio.audioRef} preload="metadata" onEnded={() => void handleEnded()} onTimeUpdate={() => void handleTimeUpdate()}>
         <track kind="captions" />
       </audio>
@@ -1405,11 +1576,16 @@ function sortOldest(a: EpisodeWithState, b: EpisodeWithState) {
   return new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime();
 }
 
-function StatusToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+function StatusToast({ message, onDismiss, onUndo }: { message: string; onDismiss: () => void; onUndo?: () => void }) {
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-[10rem] z-[60] flex justify-center px-4 md:bottom-[7rem]" aria-live="polite" aria-atomic="true">
       <div role="status" className="pointer-events-auto flex max-w-md items-center gap-3 rounded-eh border border-yellow/30 bg-canvas/95 px-4 py-3 text-sm font-bold text-yellow shadow-xl shadow-black/40">
         <span className="min-w-0 flex-1">{message}</span>
+        {onUndo ? (
+          <button type="button" onClick={onUndo} className="grid h-8 w-8 place-items-center rounded text-cream transition hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow" aria-label="Undo notification action">
+            <FaUndo size={14} aria-hidden />
+          </button>
+        ) : null}
         <button type="button" onClick={onDismiss} className="rounded px-2 py-1 text-xs text-bone transition hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow" aria-label="Dismiss notification">
           Dismiss
         </button>
@@ -1442,11 +1618,67 @@ function overlayLiveProgress(episodes: EpisodeWithState[], current: EpisodeWithS
 function defaultPodcastPreference(podcastId: string): PodcastPreference {
   return {
     podcastId,
+    inLibrary: false,
+    wasSubscribedBeforeLibraryRemoval: false,
     skipIntroSec: 0,
     skipOutroSec: 0,
     sortDirection: 'newest',
     addNewEpisodesToInbox: true,
     updatedAt: nowIso()
+  };
+}
+
+function upsertPodcastPreference(preferences: PodcastPreference[], podcastId: string, patch: Partial<PodcastPreference>): PodcastPreference[] {
+  const existing = preferences.find((preference) => preference.podcastId === podcastId) || defaultPodcastPreference(podcastId);
+  const next = { ...existing, ...patch, updatedAt: nowIso() };
+  return [...preferences.filter((preference) => preference.podcastId !== podcastId), next];
+}
+
+function toPodcastView(podcast: CachedPodcast): Podcast {
+  return {
+    id: podcast.id,
+    title: podcast.title,
+    author: podcast.author,
+    description: podcast.description,
+    imageUrl: podcast.imageUrl,
+    feedUrl: podcast.feedUrl,
+    websiteUrl: podcast.websiteUrl,
+    tags: podcast.tags || podcast.categories || [],
+    sourceType: podcast.sourceType,
+    sourceUrl: podcast.sourceUrl,
+    externalId: podcast.externalId,
+    lastRefreshedAt: podcast.lastRefreshedAt,
+    createdAt: podcast.createdAt,
+    updatedAt: podcast.updatedAt
+  };
+}
+
+function toCachedPodcastView(podcast: Podcast): CachedPodcast {
+  return {
+    ...podcast,
+    cachedAt: podcast.updatedAt,
+    cacheExpiresAt: undefined,
+    podcastIndexId: undefined,
+    categories: podcast.tags || []
+  };
+}
+
+function withoutLibraryRemovalState(episode: EpisodeWithState): EpisodeWithState {
+  return {
+    ...episode,
+    state: {
+      ...episode.state,
+      inboxState: 'archived',
+      inboxPosition: undefined,
+      queuedAt: undefined,
+      queuePosition: undefined,
+      downloaded: false,
+      downloadedAt: undefined,
+      downloadPath: undefined,
+      downloadBytes: undefined,
+      downloadBackend: undefined,
+      downloadSource: undefined
+    }
   };
 }
 

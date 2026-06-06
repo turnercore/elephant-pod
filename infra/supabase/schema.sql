@@ -102,6 +102,8 @@ create table if not exists public.podcast_preferences (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   podcast_local_id text not null,
+  in_library boolean not null default false,
+  was_subscribed_before_library_removal boolean not null default false,
   playback_rate numeric,
   skip_forward_sec integer,
   skip_back_sec integer,
@@ -122,6 +124,8 @@ create table if not exists public.podcast_preferences (
 
 alter table public.podcast_preferences add column if not exists skip_intro_sec integer not null default 0;
 alter table public.podcast_preferences add column if not exists skip_outro_sec integer not null default 0;
+alter table public.podcast_preferences add column if not exists in_library boolean not null default false;
+alter table public.podcast_preferences add column if not exists was_subscribed_before_library_removal boolean not null default false;
 
 create table if not exists public.user_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,

@@ -158,8 +158,8 @@ function ActionRail({ side, actions, visible, onDone }: { side: 'left' | 'right'
           aria-label={action.label}
           title={action.label}
           onClick={() => {
-            action.onAction();
             onDone();
+            window.requestAnimationFrame(action.onAction);
           }}
           className={cn(
             'grid min-w-[4.25rem] place-items-center rounded-eh border px-3 text-xs font-black text-cream transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow',

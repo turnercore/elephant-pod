@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { deriveLibraryPodcasts } from './libraryModel';
-import type { CachedPodcast, EpisodeWithState, Podcast } from '@/types/domain';
+import type { CachedPodcast, EpisodeWithState, Podcast, PodcastPreference } from '@/types/domain';
 
 describe('deriveLibraryPodcasts', () => {
   it('keeps subscribed feed-only podcasts in the library', () => {
@@ -11,7 +11,7 @@ describe('deriveLibraryPodcasts', () => {
     assert.equal(library[0]?.title, 'Subscribed Show');
   });
 
-  it('keeps podcasts represented only by downloaded, queued, or inbox episodes in the library', () => {
+  it('keeps explicit library podcasts represented only by local episode metadata in the library', () => {
     const library = deriveLibraryPodcasts([], [], [
       episodeFixture({
         id: 'episode-1',
@@ -19,7 +19,7 @@ describe('deriveLibraryPodcasts', () => {
         podcastTitle: 'Episode Only Show',
         imageUrl: 'https://example.com/show.jpg'
       })
-    ]);
+    ], [podcastPreferenceFixture('episode-only')]);
 
     assert.equal(library[0]?.id, 'episode-only');
     assert.equal(library[0]?.imageUrl, 'https://example.com/show.jpg');
@@ -29,7 +29,7 @@ describe('deriveLibraryPodcasts', () => {
     const cached = cachedPodcastFixture({ id: 'show', title: 'Cached Title', imageUrl: 'https://example.com/cached.jpg' });
     const library = deriveLibraryPodcasts([cached], [], [
       episodeFixture({ id: 'episode-1', podcastId: 'show', podcastTitle: 'Fallback Title', imageUrl: 'https://example.com/fallback.jpg' })
-    ]);
+    ], [podcastPreferenceFixture('show')]);
 
     assert.equal(library[0]?.title, 'Cached Title');
     assert.equal(library[0]?.imageUrl, 'https://example.com/cached.jpg');
@@ -46,6 +46,16 @@ function podcastFixture(overrides: Partial<Podcast> = {}): Podcast {
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides
+  };
+}
+
+function podcastPreferenceFixture(podcastId: string): PodcastPreference {
+  return {
+    podcastId,
+    inLibrary: true,
+    sortDirection: 'newest',
+    addNewEpisodesToInbox: true,
+    updatedAt: '2026-06-03T00:00:00.000Z'
   };
 }
 

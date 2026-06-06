@@ -1,4 +1,9 @@
-import { LuArchive as Archive, LuCircleUser as UserCircle, LuClock3 as Clock3, LuDownload as Download, LuGithub as Github, LuInbox as Inbox, LuLogOut as LogOut, LuPanelLeftClose as PanelLeftClose, LuPanelLeftOpen as PanelLeftOpen, LuSearch as Search, LuSettings as Settings } from 'react-icons/lu';
+import { LuGithub as Github, LuLogOut as LogOut, LuPanelLeftClose as PanelLeftClose, LuPanelLeftOpen as PanelLeftOpen } from 'react-icons/lu';
+import { IoFileTrayFullOutline, IoFileTrayOutline, IoLibraryOutline } from 'react-icons/io5';
+import { MdOutlineDownloadForOffline } from 'react-icons/md';
+import { PiGearFine as Settings } from 'react-icons/pi';
+import { FaHistory, FaSearch as Search, FaUser, FaUserSlash } from 'react-icons/fa';
+import type { IconType } from 'react-icons';
 import { useId, useState } from 'react';
 import type { SectionKey } from '@/types/domain';
 import type { ServerSession } from '@/lib/sync/serverAuth';
@@ -9,15 +14,15 @@ import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { BrandMark } from './BrandMark';
 
-const items: Array<{ key: SectionKey; label: string; icon: typeof Inbox }> = [
-  { key: 'inbox', label: 'Inbox', icon: Inbox },
+const items: Array<{ key: SectionKey; label: string; icon: IconType }> = [
+  { key: 'inbox', label: 'Inbox', icon: IoFileTrayOutline },
   { key: 'search', label: 'Search', icon: Search },
-  { key: 'library', label: 'Library', icon: Archive }
+  { key: 'library', label: 'Library', icon: IoLibraryOutline }
 ];
 
-const footerItems: Array<{ key: SectionKey; label: string; icon: typeof Inbox }> = [
-  { key: 'history', label: 'History', icon: Clock3 },
-  { key: 'downloads', label: 'Downloads', icon: Download },
+const footerItems: Array<{ key: SectionKey; label: string; icon: IconType }> = [
+  { key: 'history', label: 'History', icon: FaHistory },
+  { key: 'downloads', label: 'Downloads', icon: MdOutlineDownloadForOffline },
   { key: 'settings', label: 'Settings', icon: Settings }
 ];
 
@@ -27,7 +32,8 @@ export function NavigationRail({
   serverUrl,
   serverSession,
   onSignIn,
-  onSignOut
+  onSignOut,
+  inboxCount = 0
 }: {
   active: SectionKey;
   onSelect: (key: SectionKey) => void;
@@ -35,6 +41,7 @@ export function NavigationRail({
   serverSession: ServerSession | null;
   onSignIn: () => void;
   onSignOut: () => void;
+  inboxCount?: number;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -44,7 +51,10 @@ export function NavigationRail({
   const sessionExpired = isServerSessionExpired(serverSession);
   const hasSession = Boolean(serverSession && !sessionExpired);
   const hostedWebRuntime = isHostedWebRuntime();
-  const profileLabel = hasSession ? (serverSession?.username || serverSession?.email || 'Signed in') : hostedWebRuntime ? 'Sign in' : 'Local';
+  const profileName = hasSession ? (serverSession?.username || serverSession?.email || '') : '';
+  const profileLabel = hasSession ? (profileName || 'Signed in') : hostedWebRuntime ? 'Sign in' : 'Local';
+  const profileStatusText = hasSession ? (profileName ? `Signed in as ${profileName}.` : 'Signed in.') : '';
+  const ProfileIcon = hasSession ? FaUser : FaUserSlash;
 
   return (
     <aside
@@ -71,7 +81,7 @@ export function NavigationRail({
       </div>
       <nav className="eh-sidebar-primary mt-3 grid gap-2" aria-label="Primary">
         {items.map((item) => {
-          const Icon = item.icon;
+          const Icon = item.key === 'inbox' && inboxCount > 0 ? IoFileTrayFullOutline : item.icon;
           const activeItem = active === item.key;
           return (
             <button
@@ -86,7 +96,9 @@ export function NavigationRail({
                 activeItem && 'border-yellow/40 bg-surface/90 text-yellow hover:text-yellow'
               )}
             >
-              <Icon size={20} aria-hidden />
+              <span className="grid h-6 w-6 place-items-center" aria-hidden>
+                <Icon size={item.key === 'history' ? '1.15rem' : '1.35rem'} />
+              </span>
               <span className={cn('eh-sidebar-primary-label hidden md:inline', collapsed && 'md:hidden')}>{item.label}</span>
             </button>
           );
@@ -112,7 +124,9 @@ export function NavigationRail({
                   )}
                   data-tooltip={item.label}
                 >
-                  <Icon size={18} aria-hidden />
+                  <span className="grid h-5 w-5 place-items-center" aria-hidden>
+                    <Icon size="1.2rem" />
+                  </span>
                   <span className={cn('eh-sidebar-secondary-label truncate', collapsed && 'md:hidden')}>{item.label}</span>
                 </button>
               );
@@ -142,7 +156,7 @@ export function NavigationRail({
               )}
               aria-hidden
             >
-              <UserCircle size={17} aria-hidden />
+              <ProfileIcon size={17} aria-hidden />
             </span>
             <span className={cn('min-w-0 flex-1 break-words text-[11px] font-black uppercase leading-tight tracking-[0.04em] text-cream', collapsed && 'hidden')}>{profileLabel}</span>
           </button>
@@ -157,7 +171,7 @@ export function NavigationRail({
             >
               {hasSession ? (
                 <>
-                  <p className="text-xs leading-5 text-bone">Signed in as {profileLabel}.</p>
+                  <p className="text-xs leading-5 text-bone">{profileStatusText}</p>
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -198,7 +212,9 @@ export function NavigationRail({
             const Icon = item.icon;
             return (
               <IconButton key={item.key} label={item.label} active={active === item.key} onClick={() => onSelect(item.key)}>
-                <Icon size={18} aria-hidden />
+                <span className="grid h-5 w-5 place-items-center" aria-hidden>
+                  <Icon size="1.2rem" />
+                </span>
               </IconButton>
             );
           })}
@@ -207,13 +223,13 @@ export function NavigationRail({
             active={profileOpen}
             onClick={() => setProfileOpen((open) => !open)}
           >
-            <UserCircle size={18} aria-hidden />
+            {(hasSession ? <FaUser size={18} aria-hidden /> : <FaUserSlash size={18} aria-hidden />)}
           </IconButton>
           {profileOpen && (
             <div id={profileMobileMenuId} role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-[220px] rounded-eh border border-bone/15 bg-canvas/95 p-3 shadow-xl shadow-black/30">
-              <p className="text-xs leading-5 text-bone">
-                {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Local only. Sign in to unlock sync and search.' : 'Local only. Add a server URL in Settings to sign in.'}
-              </p>
+                  <p className="text-xs leading-5 text-bone">
+                    {hasSession ? profileStatusText : hasServer ? 'Local only. Sign in to unlock sync and search.' : 'Local only. Add a server URL in Settings to sign in.'}
+                  </p>
               <div className="mt-3 grid gap-2">
                 {hasSession ? (
                   <Button
@@ -257,7 +273,8 @@ export function MobileNavigationRail({
   serverUrl,
   serverSession,
   onSignIn,
-  onSignOut
+  onSignOut,
+  inboxCount = 0
 }: {
   active: SectionKey;
   onSelect: (key: SectionKey) => void;
@@ -265,6 +282,7 @@ export function MobileNavigationRail({
   serverSession: ServerSession | null;
   onSignIn: () => void;
   onSignOut: () => void;
+  inboxCount?: number;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileMenuId = useId();
@@ -272,8 +290,11 @@ export function MobileNavigationRail({
   const sessionExpired = isServerSessionExpired(serverSession);
   const hasSession = Boolean(serverSession && !sessionExpired);
   const hostedWebRuntime = isHostedWebRuntime();
-  const profileLabel = hasSession ? (serverSession?.username || serverSession?.email || 'Signed in') : hostedWebRuntime ? 'Sign in' : 'Local';
+  const profileName = hasSession ? (serverSession?.username || serverSession?.email || '') : '';
+  const profileLabel = hasSession ? (profileName || 'Signed in') : hostedWebRuntime ? 'Sign in' : 'Local';
+  const profileStatusText = hasSession ? (profileName ? `Signed in as ${profileName}.` : 'Signed in.') : '';
   const mobileItems = [...items, ...footerItems];
+  const ProfileIcon = hasSession ? FaUser : FaUserSlash;
 
   return (
     <header
@@ -282,7 +303,7 @@ export function MobileNavigationRail({
     >
       <nav className="scrollbar-soft flex min-w-0 flex-1 gap-2 overflow-x-auto" aria-label="Mobile sections">
         {mobileItems.map((item) => {
-          const Icon = item.icon;
+          const Icon = item.key === 'inbox' && inboxCount > 0 ? IoFileTrayFullOutline : item.icon;
           const activeItem = active === item.key;
           return (
             <button
@@ -300,7 +321,9 @@ export function MobileNavigationRail({
               )}
               data-tooltip={item.label}
             >
-              <Icon size={20} aria-hidden />
+              <span className="grid h-6 w-6 place-items-center" aria-hidden>
+                <Icon size={item.key === 'history' ? '1.15rem' : item.key === 'downloads' ? '1.45rem' : '1.35rem'} />
+              </span>
             </button>
           );
         })}
@@ -319,12 +342,14 @@ export function MobileNavigationRail({
         )}
         data-tooltip={profileLabel}
       >
-        <UserCircle size={20} aria-hidden />
+        <span className="grid h-6 w-6 place-items-center" aria-hidden>
+          <ProfileIcon size="1.25rem" />
+        </span>
       </button>
       {profileOpen ? (
         <div id={profileMenuId} role="menu" className="absolute right-2 top-full z-30 mt-2 w-[240px] rounded-eh border border-bone/15 bg-canvas/95 p-3 shadow-xl shadow-black/40">
           <p className="text-xs leading-5 text-bone">
-            {hasSession ? `Signed in as ${profileLabel}.` : hasServer ? 'Local only. Sign in to unlock sync and search.' : hostedWebRuntime ? 'Local only. Server sign-in is unavailable.' : 'Local only. Add a server URL in Settings to sign in.'}
+            {hasSession ? profileStatusText : hasServer ? 'Local only. Sign in to unlock sync and search.' : hostedWebRuntime ? 'Local only. Server sign-in is unavailable.' : 'Local only. Add a server URL in Settings to sign in.'}
           </p>
           <div className="mt-3 grid gap-2">
             {hasSession ? (

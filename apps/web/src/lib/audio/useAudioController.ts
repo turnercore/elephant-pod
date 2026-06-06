@@ -51,6 +51,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
   const isPlayingRef = useRef(false);
   const [currentTime, setCurrentTime] = useState(0);
   const currentTimeRef = useRef(0);
+  const lastSmartSkipPositionRef = useRef<number | null>(null);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(1);
   const [silenceSupported, setSilenceSupported] = useState(false);
@@ -200,6 +201,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       smartSkipMapRef.current = null;
       lastSilenceSkipRef.current = null;
       lastSmartSkipRef.current = null;
+      lastSmartSkipPositionRef.current = startSec;
       setSmartSkipNotice(null);
       suppressedSmartSkipIdsRef.current = new Set();
       pausedAtRef.current = null;
@@ -367,7 +369,8 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         if (!status) return;
         const positionSec = status.positionSec || 0;
         const durationSec = status.durationSec || currentRef.current?.durationSec || 0;
-        const smartSkipped = maybeSkipSmartSegment(positionSec, durationSec, (target, event) => {
+        const previousPositionSec = lastSmartSkipPositionRef.current ?? positionSec;
+        const smartSkipped = maybeSkipSmartSegment(positionSec, previousPositionSec, durationSec, (target, event) => {
           lastSmartSkipRef.current = event;
           setSmartSkipNotice(event);
           seek(target);
@@ -381,6 +384,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         if (skipped) return;
         setCurrentTime(positionSec);
         currentTimeRef.current = positionSec;
+        lastSmartSkipPositionRef.current = positionSec;
         setDuration(durationSec);
         setIsPlaying(status.playing);
         publishNativeNowPlaying(currentRef.current, positionSec, status.playing, status.playbackRate || effectiveSettings().playbackRate, durationSec);
@@ -412,7 +416,8 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
       if (nativeActiveRef.current) return;
       setCurrentTime(audio.currentTime);
       const durationSec = Number.isFinite(audio.duration) ? audio.duration : currentRef.current?.durationSec || 0;
-      const smartSkipped = maybeSkipSmartSegment(audio.currentTime, durationSec, (target, event) => {
+      const previousPositionSec = lastSmartSkipPositionRef.current ?? audio.currentTime;
+      const smartSkipped = maybeSkipSmartSegment(audio.currentTime, previousPositionSec, durationSec, (target, event) => {
         lastSmartSkipRef.current = event;
         setSmartSkipNotice(event);
         seek(target);
@@ -448,6 +453,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
         playbackRate: audio.playbackRate
       });
       publishNativeNowPlaying(currentRef.current, audio.currentTime, !audio.paused, audio.playbackRate || resolved.playbackRate, durationSec);
+      lastSmartSkipPositionRef.current = audio.currentTime;
     };
     const onDuration = () => {
       if (!nativeActiveRef.current) setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
@@ -521,6 +527,7 @@ export function useAudioController(settings: AppSettings, podcastPreferences: Po
 
 function maybeSkipSmartSegment(
   positionSec: number,
+  previousPositionSec: number,
   durationSec: number,
   seekTo: (targetSec: number, event: SmartSkipEvent) => void,
   episode: EpisodeWithState | null,
@@ -531,6 +538,7 @@ function maybeSkipSmartSegment(
 ): boolean {
   if (!episode || map?.status !== 'ready') return false;
   const preference = podcastPreferences.find((item) => item.podcastId === episode.podcastId);
+  const previousMs = Math.round(previousPositionSec * 1000);
   const target = findAutoSkipTarget({
     currentTimeSec: positionSec,
     durationSec,
@@ -539,6 +547,10 @@ function maybeSkipSmartSegment(
     suppressedSegmentIds: suppressedRef.current
   });
   if (!target) return false;
+  if (previousMs > target.segment.startMs && previousMs >= Math.round(positionSec * 1000)) {
+    suppressedRef.current.add(target.segment.id);
+    return false;
+  }
   const event = { segment: target.segment, seekToSec: target.seekToSec, episodeId: episode.id };
   seekTo(target.seekToSec, event);
   return true;

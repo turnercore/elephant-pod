@@ -126,6 +126,8 @@ const syncActionSchema = z.object({
 
 const syncPodcastPreferenceSchema = z.object({
   podcastId: z.string().min(1),
+  inLibrary: z.boolean().optional(),
+  wasSubscribedBeforeLibraryRemoval: z.boolean().optional(),
   playbackRate: z.number().min(0.5).max(3.5).optional(),
   skipForwardSec: z.number().int().nonnegative().optional(),
   skipBackSec: z.number().int().nonnegative().optional(),
@@ -256,6 +258,8 @@ type RemoteState = {
 
 type RemotePodcastPreference = {
   podcast_local_id: string;
+  in_library: boolean | null;
+  was_subscribed_before_library_removal: boolean | null;
   playback_rate: number | null;
   skip_forward_sec: number | null;
   skip_back_sec: number | null;
@@ -687,6 +691,8 @@ function toRemotePodcastPreference(userId: string, preference: SyncPodcastPrefer
   return {
     user_id: userId,
     podcast_local_id: preference.podcastId,
+    in_library: preference.inLibrary ?? true,
+    was_subscribed_before_library_removal: preference.wasSubscribedBeforeLibraryRemoval ?? false,
     playback_rate: preference.playbackRate,
     skip_forward_sec: preference.skipForwardSec,
     skip_back_sec: preference.skipBackSec,
@@ -818,6 +824,8 @@ function compareSyncActions(a: SyncAction, b: SyncAction): number {
 function fromRemotePodcastPreference(row: RemotePodcastPreference): SyncPodcastPreference {
   return {
     podcastId: row.podcast_local_id,
+    inLibrary: row.in_library ?? undefined,
+    wasSubscribedBeforeLibraryRemoval: row.was_subscribed_before_library_removal ?? undefined,
     playbackRate: row.playback_rate ?? undefined,
     skipForwardSec: row.skip_forward_sec ?? undefined,
     skipBackSec: row.skip_back_sec ?? undefined,

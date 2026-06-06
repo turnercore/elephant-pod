@@ -1,7 +1,11 @@
 import { LuArrowDownWideNarrow as ArrowDownWideNarrow, LuArrowUpWideNarrow as ArrowUpWideNarrow, LuCheck as Check, LuCheckCheck as CheckCheck, LuInbox as Inbox, LuRefreshCw as RefreshCw, LuRotateCcw as RotateCcw, LuSettings2 as Settings2, LuX as X } from 'react-icons/lu';
+import { IoLibraryOutline } from 'react-icons/io5';
+import { MdOutlineRssFeed } from 'react-icons/md';
+import { TbLibraryMinus, TbLibraryPlus } from 'react-icons/tb';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import type { AppSettings, CachedPodcast, EpisodeWithState, PodcastPreference } from '@/types/domain';
 import { EpisodeList } from '@/components/Episodes/EpisodeList';
+import { PullToRefresh } from '@/components/Gestures/PullToRefresh';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
@@ -14,12 +18,17 @@ type EpisodeHandlers = Omit<React.ComponentProps<typeof EpisodeList>, 'episodes'
 
 export function PodcastDetailPage({
   podcast,
+  inLibrary,
   subscribed,
+  pendingLibraryRemoval,
   episodes,
   preference,
   smartSkipDefaults,
   onSubscribe,
   onUnsubscribe,
+  onAddToLibrary,
+  onRemoveFromLibrary,
+  onUndoRemoveFromLibrary,
   onRefresh,
   onPreferenceChange,
   onSendAllUnplayedToInbox,
@@ -29,12 +38,17 @@ export function PodcastDetailPage({
   canUseSmartSkip = false
 }: {
   podcast: CachedPodcast;
+  inLibrary: boolean;
   subscribed: boolean;
+  pendingLibraryRemoval: boolean;
   episodes: EpisodeWithState[];
   preference: PodcastPreference;
   smartSkipDefaults: Pick<AppSettings, 'smartSkipEnabled' | 'smartSkipCommercials' | 'smartSkipIntros' | 'smartSkipOutros' | 'smartSkipSelfPromos' | 'smartSkipSilence' | 'smartSkipIncludeSoftMatches'>;
   onSubscribe: () => void;
   onUnsubscribe: () => void;
+  onAddToLibrary: () => void;
+  onRemoveFromLibrary: () => void;
+  onUndoRemoveFromLibrary: () => void;
   onRefresh: () => void;
   onPreferenceChange: (preference: PodcastPreference) => void;
   onSendAllUnplayedToInbox: () => void;
@@ -75,9 +89,9 @@ export function PodcastDetailPage({
       title={podcast.title}
       className="h-full"
     >
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-3 py-3 md:p-4">
-        <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
-          <div className="mx-auto w-full max-w-[22rem] lg:mx-0 lg:max-w-none">
+      <PullToRefresh onRefresh={onRefresh} className="px-3 py-3 md:p-4">
+        <div className="grid gap-5 lg:grid-cols-[minmax(12rem,18rem)_1fr]">
+          <div className="mx-auto w-full max-w-[18rem] lg:mx-0">
             {podcast.imageUrl ? (
               <img src={podcast.imageUrl} alt={`${podcast.title} artwork`} className="aspect-square w-full rounded-eh border border-bone/15 object-cover shadow-lg shadow-black/30" />
             ) : (
@@ -86,8 +100,9 @@ export function PodcastDetailPage({
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap gap-2">
-              <Badge tone="mauve">In library</Badge>
-              <Badge tone={subscribed ? 'yellow' : 'sage'}>{subscribed ? 'Subscribed' : 'Not subscribed'}</Badge>
+              {inLibrary ? <Badge tone="mauve" className="gap-1.5"><IoLibraryOutline size={13} aria-hidden /> In library</Badge> : null}
+              <Badge tone={subscribed ? 'yellow' : 'sage'} className="gap-1.5"><MdOutlineRssFeed size={13} aria-hidden /> {subscribed ? 'Subscribed' : 'Not subscribed'}</Badge>
+              {pendingLibraryRemoval ? <Badge tone="yellow">Undo available</Badge> : null}
               <Badge tone="teal">{episodes.length} episodes</Badge>
               <Badge tone="sage">{unplayedCount} unplayed</Badge>
               {podcast.cachedAt ? <Badge tone="mauve">Cached {formatDate(podcast.cachedAt)}</Badge> : null}
@@ -95,8 +110,13 @@ export function PodcastDetailPage({
             {podcast.author ? <p className="mt-3 text-sm font-bold text-yellow">{podcast.author}</p> : null}
             {podcast.description ? <p className="mt-3 max-w-3xl text-sm leading-6 text-bone">{stripHtml(podcast.description)}</p> : null}
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant={subscribed ? 'danger' : 'primary'} onClick={subscribed ? onUnsubscribe : onSubscribe}>
-                {subscribed ? 'Unsubscribe' : 'Subscribe'}
+              <Button variant={inLibrary ? 'danger' : 'secondary'} onClick={pendingLibraryRemoval ? onUndoRemoveFromLibrary : inLibrary ? onRemoveFromLibrary : onAddToLibrary}>
+                {inLibrary ? <TbLibraryMinus size={17} aria-hidden /> : <TbLibraryPlus size={17} aria-hidden />}
+                {pendingLibraryRemoval ? 'Undo remove' : inLibrary ? 'Remove from Library' : 'Add to Library'}
+              </Button>
+              <Button variant={subscribed ? 'primary' : 'secondary'} onClick={subscribed ? onUnsubscribe : onSubscribe}>
+                <MdOutlineRssFeed size={17} aria-hidden />
+                {subscribed ? 'Subscribed' : 'Subscribe'}
               </Button>
               <IconButton label="Refresh cache" onClick={onRefresh}>
                 <RefreshCw size={17} aria-hidden />
@@ -159,7 +179,7 @@ export function PodcastDetailPage({
                 />
               </label>
               <div className="grid gap-2 text-xs font-bold uppercase tracking-[0.05em] text-bone md:col-span-2 xl:col-span-4">
-                {subscribed ? <Switch checked={preference.addNewEpisodesToInbox} onCheckedChange={(checked) => onPreferenceChange({ ...preference, addNewEpisodesToInbox: checked })} label="New episodes to Inbox" /> : null}
+                {subscribed ? <Switch checked={preference.addNewEpisodesToInbox} onCheckedChange={(checked) => onPreferenceChange({ ...preference, addNewEpisodesToInbox: checked })} label="New RSS episodes to Inbox" /> : null}
                 {canUseSmartSkip ? (
                   <>
                     <Switch checked={podcastSmartSkipEnabled} onCheckedChange={(checked) => onPreferenceChange({ ...preference, smartSkipEnabled: checked })} label="Smart Skip for this podcast" />
@@ -228,7 +248,7 @@ export function PodcastDetailPage({
             </div>
           ) : null}
         </div>
-      </div>
+      </PullToRefresh>
     </Panel>
   );
 }

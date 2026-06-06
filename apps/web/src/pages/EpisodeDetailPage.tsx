@@ -44,8 +44,8 @@ export function EpisodeDetailPage({
       className="h-full"
     >
       <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-0 py-3 md:p-4">
-        <div className="grid gap-5 lg:grid-cols-[180px_1fr]">
-          <div className="relative">
+        <div className="grid gap-5 lg:grid-cols-[minmax(12rem,18rem)_1fr]">
+          <div className="relative mx-auto w-full max-w-[18rem] lg:mx-0">
             {artworkUrl ? (
               <img src={artworkUrl} alt="" className="aspect-square w-full rounded-eh border border-bone/15 object-cover shadow-lg shadow-black/30" />
             ) : (

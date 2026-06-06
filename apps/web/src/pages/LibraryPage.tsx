@@ -1,7 +1,10 @@
 import { LuPodcast as PodcastIcon, LuSearch as Search } from 'react-icons/lu';
+import { IoLibraryOutline } from 'react-icons/io5';
+import { MdOutlineRssFeed } from 'react-icons/md';
 import { useMemo, useState } from 'react';
 import type { CachedPodcast, EpisodeWithState, Podcast } from '@/types/domain';
 import { EmptyState } from '@/components/EmptyState';
+import { PullToRefresh } from '@/components/Gestures/PullToRefresh';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { Panel } from '@/components/ui/Panel';
@@ -11,11 +14,13 @@ export function LibraryPage({
   podcasts,
   subscribedFeeds,
   episodes,
+  onRefreshFeeds,
   onOpenPodcast
 }: {
   podcasts: CachedPodcast[];
   subscribedFeeds: Podcast[];
   episodes: EpisodeWithState[];
+  onRefreshFeeds: () => void;
   onOpenPodcast: (podcastId: string) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -51,7 +56,7 @@ export function LibraryPage({
           />
         </div>
       </div>
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-auto px-3 py-3 sm:px-4 md:p-4">
+      <PullToRefresh onRefresh={onRefreshFeeds} className="px-3 py-3 sm:px-4 md:p-4">
         {sorted.length ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-5">
             {sorted.map((podcast) => (
@@ -70,7 +75,7 @@ export function LibraryPage({
             {query.trim() ? 'No library podcasts match this filter.' : 'Subscribe, download, queue, or inbox an episode to keep a podcast here.'}
           </EmptyState>
         )}
-      </div>
+      </PullToRefresh>
     </Panel>
   );
 }
@@ -110,6 +115,16 @@ function PodcastCard({ podcast, episodeCount, unplayedCount, subscribed, onClick
             {unplayedCount}
           </span>
         ) : null}
+        <span className="absolute left-2 top-2 flex gap-1">
+          <span className="grid h-7 w-7 place-items-center rounded-full border border-bone/20 bg-canvas/85 text-cream shadow-lg shadow-black/35" aria-label="In library">
+            <IoLibraryOutline size={15} aria-hidden />
+          </span>
+          {subscribed ? (
+            <span className="grid h-7 w-7 place-items-center rounded-full border border-yellow/40 bg-canvas/90 text-yellow shadow-lg shadow-black/35" aria-label="Subscribed">
+              <MdOutlineRssFeed size={15} aria-hidden />
+            </span>
+          ) : null}
+        </span>
       </div>
       <div className="mt-3 min-w-0">
         <h3 className="truncate text-sm font-black text-cream group-hover:text-yellow">{podcast.title}</h3>

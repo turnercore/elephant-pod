@@ -20,6 +20,7 @@ export const priorityByReason: Record<NonNullable<SmartSkipProcessRequest['prior
 
 let queueStarted = false;
 const recentJobTimings = new Map<string, Record<string, unknown>>();
+const FAST_BATCH_CHECK_INTERVAL_MS = 30_000;
 
 export async function createOrGetSmartSkipJob(raw: unknown, config: SmartSkipConfig): Promise<{ job: SmartSkipJob; segmentMap: Awaited<ReturnType<typeof getLatestSegmentMap>> }> {
   const request = processRequestSchema.parse(raw);
@@ -229,7 +230,7 @@ function externalTaskFromBatchResponse(jobId: string, response: Awaited<ReturnTy
   const now = new Date().toISOString();
   const nextCheckAt = response.status === 'completed' || isTerminalBatchStatus(response.status)
     ? undefined
-    : new Date(Date.now() + config.segmenterBatchCheckIntervalMinutes * 60_000).toISOString();
+    : nextBatchCheckAt(config, existing);
   return {
     id: existing?.id || `ssk_ext_${hash(`${jobId}|segmenter_batch`)}`,
     jobId,
@@ -248,6 +249,14 @@ function externalTaskFromBatchResponse(jobId: string, response: Awaited<ReturnTy
     createdAt: existing?.createdAt || now,
     updatedAt: now
   };
+}
+
+function nextBatchCheckAt(config: SmartSkipConfig, existing?: SmartSkipExternalTask): string {
+  const submittedAt = existing?.submittedAt ? new Date(existing.submittedAt).getTime() : Date.now();
+  const fastWindowMs = config.segmenterBatchCheckIntervalMinutes * 60_000;
+  const elapsedMs = Math.max(0, Date.now() - submittedAt);
+  const nextDelayMs = elapsedMs < fastWindowMs ? FAST_BATCH_CHECK_INTERVAL_MS : fastWindowMs;
+  return new Date(Date.now() + nextDelayMs).toISOString();
 }
 
 function isTerminalExternalTask(task: SmartSkipExternalTask): boolean {

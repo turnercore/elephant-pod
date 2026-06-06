@@ -17,7 +17,8 @@ export function AppShell({
   canGoBack,
   onBack,
   offline,
-  onReconnect
+  onReconnect,
+  inboxCount = 0
 }: PropsWithChildren<{
   active: SectionKey;
   onSelect: (key: SectionKey) => void;
@@ -30,12 +31,13 @@ export function AppShell({
   onBack?: () => void;
   offline?: boolean;
   onReconnect?: () => void;
+  inboxCount?: number;
 }>) {
   return (
     <BackNavigationProvider value={{ canGoBack: Boolean(canGoBack), onBack }}>
       <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-full flex-col overflow-hidden md:grid md:grid-cols-[auto_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)_auto]">
-        <MobileNavigationRail active={active} onSelect={onSelect} serverUrl={serverUrl} serverSession={serverSession} onSignIn={onSignIn} onSignOut={onSignOut} />
-        <NavigationRail active={active} onSelect={onSelect} serverUrl={serverUrl} serverSession={serverSession} onSignIn={onSignIn} onSignOut={onSignOut} />
+        <MobileNavigationRail active={active} onSelect={onSelect} serverUrl={serverUrl} serverSession={serverSession} onSignIn={onSignIn} onSignOut={onSignOut} inboxCount={inboxCount} />
+        <NavigationRail active={active} onSelect={onSelect} serverUrl={serverUrl} serverSession={serverSession} onSignIn={onSignIn} onSignOut={onSignOut} inboxCount={inboxCount} />
         <main className="relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden md:col-start-2 md:row-start-1">
           {offline ? (
               <button

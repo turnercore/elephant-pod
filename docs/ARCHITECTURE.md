@@ -54,7 +54,9 @@ Local tables:
 
 The queue is represented by `EpisodeState.queuePosition`, which keeps queue state easy to sync and backup. Starting playback with a row-level Play action inserts that episode at queue position 1 so playback state survives refresh; the previously current unfinished episode is displaced to Play Next. Playback history is tracked separately with `EpisodeState.lastPlayedAt`, while `playedAt` remains the completion/mark-played timestamp.
 
-Per-podcast preferences are keyed by podcast/feed id. They can override speed, skip forward/back, skip intro, skip outro, silence shortening, episode sort direction, and whether new subscribed episodes enter Inbox. Skip intro/outro default to `0` seconds.
+Per-podcast preferences are keyed by podcast/feed id. They track explicit Library membership, whether a show should resubscribe when re-added after removal, speed, skip forward/back, skip intro, skip outro, silence shortening, episode sort direction, and whether new subscribed RSS episodes enter Inbox. Skip intro/outro default to `0` seconds. Subscription implies Library membership; Library membership does not imply subscription.
+
+Manual feed refreshes from pull-to-refresh or refresh buttons are client rate-limited to avoid repeated feed fetch bursts. All-feeds manual refresh has a short shared cooldown, while individual podcast-page refresh has a per-podcast cooldown. Scheduled background refresh still follows the configured refresh interval.
 
 Listening stats are local profile facts stored in `listeningStats`: real time spent listening, podcast content time heard, per-podcast listening totals, estimated time saved by speed, and estimated time saved by silence skipping. They are exported in JSON backups but are not part of server sync.
 

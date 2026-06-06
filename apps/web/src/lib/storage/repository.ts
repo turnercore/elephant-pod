@@ -158,6 +158,7 @@ export async function upsertParsedFeed(result: ParsedFeedResult): Promise<void> 
     await putPodcastCache(result, timestamp);
     await ensurePodcastPreference(result.podcast.id);
     const preference = (await db.podcastPreferences.get(result.podcast.id)) || defaultPodcastPreference(result.podcast.id);
+    await db.podcastPreferences.put({ ...preference, inLibrary: true, wasSubscribedBeforeLibraryRemoval: false, updatedAt: timestamp });
     for (const ep of result.episodes) {
       const existing = await db.episodes.get(ep.id);
       await db.episodes.put({ ...existing, ...ep, updatedAt: timestamp });
@@ -201,6 +202,7 @@ export async function subscribeCachedPodcast(podcastId: string): Promise<void> {
     await db.podcastCache.put(toCachedPodcast(podcast, timestamp));
     await ensurePodcastPreference(podcast.id);
     const preference = (await db.podcastPreferences.get(podcast.id)) || defaultPodcastPreference(podcast.id);
+    await db.podcastPreferences.put({ ...preference, inLibrary: true, wasSubscribedBeforeLibraryRemoval: false, updatedAt: timestamp });
     for (const episode of episodes) {
       await db.episodes.put({ ...episode, updatedAt: timestamp });
       await db.cachedEpisodes.put({ ...episode, updatedAt: timestamp });
@@ -208,8 +210,8 @@ export async function subscribeCachedPodcast(podcastId: string): Promise<void> {
 	      if (!state) {
 	        await db.states.put({
 	          ...defaultStateFor(episode.id),
-	          inboxState: preference.addNewEpisodesToInbox ? 'new' : 'archived',
-	          inboxPosition: preference.addNewEpisodesToInbox ? await nextInboxPosition() : undefined,
+	          inboxState: 'archived',
+	          inboxPosition: undefined,
 	          updatedAt: timestamp
 	        });
 	      }
@@ -219,6 +221,50 @@ export async function subscribeCachedPodcast(podcastId: string): Promise<void> {
 
 export async function unsubscribePodcast(podcastId: string): Promise<void> {
   await db.feeds.delete(podcastId);
+}
+
+export async function addPodcastToLibrary(podcastId: string): Promise<void> {
+  const existing = (await db.podcastPreferences.get(podcastId)) || defaultPodcastPreference(podcastId);
+  const shouldResubscribe = Boolean(existing.wasSubscribedBeforeLibraryRemoval);
+  await db.podcastPreferences.put({ ...existing, inLibrary: true, wasSubscribedBeforeLibraryRemoval: false, updatedAt: nowIso() });
+  if (shouldResubscribe) await subscribeCachedPodcast(podcastId);
+}
+
+export async function removePodcastFromLibrary(podcastId: string, wasSubscribed: boolean): Promise<void> {
+  const existing = (await db.podcastPreferences.get(podcastId)) || defaultPodcastPreference(podcastId);
+  await db.transaction('rw', [db.feeds, db.podcastPreferences], async () => {
+    await db.feeds.delete(podcastId);
+    await db.podcastPreferences.put({
+      ...existing,
+      inLibrary: false,
+      wasSubscribedBeforeLibraryRemoval: wasSubscribed || existing.wasSubscribedBeforeLibraryRemoval,
+      updatedAt: nowIso()
+    });
+  });
+}
+
+export async function purgePodcastFromLibrary(podcastId: string): Promise<void> {
+  const [subscribed, cached] = await Promise.all([
+    db.episodes.where('podcastId').equals(podcastId).toArray(),
+    db.cachedEpisodes.where('podcastId').equals(podcastId).toArray()
+  ]);
+  const episodes = uniqueEpisodes([...subscribed, ...cached]);
+  for (const episode of episodes) {
+    await updateEpisodeState(episode.id, {
+      inboxState: 'archived',
+      inboxPosition: undefined,
+      queuedAt: undefined,
+      queuePosition: undefined,
+      downloaded: false,
+      downloadedAt: undefined,
+      downloadPath: undefined,
+      downloadBytes: undefined,
+      downloadBackend: undefined,
+      downloadSource: undefined
+    });
+  }
+  await normalizeQueuePositions();
+  await normalizeInboxPositions();
 }
 
 export async function updateEpisodeState(episodeId: string, patch: Partial<EpisodeState>): Promise<void> {
@@ -487,6 +533,8 @@ export async function deletePlayedDownloadsIfNeeded(autoDelete: boolean): Promis
 function defaultPodcastPreference(podcastId: string): PodcastPreference {
   return {
     podcastId,
+    inLibrary: false,
+    wasSubscribedBeforeLibraryRemoval: false,
     skipIntroSec: 0,
     skipOutroSec: 0,
     sortDirection: 'newest',

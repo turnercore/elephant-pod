@@ -24,7 +24,7 @@ This repository is a **v2 production-oriented scaffold**. The web/server app bui
 - Server-side silence-shortening render jobs through ffmpeg.
 - Signed-in server-owned Smart Skip V1 metadata jobs for transcript-backed ad/sponsor/promo segment maps.
 - Signed-in YouTube video/playlist/channel source import through server-side yt-dlp, with audio extraction only after a user requests an episode.
-- Optional account-based features through a server-owned auth+sync contract: magic-link auth, automatic signed-in sync for subscriptions/episodes/episode state/clips/settings/tombstones, and optional PodcastIndex discovery.
+- Optional account-based features through a server-owned auth+sync contract: magic-link auth, automatic signed-in sync for subscriptions/library preferences/episodes/episode state/clips/settings/tombstones, and optional PodcastIndex discovery.
 - Screen-reader labels on icon-first controls.
 - Tauri v2 config for desktop/mobile packaging.
 - Full local Supabase-style Docker bundle under `infra/supabase`.

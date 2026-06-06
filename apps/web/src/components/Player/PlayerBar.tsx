@@ -1,13 +1,12 @@
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, type DragEndEvent, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { LuArrowDownToLine as ArrowDownToLine, LuArrowUpToLine as ArrowUpToLine, LuCheck as Check, LuGripVertical as GripVertical, LuInbox as Inbox, LuListEnd as ListEnd, LuListMusic as ListMusic, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuScissors as Scissors, LuSkipForward as SkipForward, LuSparkles as Sparkles, LuTrash2 as Trash2 } from 'react-icons/lu';
+import { LuCheck as Check, LuGripVertical as GripVertical, LuInbox as Inbox, LuListEnd as ListEnd, LuListMusic as ListMusic, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuScissors as Scissors, LuShare2 as Share2, LuSparkles as Sparkles, LuStar as Star, LuTrash2 as Trash2 } from 'react-icons/lu';
 import { IoCheckmarkDoneOutline, IoChevronBackCircleOutline, IoChevronForwardCircleOutline } from 'react-icons/io5';
 import { RiForward5Line, RiForward10Line, RiForward15Line, RiForward30Line, RiReplay5Line, RiReplay10Line, RiReplay15Line, RiReplay30Line } from 'react-icons/ri';
 import type { IconType } from 'react-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSettings, EpisodeWithState } from '@/types/domain';
-import type { SmartSkipEvent } from '@/lib/smartSkip/types';
 import { formatDuration } from '@/lib/dates';
 import { cn } from '@/lib/cn';
 import { SwipeActionRow } from '../Gestures/SwipeActionRow';
@@ -27,12 +26,7 @@ interface PlayerBarProps {
   currentTime: number;
   duration: number;
   settings: AppSettings;
-  currentSkipSilence: boolean;
-  canUseSilenceShortening: boolean;
-  smartSkipNotice?: SmartSkipEvent | null;
   collapseToken?: number;
-  onCurrentSkipSilenceChange: (enabled: boolean) => void;
-  onUndoSmartSkip?: () => void;
   onToggle: () => void;
   onSeek: (seconds: number) => void;
   onSettingsChange: (settings: AppSettings) => void;
@@ -57,12 +51,7 @@ export function PlayerBar({
   currentTime,
   duration,
   settings,
-  currentSkipSilence,
-  canUseSilenceShortening,
-  smartSkipNotice,
   collapseToken,
-  onCurrentSkipSilenceChange,
-  onUndoSmartSkip,
   onToggle,
   onSeek,
   onSettingsChange,
@@ -276,12 +265,6 @@ export function PlayerBar({
     onOpenPodcast(podcastId);
   }
 
-  function cycleSpeed() {
-    const index = speedSteps.findIndex((rate) => rate === settings.playbackRate);
-    const next = speedSteps[(index + 1) % speedSteps.length] ?? 1;
-    onSettingsChange({ ...settings, playbackRate: next });
-  }
-
   return (
     <footer
       className={cn(
@@ -308,19 +291,12 @@ export function PlayerBar({
           <span aria-hidden="true" className="mx-auto mt-1 block h-1 w-11 rounded-full bg-bone/45 transition-colors hover:bg-yellow/70" />
         </button>
         <div className={cn('mt-2 grid gap-2', queueOpen ? '' : '')}>
-          {smartSkipNotice ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-eh border border-yellow/30 bg-yellow/10 px-3 py-2 text-sm font-bold text-yellow">
-              <span>Skipped {smartSkipNotice.segment.label.toLowerCase()}</span>
-              <button type="button" onClick={onUndoSmartSkip} className="rounded px-2 py-1 text-xs uppercase tracking-[0.06em] text-cream hover:text-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow">
-                Undo
-              </button>
-            </div>
-          ) : null}
           <CollapsedPlayer
             current={current}
             artworkUrl={currentArtworkUrl}
             currentEpisodeLabel={currentEpisodeLabel}
             progress={progress}
+            currentTime={currentTime}
             duration={effectiveDuration}
             remaining={remaining}
             isPlaying={isPlaying}
@@ -328,13 +304,15 @@ export function PlayerBar({
             onToggle={onToggle}
             onSeek={onSeek}
             onSkipBy={queueSkip}
+            onSettingsChange={onSettingsChange}
+            onStopForSleep={onStopForSleep}
             skipBackPulse={skipBackPulse}
             skipForwardPulse={skipForwardPulse}
             onOpenEpisode={openEpisode}
             onOpenPodcast={openPodcast}
           />
           {queueOpen ? (
-            <div className={cn('grid w-full gap-1 md:w-auto md:justify-self-end md:gap-2', canUseSilenceShortening ? 'grid-cols-5' : 'grid-cols-4')}>
+            <div className="grid w-full grid-cols-6 gap-1 md:w-auto md:justify-self-end md:gap-2">
               <IconButton
                 label={settings.smartSkipEnabled ? 'Disable Smart Skip' : 'Enable Smart Skip'}
                 title={settings.smartSkipEnabled ? 'Disable Smart Skip' : 'Enable Smart Skip'}
@@ -344,15 +322,6 @@ export function PlayerBar({
               >
                 <Sparkles size={18} aria-hidden />
               </IconButton>
-              <IconButton label="Cycle playback speed" onClick={cycleSpeed} className="h-10 w-full text-xs font-black md:h-12 md:w-12">
-                {formatSpeed(settings.playbackRate)}
-              </IconButton>
-              <SleepTimer currentTime={currentTime} duration={effectiveDuration} onExpire={onStopForSleep} className="h-10 w-full md:h-12 md:w-12" />
-              {canUseSilenceShortening ? (
-                <IconButton label={currentSkipSilence ? 'Disable skip silence for this episode' : 'Enable skip silence for this episode'} onClick={() => onCurrentSkipSilenceChange(!currentSkipSilence)} disabled={!current} className="h-10 w-full md:h-12 md:w-12">
-                  <Scissors size={18} aria-hidden />
-                </IconButton>
-              ) : null}
               <IconButton
                 label="Mark as played and skip"
                 onClick={() => {
@@ -363,6 +332,18 @@ export function PlayerBar({
                 className="h-10 w-full md:h-12 md:w-12"
               >
                 <IoCheckmarkDoneOutline size={20} aria-hidden />
+              </IconButton>
+              <IconButton label="Send current episode to end of queue" onClick={() => current && onQueueEnd(current)} disabled={!current} className="h-10 w-full md:h-12 md:w-12">
+                <ListEnd size={18} aria-hidden />
+              </IconButton>
+              <IconButton label="Share coming soon" disabled className="h-10 w-full md:h-12 md:w-12">
+                <Share2 size={18} aria-hidden />
+              </IconButton>
+              <IconButton label="Clip coming soon" disabled className="h-10 w-full md:h-12 md:w-12">
+                <Scissors size={18} aria-hidden />
+              </IconButton>
+              <IconButton label="Favorite coming soon" disabled className="h-10 w-full md:h-12 md:w-12">
+                <Star size={18} aria-hidden />
               </IconButton>
             </div>
           ) : null}
@@ -524,6 +505,7 @@ function CollapsedPlayer({
   artworkUrl,
   currentEpisodeLabel,
   progress,
+  currentTime,
   duration,
   remaining,
   isPlaying,
@@ -531,6 +513,8 @@ function CollapsedPlayer({
   onToggle,
   onSeek,
   onSkipBy,
+  onSettingsChange,
+  onStopForSleep,
   skipBackPulse,
   skipForwardPulse,
   onOpenEpisode,
@@ -540,6 +524,7 @@ function CollapsedPlayer({
   artworkUrl?: string;
   currentEpisodeLabel: string;
   progress: number;
+  currentTime: number;
   duration: number;
   remaining: number;
   isPlaying: boolean;
@@ -547,11 +532,19 @@ function CollapsedPlayer({
   onToggle: () => void;
   onSeek: (seconds: number) => void;
   onSkipBy: (seconds: number) => void;
+  onSettingsChange: (settings: AppSettings) => void;
+  onStopForSleep: () => void;
   skipBackPulse: number;
   skipForwardPulse: number;
   onOpenEpisode: (episode: EpisodeWithState) => void;
   onOpenPodcast: (podcastId: string) => void;
 }) {
+  function cycleSpeed() {
+    const index = speedSteps.findIndex((rate) => rate === settings.playbackRate);
+    const next = speedSteps[(index + 1) % speedSteps.length] ?? 1;
+    onSettingsChange({ ...settings, playbackRate: next });
+  }
+
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_6.75rem] items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_4.5rem] md:items-center">
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto_auto] gap-x-2 gap-y-2 py-0.5">
@@ -566,9 +559,17 @@ function CollapsedPlayer({
             {currentEpisodeLabel ? <p className="sr-only">{currentEpisodeLabel}</p> : null}
           </div>
         </div>
-        <div className="flex shrink-0 items-end justify-end gap-1.5 self-end">
-          <SkipButton direction="back" seconds={settings.skipBackSec} pulse={skipBackPulse} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-9 w-9 md:h-10 md:w-10" />
-          <SkipButton direction="forward" seconds={settings.skipForwardSec} pulse={skipForwardPulse} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-9 w-9 md:h-10 md:w-10" />
+        <div className="col-span-2 flex min-w-0 items-end justify-between gap-2 self-end">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <IconButton label="Cycle playback speed" onClick={cycleSpeed} className="h-9 min-w-14 px-2 text-xs font-black md:h-10">
+              {formatSpeed(settings.playbackRate)}
+            </IconButton>
+            <SleepTimer currentTime={currentTime} duration={duration} onExpire={onStopForSleep} className="h-9 w-9 md:h-10 md:w-10" />
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-1.5">
+            <SkipButton direction="back" seconds={settings.skipBackSec} pulse={skipBackPulse} onClick={() => onSkipBy(-settings.skipBackSec)} disabled={!current} className="h-9 w-9 md:h-10 md:w-10" />
+            <SkipButton direction="forward" seconds={settings.skipForwardSec} pulse={skipForwardPulse} onClick={() => onSkipBy(settings.skipForwardSec)} disabled={!current} className="h-9 w-9 md:h-10 md:w-10" />
+          </div>
         </div>
         <div className="col-span-2 grid grid-cols-[1fr_auto] items-center gap-2">
           <ProgressBar progress={progress} duration={duration} onSeek={onSeek} />

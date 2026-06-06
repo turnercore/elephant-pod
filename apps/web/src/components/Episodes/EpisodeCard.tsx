@@ -1,5 +1,5 @@
-import { LuArchiveX as ArchiveX, LuCheck as Check, LuDownload as Download, LuEllipsis as MoreHorizontal, LuInbox as Inbox, LuLoaderCircle as LoaderCircle, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuSparkles as Sparkles, LuStar as Star, LuTrash as Trash, LuX as X } from 'react-icons/lu';
-import { MdOutlineOfflinePin } from 'react-icons/md';
+import { LuArchiveX as ArchiveX, LuCheck as Check, LuDownload as Download, LuEllipsis as MoreHorizontal, LuInbox as Inbox, LuListEnd as ListEnd, LuListStart as ListStart, LuPause as Pause, LuPlay as Play, LuRotateCcw as RotateCcw, LuSparkles as Sparkles, LuStar as Star, LuTrash as Trash, LuX as X } from 'react-icons/lu';
+import { MdDownloadForOffline, MdOutlineDownloadForOffline, MdOutlineDownloading, MdOutlineOfflinePin } from 'react-icons/md';
 import { useRef, useState } from 'react';
 import type { EpisodeWithState } from '@/types/domain';
 import { formatDuration, formatEpisodeReleaseDate } from '@/lib/dates';
@@ -63,7 +63,7 @@ export function EpisodeCard({
     ...(processedBadges || [])
   ].filter(Boolean);
   const downloadLabel = downloading ? 'Downloading episode' : episode.state.downloaded ? 'Delete downloaded file' : 'Download episode';
-  const DownloadIcon = downloading ? LoaderCircle : episode.state.downloaded ? Check : Download;
+  const DownloadIcon = downloading ? MdOutlineDownloading : episode.state.downloaded ? MdDownloadForOffline : MdOutlineDownloadForOffline;
 
   return (
     <article

@@ -38,6 +38,8 @@ export interface CachedPodcast extends Podcast {
 
 export interface PodcastPreference {
   podcastId: string;
+  inLibrary?: boolean;
+  wasSubscribedBeforeLibraryRemoval?: boolean;
   playbackRate?: number;
   skipForwardSec?: number;
   skipBackSec?: number;
