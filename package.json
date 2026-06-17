@@ -1,34 +1,26 @@
 {
-  "name": "elephant-pod",
+  "name": "daisy-pod",
   "private": true,
   "version": "0.3.3",
-  "description": "Local-first, sync-capable podcast app for web, desktop, iOS, and Android via Tauri.",
+  "description": "Local-first native iOS podcast app with a DaisyPod backend.",
   "type": "module",
   "workspaces": [
-    "apps/web",
     "apps/server"
   ],
   "scripts": {
-    "dev:web": "npm --workspace @elephant-pod/web run dev",
-    "dev:server": "npm --workspace @elephant-pod/server run dev",
-    "build:web": "npm --workspace @elephant-pod/web run build",
-    "build:server": "npm --workspace @elephant-pod/server run build",
-    "build": "npm run build:web && npm run build:server",
-    "test": "npm --workspace @elephant-pod/server run test && npm --workspace @elephant-pod/web run test",
-    "preview:web": "npm --workspace @elephant-pod/web run preview",
-    "start:server": "npm --workspace @elephant-pod/server run start",
-    "typecheck": "npm --workspace @elephant-pod/web run typecheck && npm --workspace @elephant-pod/server run typecheck",
-    "tauri": "./scripts/tauri-rustup.sh",
-    "tauri:dev": "./scripts/tauri-rustup.sh dev",
-    "tauri:build": "./scripts/tauri-rustup.sh build",
-    "docker:build": "docker build -f apps/server/Dockerfile -t elephant-pod:local .",
-    "docker:run": "docker run --env-file .env -p 8787:8787 elephant-pod:local",
-    "supabase:start": "cd infra/supabase && docker compose up -d",
-    "supabase:stop": "cd infra/supabase && docker compose down",
-    "supabase:logs": "cd infra/supabase && docker compose logs -f --tail=100"
-  },
-  "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0"
+    "dev:server": "npm --workspace @daisy-pod/server run dev",
+    "build:server": "npm --workspace @daisy-pod/server run build",
+    "build": "npm run build:server && npm run ios:build",
+    "test": "npm --workspace @daisy-pod/server run test && npm run ios:test",
+    "start:server": "npm --workspace @daisy-pod/server run start",
+    "typecheck": "npm --workspace @daisy-pod/server run typecheck && npm run ios:build",
+    "ios:generate": "cd apps/ios && xcodegen generate",
+    "ios:build": "cd apps/ios && xcodegen generate && xcodebuild -project DaisyPod.xcodeproj -scheme DaisyPod -destination 'platform=iOS Simulator,name=iPhone 13 mini' build",
+    "ios:test": "cd apps/ios && xcodegen generate && xcodebuild test -project DaisyPod.xcodeproj -scheme DaisyPod -destination 'platform=iOS Simulator,name=iPhone 13 mini'",
+    "ios:install:device": "scripts/ios-device-install.sh",
+    "ios:install:superzima": "scripts/ios-install-superzima.sh",
+    "docker:build": "docker build -f apps/server/Dockerfile -t daisy-pod:local .",
+    "docker:run": "docker run --env-file .env -p 8787:8787 daisy-pod:local"
   },
   "engines": {
     "node": ">=22"

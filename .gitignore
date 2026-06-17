@@ -4,7 +4,7 @@
 !.env.example
 !**/.env.example
 
-# Node / Vite / TypeScript outputs
+# Node / TypeScript outputs
 node_modules/
 **/node_modules/
 dist/
@@ -18,23 +18,11 @@ apps/server/.data/
 /clips/
 /media/
 
-# Supabase runtime state
-infra/supabase/.env
-infra/supabase/volumes/db/data/
-infra/supabase/volumes/storage/
-infra/supabase/runtime/
-infra/supabase/.cache/
-
-# Tauri / Rust outputs
-debug/
-target/
-src-tauri/target/
-src-tauri/gen/
-src-tauri/.cargo/
-src-tauri/plugins/*/.tauri/
-src-tauri/plugins/*/ios/Package.resolved
-**/*.rs.bk
-*.pdb
+# Generated iOS/Xcode output
+apps/ios/*.xcodeproj/
+apps/ios/*.xcworkspace/
+apps/ios/**/*.xcuserdata/
+apps/ios/**/*.xcuserstate
 
 # OS / editor noise
 .DS_Store

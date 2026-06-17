@@ -845,7 +845,7 @@ async function cacheFirstThumbnailUrl(sourceUrls: Array<string | undefined>, opt
 async function cacheThumbnailUrl(sourceUrl: string | undefined, options: YoutubeImportOptions, fetchImpl: typeof fetch): Promise<string | undefined> {
   if (!sourceUrl || !options.dataDir || sourceUrl.startsWith(`${options.publicUrl}/media/youtube-thumbnails/`)) return sourceUrl;
   try {
-    const response = await fetchImpl(sourceUrl, { headers: { 'user-agent': 'ElephantPod/0.2 (+https://elephanthand.com)' } });
+    const response = await fetchImpl(sourceUrl, { headers: { 'user-agent': 'DaisyPod/0.4 (+https://elephanthand.com)' } });
     if (!response.ok) return undefined;
     const contentLength = Number(response.headers.get('content-length') || 0);
     if (contentLength > maxThumbnailBytes) return undefined;
@@ -894,13 +894,13 @@ async function resolveChannelId(sourceUrl: string, fetchImpl: typeof fetch): Pro
 }
 
 async function fetchText(url: string, fetchImpl: typeof fetch): Promise<string> {
-  const response = await fetchImpl(url, { headers: { 'user-agent': 'ElephantPod/0.2 (+https://elephanthand.com)' } });
+  const response = await fetchImpl(url, { headers: { 'user-agent': 'DaisyPod/0.4 (+https://elephanthand.com)' } });
   if (!response.ok) throw new Error(`YouTube metadata request failed with ${response.status}.`);
   return response.text();
 }
 
 async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown> {
-  const response = await fetchImpl(url, { headers: { 'user-agent': 'ElephantPod/0.2 (+https://elephanthand.com)' } });
+  const response = await fetchImpl(url, { headers: { 'user-agent': 'DaisyPod/0.4 (+https://elephanthand.com)' } });
   if (!response.ok) throw new Error(`YouTube metadata request failed with ${response.status}.`);
   return response.json();
 }

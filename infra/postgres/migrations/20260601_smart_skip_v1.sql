@@ -1,5 +1,5 @@
 -- Smart Skip V1 durable queue and segment-map storage.
--- Apply to existing Elephant Pod Postgres/Supabase databases before enabling
+-- Apply to existing DaisyPod Postgres databases before enabling
 -- SMART_SKIP_ENABLED=true against real workers.
 
 create extension if not exists pgcrypto;
@@ -39,7 +39,7 @@ create table if not exists public.smart_skip_segment_maps (
   id text primary key,
   episode_local_id text not null,
   media_version_id text not null references public.smart_skip_media_versions(id) on delete cascade,
-  schema_version text not null default 'elephant.smart-skip.v1',
+  schema_version text not null default 'daisypod.smart-skip.v1',
   status text not null,
   generated_at timestamptz,
   error text,

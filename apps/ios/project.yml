@@ -1,0 +1,94 @@
+name: DaisyPod
+options:
+  bundleIdPrefix: com.elephanthand
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    MARKETING_VERSION: "0.4.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    DAISYPOD_NATIVE_APP_TOKEN: ""
+targets:
+  DaisyPod:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/DaisyPod
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: AppIntents.framework
+      - sdk: BackgroundTasks.framework
+      - sdk: CloudKit.framework
+      - sdk: MediaPlayer.framework
+      - sdk: Security.framework
+      - sdk: libsqlite3.tbd
+    info:
+      path: Sources/DaisyPod/Info.plist
+      properties:
+        CFBundleDisplayName: DaisyPod
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        DaisyPodNativeAppToken: "$(DAISYPOD_NATIVE_APP_TOKEN)"
+        LSRequiresIPhoneOS: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIBackgroundModes:
+          - audio
+          - fetch
+          - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.elephanthand.daisypod.download-refresh
+          - com.elephanthand.daisypod.download-processing
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleURLTypes:
+          - CFBundleURLName: com.elephanthand.daisypod.auth
+            CFBundleURLSchemes:
+              - daisypod
+    entitlements:
+      path: Sources/DaisyPod/DaisyPod.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.elephanthand.daisypod
+        com.apple.developer.icloud-services:
+          - CloudKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.elephanthand.daisypod
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: false
+    scheme:
+      testTargets:
+        - DaisyPodTests
+        - DaisyPodUITests
+  DaisyPodTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/DaisyPodTests
+    dependencies:
+      - target: DaisyPod
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.elephanthand.daisypod.tests
+        GENERATE_INFOPLIST_FILE: true
+  DaisyPodUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests/DaisyPodUITests
+    dependencies:
+      - target: DaisyPod
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.elephanthand.daisypod.uitests
+        GENERATE_INFOPLIST_FILE: true

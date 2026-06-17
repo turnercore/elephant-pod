@@ -175,7 +175,7 @@ describe('importYoutubeMetadata', () => {
   });
 
   it('stores synthetic feeds and reuses them for later imports', async () => {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'elephant-pod-youtube-feed-'));
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'daisy-pod-youtube-feed-'));
     let ytDlpCalls = 0;
     try {
       const fetchMock = async (input: string | URL | Request) => {
@@ -217,7 +217,7 @@ describe('importYoutubeMetadata', () => {
   });
 
   it('dedupes a direct video against an existing stored channel feed', async () => {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'elephant-pod-youtube-video-dedupe-'));
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'daisy-pod-youtube-video-dedupe-'));
     let ytDlpCalls = 0;
     try {
       const fetchMock = async (input: string | URL | Request) => {
@@ -352,7 +352,7 @@ describe('importYoutubeMetadata', () => {
   });
 
   it('caches YouTube thumbnails under the server media route', async () => {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'elephant-pod-youtube-'));
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'daisy-pod-youtube-'));
     const calls: string[] = [];
     try {
       const fetchMock = async (input: string | URL | Request) => {

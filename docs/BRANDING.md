@@ -1,6 +1,6 @@
 # Branding Notes
 
-The app follows the Elephant Hand Games brand direction:
+The app follows the DaisyPod brand direction:
 
 - Deep black base canvas.
 - Smoky amethyst stacked panels.

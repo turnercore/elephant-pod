@@ -1,0 +1,18 @@
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <title>Fixture Atom Show</title>
+  <subtitle>Atom fixture description.</subtitle>
+  <author>
+    <name>Atom Network</name>
+  </author>
+  <link href="https://example.com/atom-show" rel="alternate" />
+  <media:thumbnail url="https://example.com/atom-show.jpg" />
+  <entry>
+    <title>Atom Fixture Episode</title>
+    <id>tag:example.com,2026:atom-episode</id>
+    <updated>2026-06-19T09:30:00Z</updated>
+    <summary>Atom episode summary.</summary>
+    <link href="https://example.com/atom-episode" rel="alternate" />
+    <link href="https://media.example.com/atom-episode.mp3" rel="enclosure" type="audio/mpeg" />
+    <media:thumbnail url="https://example.com/atom-episode.jpg" />
+  </entry>
+</feed>

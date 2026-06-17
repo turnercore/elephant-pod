@@ -1,40 +1,28 @@
 # Feature Matrix
 
-| Feature | V2 Status | Notes |
+| Feature | Native iOS Status | Notes |
 |---|---:|---|
-| Resume rewind | Implemented | Rewinds by configured seconds when resuming. |
-| Sleep timer | Implemented | Footer player control. |
-| Chapters | Implemented UI | Parses demo/RSS-derived chapters where present; broader Podcasting 2.0 ingestion remains future work. |
-| Playback speed | Implemented | Web playbackRate; native command boundary exists. |
-| Skip controls | Implemented | Configurable 10/15/30/60s. |
-| Play/Pause | Implemented | Web fallback; native command bridge scaffolded. |
-| Mark played/unplayed | Implemented | Local state and sync schema. |
-| Playback history | Implemented | `lastPlayedAt` records starts/resumes separately from completion so History can show recently played episodes in order. |
-| Rendered clips/public links | Implemented server path | ffmpeg renders MP3 clips; fallback to source time-range links. |
-| Auto-download | Partial native-ready | Queued auto-download is on by default in Tauri/native builds. Browser auto-download only attempts same-origin media; manual browser downloads can still try Cache Storage where hosts allow CORS. |
-| Episode triage | Implemented | Inbox -> queue/dismiss/archive. |
-| Silence shortening | Server-map partial | Signed-in server ffmpeg analysis creates silence maps. Long silences are shortened to a retained duration; browser Web Audio analysis is disabled for remote podcast streams. |
-| Smart Skip V1 | Partial | Signed-in server route, durable job leasing, external Batch task storage, worker contract, OpenAI-backed segmenter, UI settings, auto-skip, local downloaded-episode map cache, session-only undo, and pure tests exist. Real Whisper deployment and proactive active-user discovery are follow-ups. |
-| Listening stats | Implemented local | Tracks real listening time, per-podcast totals, speed-up savings, and silence-skip savings in local profile stats. |
-| RSS-first/no lock-in | Implemented | Add RSS URL, OPML import/export, JSON backup. |
-| Episode artwork | Implemented | RSS item-level `<itunes:image>` and `media:thumbnail` artwork is preserved; episode views fall back to show artwork when item art is absent. |
-| Library filter | Implemented | Library has explicit show membership, subscription/library badges, and local filtering by title, author, tags, description, and feed/source URL. |
-| Add Podcast omnibar | Implemented | Add flow accepts RSS URLs, PodcastIndex search terms, and YouTube URLs. Already-subscribed results show a check and open the show page. |
-| Search (PodcastIndex discovery) | Logged-in only | Server-mediated discovery for new feeds using PodcastIndex credentials. |
-| YouTube source import | Optional server feature | Signed-in manual URL import creates and maintains synthetic RSS-style podcasts. Episode audio extraction is user-triggered and cached by the app server through yt-dlp. |
-| Browser/web runtime sign-in gate | Implemented | Non-Tauri browser builds require a valid server GitHub session before app use. |
-| Tauri/native local-only runtime | Implemented | Native builds can run without server connection or sign-in and keep local/native storage behavior. |
-| Offline downloads/streaming | Partial native-ready | Downloaded episodes are the offline surface: offline mode filters library/inbox/queue to downloaded items, uses local audio, caches artwork for downloaded episodes and parent shows, and re-syncs local state when connectivity returns. Native filesystem commands are present but need Tauri/mobile validation. |
-| Played/unplayed tracking | Implemented | Filter and sync schema. |
-| Mark all as played in show | Implemented | Library action. |
-| Sorting newest/oldest | Implemented | Library filters plus configurable Inbox newest/oldest triage ordering. |
-| Bidirectional server sync | Implemented prototype | Pull/merge/push server flow with a device action log for episode-state conflicts; needs incremental cursor, action compaction, and multi-device integration tests. |
-| Auto refresh feeds | Implemented basic | Timer in app; server cron planned. |
-| Wi-Fi-only download | Partial | Browser Network Information API where available; native OS constraints still needed. |
-| Player queue manager | Implemented | Bottom player opens into a full-screen queue surface with transport controls, drag reorder, play now/next/end, send to Inbox, remove, and mark played actions. |
-| Auto play next | Implemented | Plays next queued episode after end. |
-| Auto-delete after listen | Implemented | Enabled by default. Non-favorite downloads are deleted when the episode is no longer queued or inboxed; manual downloads are retained while active. |
-| Storage cap/prioritized prune | Partial native-ready | App prunes by priority: favorites, queue top-to-bottom, then inbox top-to-bottom. |
-| Screen reader support | Implemented baseline | Labels, focus states, semantic regions. Needs audit. |
-| Tauri mobile native audio | Partial iOS native playback | iOS builds package an AVPlayer plugin with background audio, Now Playing metadata, seek/rate, and remote play/pause/position commands. Physical lock-screen validation and Android foreground media service remain. |
-| Self-hosted Supabase bundle | Included | `infra/supabase/docker-compose.yml` plus schema and app service. |
+| Native iOS app | Implemented | `apps/ios` builds on iPhone 13 mini with SwiftUI navigation, SQLite, backend contracts, AVPlayer, downloads, data portability, App Intents, deep links, and tests. |
+| Inbox triage | Implemented | Inbox rows expose Play, Queue, Add Last, Dismiss, and Mark Played. Mark Played removes from Inbox and marks played. Dismiss removes from Inbox and deletes only Inbox auto-downloads, while preserving manual downloads. |
+| Queue manager | Implemented | Queue is no longer a top-level nav item. The bottom player opens a Now Playing sheet with queue reorder, play, send to Inbox, remove, and played-state actions. |
+| Podcast and episode detail | Implemented | Episode title opens episode detail; podcast name opens podcast detail. Episode detail shows artwork with podcast fallback, compact icon actions, chapters above collapsible server intelligence, clips, YouTube controls, and expandable descriptions. |
+| Playback | Implemented | Native AVPlayer supports play/pause, seek, skip, rate, resume rewind, sleep timer, progress persistence, downloaded-file playback, autoplay next, remote-command plumbing, and Now Playing metadata. |
+| Mini player | Implemented | Larger bottom player with artwork, title, progress/time, transport controls, tap/open, and upward drag to the expanded player. |
+| Played/unplayed tracking | Implemented | Played state is visible with a small checkmark across episode rows and can be toggled where appropriate. |
+| Favorites | Implemented | Favorite/unfavorite is explicit from episode detail and the expanded player. Favorite state protects downloads from auto-delete/prune. |
+| Downloads/offline | Implemented with physical validation pending | App-container downloads, delete controls outside Inbox triage, offline filtering, stale-file reconciliation, Wi-Fi-only policy, auto-delete after listen, and storage-cap pruning are implemented. Cellular/Wi-Fi and system background behavior still need field validation. |
+| RSS import | Implemented | Uses backend RSS parse when configured and direct native RSS/Atom parsing as fallback. |
+| PodcastIndex discovery | Implemented | Server-mediated search through `/api/podcast-index/search`, gated by backend capabilities and the native app token when configured. |
+| YouTube import | Implemented | Server-mediated video/playlist/channel import plus episode metadata enrichment and audio extraction. Native download waits for server extraction readiness. |
+| Clips | Implemented | Native clip composer saves local clips and publishes through `/api/clips` when enabled. Server renders public MP3 clips with ffmpeg. |
+| Silence maps | Implemented | Native app can request/check/cache server-generated maps and use ready maps for playback jumps. |
+| Smart Skip | Implemented partial | Request/check/cache UI, server durable jobs, transcript-backed segment maps, local playback jumps, and CloudKit preparation exist. Real Whisper/segmenter production validation and proactive active-user discovery remain. |
+| Listening stats | Implemented local | Native AVPlayer telemetry records real listening time, podcast time, speed savings, silence savings, and top podcasts. Stats are backup-exported but not CloudKit synced. |
+| OPML and JSON backup | Implemented | Native document import/export for subscriptions and portable backup/restore. Device-local download paths and sensitive settings are stripped. |
+| Library filter | Implemented | Library search is an in-content field below navigation and filters local shows by title, author, tags, description, feed URL, website URL, source URL, and external id. |
+| Per-show settings | Implemented | Podcast detail supports Library membership, Subscribe/Unsubscribe, sort, add-new-to-Inbox, playback overrides, and Smart Skip overrides. |
+| Auto refresh feeds | Implemented | Foreground refresh for due library feeds and manual per-show refresh with cooldown. Background/cron behavior remains future hardening. |
+| iCloud personal sync | Implemented with physical validation pending | `CloudKitPersonalSyncEngine` prepares deterministic private records, strips device-local fields, downloads private-database records through incremental private-zone changes with a persisted CloudKit server change token, merges local/remote snapshots by record `modifiedAt`, protects the active playback episode from remote state stomps, applies current tombstones without deleting device files, restores through the portable backup path, and uploads merged records through a live CloudKit private-zone store when iCloud is available. The Xcode project declares the CloudKit entitlement for `iCloud.com.elephanthand.daisypod`; two-device physical validation remains. |
+| Accessibility baseline | Implemented with manual audit pending | Core controls have labels/identifiers and focused UI coverage. Manual VoiceOver/reduced-motion validation remains. |
+| Retired web/Tauri frontend | Removed | `apps/web`, `src-tauri`, Tauri scripts/config, and frontend-specific npm dependencies have been removed from the supported runtime repo. |
+| Server `/api/sync` | Retired | Personal sync belongs to CloudKit/iCloud. The backend no longer exposes the product sync route. |

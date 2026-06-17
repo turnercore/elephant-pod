@@ -65,7 +65,7 @@ function readStringEnv(name: string): string | undefined {
 function getPodcastIndexConfig() {
   const apiKey = readStringEnv('PODCASTINDEX_API_KEY');
   const apiSecret = readStringEnv('PODCASTINDEX_API_SECRET');
-  const userAgent = readStringEnv('PODCASTINDEX_USER_AGENT') || 'elephant-pod/0.2.0';
+  const userAgent = readStringEnv('PODCASTINDEX_USER_AGENT') || 'daisypod/0.4.0';
   if (!hasRealValue(apiKey) || !hasRealValue(apiSecret)) {
     return null;
   }
@@ -217,7 +217,7 @@ async function callPodcastIndexPublicSearch<T>(term: string): Promise<T> {
   const endpoint = `${podcastIndexPublicBaseUrl}/search?${query}`;
   const response = await fetch(endpoint, {
     headers: {
-      'User-Agent': readStringEnv('PODCASTINDEX_USER_AGENT') || 'elephant-pod/0.2.0'
+      'User-Agent': readStringEnv('PODCASTINDEX_USER_AGENT') || 'daisypod/0.4.0'
     }
   });
 

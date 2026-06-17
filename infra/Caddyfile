@@ -1,7 +1,3 @@
 ears.example.com {
-  reverse_proxy elephant-pod:8787
-}
-
-supabase.example.com {
-  reverse_proxy supabase-kong:8000
+  reverse_proxy daisy-pod:8787
 }

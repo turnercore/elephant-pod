@@ -4,8 +4,7 @@ export type SmartSkipSegmentType =
   | 'network_promo'
   | 'self_promo'
   | 'intro'
-  | 'outro'
-  | 'silence';
+  | 'outro';
 
 export type SmartSkipAction = 'auto_skip' | 'soft_skip' | 'label_only' | 'do_not_skip';
 
@@ -13,7 +12,6 @@ export type SmartSkipSource =
   | 'rss_metadata'
   | 'whisper_transcript'
   | 'codex_segmenter'
-  | 'silence_detector'
   | 'boundary_refiner'
   | 'ensemble';
 
@@ -33,7 +31,7 @@ export interface SmartSkipSegment {
 }
 
 export interface SmartSkipSegmentMap {
-  schemaVersion: 'elephant.smart-skip.v1';
+  schemaVersion: 'daisypod.smart-skip.v1';
   episodeId: string;
   podcastId?: string;
   mediaVersionId: string;

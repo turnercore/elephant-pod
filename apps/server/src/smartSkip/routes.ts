@@ -1,7 +1,7 @@
 import type { Express, RequestHandler } from 'express';
 import type { SmartSkipConfig } from './config.js';
 import { createOrGetSmartSkipJob, getSmartSkipJobTimings, processSmartSkipJob } from './jobs.js';
-import { getJob, getLatestSegmentMap } from './storage.js';
+import { getJob, getLatestSegmentMap, getTranscript } from './storage.js';
 
 export function registerSmartSkipRoutes(app: Express, config: SmartSkipConfig, authMiddleware?: RequestHandler): void {
   const maybeAuth = config.requireAuth && authMiddleware ? [authMiddleware] : [];
@@ -9,10 +9,12 @@ export function registerSmartSkipRoutes(app: Express, config: SmartSkipConfig, a
   app.post('/api/smart-skip/process', ...maybeAuth, async (req, res) => {
     try {
       const { job, segmentMap } = await createOrGetSmartSkipJob(req.body, config);
+      const transcript = segmentMap?.status === 'ready' ? await getTranscript(segmentMap.mediaVersionId) : null;
       res.status(job.status === 'ready' ? 200 : 202).json({
         jobId: job.id,
         status: job.status === 'queued' ? 'queued' : job.status,
         segmentMap: segmentMap?.status === 'ready' ? segmentMap : null,
+        transcript,
         error: job.error
       });
     } catch (error) {
@@ -25,22 +27,26 @@ export function registerSmartSkipRoutes(app: Express, config: SmartSkipConfig, a
       const { job, segmentMap } = await createOrGetSmartSkipJob(req.body, config);
       const force = req.query.force === 'true' || req.query.force === '1';
       if (!force && (segmentMap?.status === 'ready' || job.status === 'ready')) {
+        const map = segmentMap?.status === 'ready' ? segmentMap : await getLatestSegmentMap(job.episodeLocalId);
         res.json({
           jobId: job.id,
           status: 'ready',
-          segmentMap: segmentMap?.status === 'ready' ? segmentMap : await getLatestSegmentMap(job.episodeLocalId)
+          segmentMap: map,
+          transcript: map?.status === 'ready' ? await getTranscript(map.mediaVersionId) : null
         });
         return;
       }
 
       const finished = await processSmartSkipJob(job, { ...config, segmenterBatchEnabled: false }, `ssk_manual_${process.pid}`);
       const latestMap = await getLatestSegmentMap(job.episodeLocalId, job.request.audioUrl);
+      const transcript = latestMap?.status === 'ready' ? await getTranscript(latestMap.mediaVersionId) : null;
       res.status(finished.status === 'ready' ? 200 : 422).json({
         jobId: finished.id,
         status: finished.status,
         stage: finished.stage,
         timings: getSmartSkipJobTimings(finished.id),
         segmentMap: latestMap?.status === 'ready' ? latestMap : null,
+        transcript,
         error: finished.error ?? null
       });
     } catch (error) {
@@ -63,7 +69,11 @@ export function registerSmartSkipRoutes(app: Express, config: SmartSkipConfig, a
       res.json({ status: config.enabled ? 'missing' : 'unavailable', segmentMap: null });
       return;
     }
-    res.json({ status: map.status, segmentMap: map.status === 'ready' ? map : null });
+    res.json({
+      status: map.status,
+      segmentMap: map.status === 'ready' ? map : null,
+      transcript: map.status === 'ready' ? await getTranscript(map.mediaVersionId) : null
+    });
   });
 
 }

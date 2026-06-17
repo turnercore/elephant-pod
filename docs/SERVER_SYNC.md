@@ -1,170 +1,83 @@
-# Server and Sync
+# Native Sync And Server Services
 
-## Goals
+DaisyPod is now an iOS-first app. Personal podcast state is local-first in native SQLite and targets iCloud/CloudKit private-database sync. The app server is no longer the product login or personal sync authority.
 
-- Accounts are required in the browser/web runtime because the hosted app runs through the server auth boundary.
-- Accounts are optional in Tauri/native runtime.
-- The native app is useful on a single device without any backend.
-- A self-hosted server plus local Postgres unlocks cross-device sync and public clip sharing.
-- Production deployment can pull a prebuilt Forgejo registry image from Forgejo Actions instead of building from a copied source tree on the server.
-- Sign-in is the sync opt-in. There is no separate sync opt-out toggle; signing out returns the app to local-only behavior.
-- Core playback, RSS/OPML, and local backup remain first-class in Tauri local-only mode.
+## Local And iCloud State
 
-## Runtime sync contract
+The native app must remain useful offline. Playback, subscriptions, Library, Inbox, Queue, History, downloads, settings, OPML import/export, and JSON backup/restore work from the local store without a server.
 
-The web/Tauri client keeps a local IndexedDB-first model and stores only `serverUrl` in settings. Browser/web runtime blocks on a valid server session before exposing app actions. Tauri/native runtime can skip sign-in and use the same local store without server connectivity. Once a valid session exists, sync is considered active automatically. App-server auth sessions are stored outside synced settings: the client writes the token payload to browser `localStorage` and a device-local IndexedDB `authSessions` backup so iOS/Tauri launches can restore sign-in if WebView localStorage is not ready or is cleared.
+CloudKit is the target cross-device sync layer for personal state:
 
-Client responsibilities:
+- podcasts and episodes
+- episode state, including played/progress/Inbox/Queue/favorite
+- podcast preferences
+- local clip metadata
+- silence maps, Smart Skip maps, and transcripts that make ready server intelligence work offline
+- tombstones
+- idempotent local action records used for conflict-safe replay
+- portable settings
 
-- Keep local tables as the source of truth for UI state.
-- Use authenticated server routes with an `Authorization: Bearer <token>` header.
-- Store no Supabase or PodcastIndex credentials in app settings, query params, or persisted UI config.
+Device-local data is not synced:
 
-Server responsibilities:
+- native file paths
+- downloaded media/artwork files
+- download byte counts and download backend metadata
+- sleep timer deadlines
+- offline-mode browsing state
+- listening analytics
+- server URL
+- native app tokens
 
-- Validate bearer tokens from the app session.
-- Use local Postgres for sync tables, public clip registry, and server-owned metadata.
-- Serve optional PodcastIndex discovery for logged-in users.
-- Serve optional YouTube import for logged-in users when server-side YouTube import is enabled.
-- Expose auth/sync endpoints (`/api/auth/*`, `/api/sync`) for client-mediated sign-in and merge.
+`CloudKitPersonalSyncEngine` prepares deterministic private-record snapshots from the portable backup shape, strips device-local fields before upload, downloads CloudKit private-zone changes with a persisted server change token, merges newer local and remote records by `modifiedAt`, protects actively playing episode state during restore, and uses a private CloudKit zone when an iCloud account is available.
 
-Auth/sync contract endpoints:
+## Server Role
 
-- `GET /api/auth/config`: validates and reports auth configuration availability.
-- `POST /api/auth/github/start`: returns a GitHub OAuth authorization URL and callback path. Web callers pass their app URL as `returnTo`; native/Tauri callers pass `elephant-pod://auth/callback`.
-- `GET /api/auth/github/callback`: exchanges `code` when possible and returns session payload, redirects to the sanitized `returnTo` URL with session params, or serves a no-store fragment bridge when Supabase returns implicit-flow tokens in the URL hash.
-- `GET /api/auth/session`: validates bearer token and returns user info.
-- `POST /api/sync`: accepts local payload and returns merged `pulledData` + merge stats.
+The server remains a processing and discovery boundary:
 
-The v2 sync flow is:
+- `GET /api/health`
+- `GET /api/capabilities`
+- `GET /api/rss/parse`
+- PodcastIndex search/browse
+- YouTube source import, refresh, metadata enrichment, fake RSS feeds, and audio extraction
+- public clip publishing and rendered clip files
+- silence maps
+- Smart Skip processing and segment-map cache
+- static media serving for generated server artifacts
 
-```text
-client local rows + pending actions -> POST sync request + bearer token -> server validates token -> server reads/writes local Postgres -> server resolves conflicts -> server returns merged rows + tombstones + actions -> client applies actions and IndexedDB updates -> local sync metadata updates
+The server no longer exposes product auth routes or `/api/sync` from the app runtime. Personal sync should not require the server.
+
+## Native Service Access
+
+Native processing routes accept app-origin requests through service headers:
+
+- `x-daisypod-client: ios`
+- `x-daisypod-native-account: icloud`
+- `x-daisypod-app-token: <token>` when `SERVER_NATIVE_APP_TOKEN` is configured
+
+Build private iOS installs with `DAISYPOD_NATIVE_APP_TOKEN=...` matching the server's `SERVER_NATIVE_APP_TOKEN=...`.
+
+This is a practical random-internet filter for a private app/server deployment. It is not marketplace-grade anti-tamper. Add App Attest or a stronger Apple-token verification path before exposing abuse-sensitive processing broadly.
+
+Protected processing/discovery routes no longer accept product-login bearer tokens. Native service access requires the iOS service headers, and requires `SERVER_NATIVE_APP_TOKEN` when that token is configured. Local CloudKit account status is used for personal iCloud sync, not as the app-side gate for PodcastIndex, YouTube, clips, silence maps, or Smart Skip.
+
+## Capabilities
+
+`GET /api/capabilities` is the native feature contract. It reports whether server-backed features are enabled:
+
+```json
+{
+  "youtubeImport": { "enabled": true },
+  "podcastIndex": { "enabled": true },
+  "clips": { "enabled": true },
+  "silenceMaps": { "enabled": true },
+  "smartSkip": { "enabled": false }
+}
 ```
 
-Current tables and entities:
+The capabilities payload must not expose PodcastIndex keys, database secrets, filesystem paths, worker URLs, native app tokens, or other private server configuration.
 
-- `subscriptions`
-- `episodes`
-- `episode_states`
-- `clips`
-- `user_settings`
-- `sync_tombstones`
-- `sync_actions`
-- `public_clips`
+## Offline Behavior
 
-Subscriptions and episodes include optional source metadata for RSS and YouTube synthetic sources: `source_type`, `source_url`, `external_id`, and episode `extraction_status`. Existing databases should apply `infra/postgres/migrations/20260602_youtube_sources.sql`.
+When offline or when the server is unavailable, the app continues normal local use. Server-powered actions should fail locally with clear status text and leave existing local data intact. Cached ready silence maps and Smart Skip maps can still be displayed or used during playback according to local settings.
 
-## Conflict rules implemented
-
-| Data | Merge rule |
-|---|---|
-| Subscriptions | Newer `updated_at` row wins. |
-| Episodes | Newer `updated_at` row wins. |
-| Episode state | Newer `updated_at` row wins. |
-| Queue | Queue fields are part of episode state and are also logged in `sync_actions`; recent local actions beat older remote snapshots. |
-| Settings | Newer settings blob wins. |
-| Podcast preferences | Newer per-podcast row wins, including Library membership, resubscribe-after-removal intent, speed, skip forward/back, skip intro/outro, silence, sort, and new-episode Inbox behavior. |
-| Clips | Newer clip row wins. |
-| Tombstones | Pulled tombstones delete matching local rows. |
-| Sync actions | Episode-state actions are ordered by `created_at`, `sequence`, and `device_id`; actions are idempotent by `id`. |
-| Downloads | Not synced; every device owns its own downloaded files. |
-
-Download-related settings such as queued auto-download, inbox auto-download, delete-after-listen, Inbox sort direction, Wi-Fi-only downloads, and storage cap are part of the synced settings blob. Actual downloaded files, file paths, local download-source tags, downloaded artwork blobs, and cached skip maps remain local-only.
-
-Active playback is protected during client-side merge. When a sync pull returns a newer `episode_states` row for the episode currently playing on this device, the local playback-affecting fields win for that merge: played state, played timestamps, progress, queue position, queued timestamp, Inbox state, and Inbox position. Device-local download fields also remain local. This prevents stale server state from pausing, resetting, unqueueing, resurrecting Inbox rows, or otherwise disrupting iPhone/native playback while audio is active.
-
-Episode-state mutations also append to a local `syncActions` queue before the next sync. The server stores these actions in `sync_actions` and returns actions the current device has not seen. The client applies remote actions in stable order before accepting remote snapshots, skips playback-affecting action application for the currently playing episode, and keeps a local pending action when that action is newer than the remote row being merged. This preserves local/offline intent across common conflicts such as queue reorder, Inbox triage, mark-listened, and progress updates while keeping the snapshot tables as the materialized view used by the UI.
-
-Downloaded episodes are the offline contract. When the browser reports offline, the app shows an offline banner and filters Library, Inbox, Queue, Downloads, and detail navigation to downloaded episodes and their parent podcasts. Episode state mutations still write to local IndexedDB while offline. When connectivity and a valid session return, the client runs sync again so played, progress, queue, Inbox, settings, and subscription changes can be pushed through the normal merge path.
-
-Library membership is explicit and broader than subscription membership. A podcast belongs in Library when the user adds it or when it is subscribed; subscribing always adds the podcast to Library, but Library membership does not require subscription. Subscription controls automatic feed refresh and whether future RSS releases are added to Inbox. Subscribing archives episodes that already exist locally at the moment of subscription so only later discovered episodes are treated as new Inbox items. Unsubscribing removes only automatic refresh. Removing a podcast from Library also unsubscribes it immediately, then gives the user a 30-second undo window before clearing that podcast's downloaded, Inbox, and Queue episode state.
-
-Listening stats are also local-only. They are profile facts on the device and can be exported in JSON backup, but they are not currently merged through Supabase/server sync.
-
-Silence maps are server-derived cache data. They are created through signed-in server endpoints, cached locally in IndexedDB, and not merged through Supabase/server sync. Downloading an episode attempts to cache the matching silence map so Smart Skip silence can keep working offline when the map is ready.
-
-Smart Skip maps are server-owned cache data. They require signed-in server routes, are stored in server Smart Skip tables, cached locally in IndexedDB when ready, and are not merged through Supabase/server sync. The client may also cache queued/processing request status for eligible Inbox and Queue episodes so proactive Smart Skip work can be de-duped and polled without affecting local playback state. Downloading an episode attempts to cache the matching Smart Skip map so Smart Skip can keep working offline when the map is ready. Local-only Tauri playback, queueing, inbox triage, settings, and downloads must continue without server Smart Skip access.
-
-## Search and Add Podcast contract
-
-- Library filtering is local and covers subscribed podcast title, author, tags, description, feed URL, and source URL.
-- The Add Podcast omnibar accepts RSS URLs, PodcastIndex search text, and YouTube URLs.
-- PodcastIndex discovery/search is only available when authenticated and runs through server routes.
-- YouTube import is only available when authenticated and when `/api/capabilities` reports `youtubeImport.enabled=true`.
-- The server never searches YouTube for plain text queries. Users must paste a YouTube video, playlist, channel, or podcast URL.
-- YouTube video URLs resolve to the parent channel's canonical synthetic podcast when the channel can be identified, and the requested video is merged into that feed if it is not already present. YouTube playlist, channel, and podcast playlist URLs create refreshable synthetic podcasts. A real RSS feed remains the preferred import path when available.
-
-## YouTube import
-
-`POST /api/youtube/import` and `POST /api/youtube/sources/:id/refresh` require `Authorization: Bearer <token>` and server-side YouTube import enabled. `GET /api/capabilities` exposes only whether import is enabled; it does not expose server paths or tool configuration to the client.
-
-YouTube source import is metadata-first. It creates or updates a canonical server-owned synthetic podcast feed and normal local-first podcast/episode rows without queueing audio extraction. The app server exposes the fake RSS-style feed as `/api/youtube/feed.xml?url=...` so other podcast clients can consume it. Later users importing the same canonical YouTube source reuse the stored feed immediately.
-
-Server-only env:
-
-- `YOUTUBE_IMPORT_ENABLED`
-- `YTDLP_PATH`
-- `YOUTUBE_METADATA_MAX_ENTRIES`
-- `YOUTUBE_AUDIO_QUALITY`
-- `SERVER_MAX_JOBS`
-
-The app server fetches lightweight YouTube text/image metadata during source import and refresh. For playlist and channel sources, it uses `yt-dlp --flat-playlist --dump-json` when available so synthetic feeds are not limited to YouTube's short RSS window. `YOUTUBE_METADATA_MAX_ENTRIES` defaults to 500. Large flat crawls use metadata-only Shorts filtering to avoid one HTML request per episode. `SERVER_MAX_JOBS` defaults to `1` and limits concurrent `yt-dlp` and ffmpeg subprocess work so bursts of YouTube extraction requests queue instead of spawning parallel downloads.
-
-Opening a YouTube episode page triggers `POST /api/youtube/episodes/:id/enrich`, which runs a single-episode `yt-dlp --dump-json --skip-download` metadata enrichment and stores the result under the server media data directory. Later fake RSS generation merges that cached enrichment so title, description, duration, image, and published date improvements persist for other clients.
-
-The server does not queue audio extraction during feed creation, refresh, or episode enrichment. Audio extraction is user-triggered through `POST /api/youtube/episodes/:id/extract` or an RSS client requesting `/media/youtube/:episodeId.mp3`. The server runs yt-dlp, stores the MP3 under the media data directory, marks the stored synthetic feed episode ready, and then serves that stable enclosure URL like a normal podcast media URL. If the file has not been cached yet, the server returns a processing response while the download is in progress. Downloaded files on client devices and native file paths remain device-local after a client chooses to download an episode.
-
-## Silence maps
-
-`POST /api/audio/silence-maps` and `GET /api/audio/silence-maps/:id` require `Authorization: Bearer <token>`.
-
-The server uses ffmpeg `silencedetect` and server env defaults to create map segments. Defaults are `SILENCE_THRESHOLD_DB=-42`, `SILENCE_MINIMUM_SEC=0.7`, `SILENCE_RETAINED_SEC=0.25`, and `SILENCE_ANALYZER_VERSION=v1`. Segments shorten long silences by keeping the retained portion and skipping the rest.
-
-## Smart Skip
-
-`POST /api/smart-skip/process`, `GET /api/smart-skip/jobs/:id`, and `GET /api/smart-skip/episodes/:episodeId/segment-map` require `Authorization: Bearer <token>` by default.
-
-The server stores media versions, transcripts, segment maps, segments, jobs, and external batch task metadata in local Postgres when `DATABASE_URL` is configured. Existing databases should apply `infra/postgres/migrations/20260601_smart_skip_v1.sql` before enabling Smart Skip. If no database is configured, the server keeps an in-memory fallback for local development only. Worker services are configured with `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL`; local compose mocks validate integration only, while production needs real Whisper and a real segmenter endpoint. `SMART_SKIP_WHISPER_FORMAT=contract` calls the repo JSON `/v1/transcribe` worker contract, while `SMART_SKIP_WHISPER_FORMAT=openai` calls multipart `/v1/audio/transcriptions` for OpenAI-compatible Whisper servers. This iteration's segmenter backend is `openai_batch`: pending batches are stored in `smart_skip_external_tasks`, jobs are released with `stage='waiting-for-segment-batch'`, and `next_attempt_at` controls the next poll, defaulting to 12 hours. This can be configured with `SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_MINUTES` (default `720`, i.e., 12 hours). The authenticated `POST /api/smart-skip/process-now` route is a QA hook that uses the same request body as `/api/smart-skip/process` but forces immediate segmenting without submitting an OpenAI Batch job.
-
-For scripted QA, the server can also accept `SERVER_API_TOKEN` as a bearer token. This token is server-only and must not be shipped in browser or Tauri bundles.
-
-Per-show Smart Skip preference overrides sync through `podcast_preferences` as nullable booleans. `NULL` means "use the global app setting"; true or false is an explicit show override. The synced Smart Skip categories are sponsors/ads, self-promo, intros, outros, silence, and include-soft-matches. Existing databases should apply `infra/postgres/migrations/20260602_smart_skip_preferences.sql` to sync these overrides.
-
-## Public clips
-
-Public clip links use the Express server.
-
-`POST /api/clips` stores the clip, returns a public page URL, and starts an ffmpeg render job for an MP3 excerpt. If rendering fails or is disabled, the public page falls back to a source audio time-range URL.
-
-Security rules:
-
-- Do not expose private-feed credentials through public clips.
-- Do not render/share paid/private audio unless the user has rights to share it.
-- Supabase auth keys belong only in server env; UI code must not persist them.
-- Supabase and PodcastIndex credentials are server-only.
-- `DATABASE_URL` belongs only in server env and points at the local Postgres instance.
-- Browsers should only be configured with `VITE_API_BASE_URL` in build-time env.
-- Local preview origins such as `localhost:4173` are app origins, not auth server URLs; GitHub sign-in should target the configured app server, normally `localhost:8787` in local development.
-- The Settings server URL input is a draft field. Blur, Enter, or Test server commits it; bare non-local domains normalize to HTTPS.
-- Tauri GitHub sign-in opens the system browser through the native opener plugin so passkeys/WebAuthn can use the platform browser. The app receives the completed session through the registered `elephant-pod://auth/callback` deep-link scheme.
-
-## Remaining sync hardening
-
-- Add paginated incremental pulls by cursor.
-- Add server revisions and action compaction for old `sync_actions` rows.
-- Add per-field settings merge instead of blob merge.
-- Add richer queue-specific action semantics for multi-device concurrent reordering.
-- Add integration tests with two simulated devices.
-
-## Validation notes
-
-- Tauri/native runtime should function in local-only mode with `serverUrl` unset or unreachable:
-  - RSS feed import, playback queue, OPML import/export, and backups remain usable.
-- The profile button should still open in local-only mode and show a login/setup action instead of becoming a dead end.
-- Browser/web runtime should show the sign-in gate until a valid server session is present.
-- When `serverUrl` is reachable:
-  - `GET /api/health` should return `{ "ok": true }`.
-  - A valid bearer token should return authenticated sync responses.
-  - A missing or invalid token should keep sync/search disabled and return auth-related errors.
-- Local Postgres should contain the sync tables listed above and the server should refuse sync with a clear 503 if `DATABASE_URL` is unset.
+Queue and Inbox are listening-intent signals. Native iOS should ask the server to process Smart Skip and silence-map metadata for queued or inboxed episodes when the backend is available, then keep the ready maps and transcripts locally and in CloudKit personal sync. Downloaded audio files remain device-local; the derived metadata is portable.

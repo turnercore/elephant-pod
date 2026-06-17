@@ -9,16 +9,16 @@ import { z } from 'zod';
 import { ClipStore, clipHtml, parseClipPayload } from './clips.js';
 import { createOrGetSilenceJob, createOrGetSilenceMapJob, getSilenceJob, getSilenceMapJob, renderClipFile } from './mediaJobs.js';
 import { parseRemoteFeed } from './rss.js';
-import { githubCallbackHandler, githubStartHandler, getServerAuthConfig, getAuthSession, requireBearerAuth } from './auth.js';
+import { requireServerServiceAccess } from './auth.js';
 import { podcastIndexBrowseHandler, podcastIndexSearchHandler } from './podcastIndex.js';
 import { upsertPublicClip } from './database.js';
-import { syncHandler } from './sync.js';
 import { readSmartSkipConfig } from './smartSkip/config.js';
 import { startSmartSkipQueue } from './smartSkip/jobs.js';
 import { registerSmartSkipRoutes } from './smartSkip/routes.js';
 import { startSmartSkipScheduler } from './smartSkip/scheduler.js';
 import { handleYoutubeAudio, handleYoutubeEnrich, handleYoutubeExtract, handleYoutubeFeed, handleYoutubeImport, handleYoutubeRefresh, isYoutubeImportConfigured } from './youtubeImport.js';
 import { readServerMaxJobs, serverJobLimiter } from './serverJobs.js';
+import { buildServerCapabilities } from './capabilities.js';
 
 loadDotenv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
 loadDotenv();
@@ -32,6 +32,7 @@ const clipStoreDir = path.isAbsolute(rawClipStoreDir) ? rawClipStoreDir : path.j
 const mediaDataDir = path.isAbsolute(rawMediaDataDir) ? rawMediaDataDir : path.join(process.cwd(), rawMediaDataDir);
 const clipStore = new ClipStore(clipStoreDir);
 const smartSkipConfig = readSmartSkipConfig({ dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
+const serverServiceAccess = requireServerServiceAccess();
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors());
@@ -41,7 +42,7 @@ app.use(morgan('tiny'));
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
-    service: 'elephant-pod',
+    service: 'daisypod',
     time: new Date().toISOString(),
     ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg',
     serverJobs: {
@@ -54,27 +55,11 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.get('/api/capabilities', (_req, res) => {
-  res.json({
-    youtubeImport: {
-      enabled: isYoutubeImportConfigured()
-    }
-  });
+  res.json(buildServerCapabilities({
+    youtubeImportEnabled: isYoutubeImportConfigured(),
+    smartSkipEnabled: smartSkipConfig.enabled
+  }));
 });
-
-app.get('/api/auth/config', (_req, res) => {
-  const config = getServerAuthConfig();
-  if (!config.isConfigured) {
-    res.status(503).json(config);
-    return;
-  }
-  res.json(config);
-});
-
-app.get('/api/auth/session', getAuthSession);
-
-app.get('/api/auth/github/start', githubStartHandler);
-app.post('/api/auth/github/start', githubStartHandler);
-app.get('/api/auth/github/callback', githubCallbackHandler);
 
 app.get('/api/rss/parse', async (req, res) => {
   try {
@@ -92,7 +77,7 @@ app.get('/api/rss/parse', async (req, res) => {
 
 app.get('/api/youtube/feed.xml', (req, res) => void handleYoutubeFeed(req, res, { publicUrl, dataDir: mediaDataDir }));
 
-app.post('/api/clips', async (req, res) => {
+app.post('/api/clips', serverServiceAccess, async (req, res) => {
   try {
     const clip = parseClipPayload(req.body);
     const renderFlag = process.env.CLIP_RENDER_ENABLED ?? process.env.CLIP_RENDERING ?? 'true';
@@ -180,7 +165,7 @@ const silenceMapSchema = z.object({
   audioUrl: z.string().url()
 });
 
-app.post('/api/audio/silence-shortening-jobs', async (req, res) => {
+app.post('/api/audio/silence-shortening-jobs', serverServiceAccess, async (req, res) => {
   try {
     const input = silenceJobSchema.parse(req.body);
     const job = await createOrGetSilenceJob(input, { dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
@@ -190,7 +175,7 @@ app.post('/api/audio/silence-shortening-jobs', async (req, res) => {
   }
 });
 
-app.post('/api/audio/silence-maps', requireBearerAuth(), async (req, res) => {
+app.post('/api/audio/silence-maps', serverServiceAccess, async (req, res) => {
   try {
     const input = silenceMapSchema.parse(req.body);
     const job = await createOrGetSilenceMapJob(input, { dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
@@ -200,7 +185,7 @@ app.post('/api/audio/silence-maps', requireBearerAuth(), async (req, res) => {
   }
 });
 
-app.get('/api/audio/silence-maps/:id', requireBearerAuth(), async (req, res) => {
+app.get('/api/audio/silence-maps/:id', serverServiceAccess, async (req, res) => {
   const job = await getSilenceMapJob(String(req.params.id), { dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
   if (!job) {
     res.status(404).json({ error: 'Silence map not found.' });
@@ -240,30 +225,19 @@ app.get('/media/youtube-thumbnails/:file', (req, res) => {
   });
 });
 
-registerSmartSkipRoutes(app, smartSkipConfig, requireBearerAuth());
+registerSmartSkipRoutes(app, smartSkipConfig, serverServiceAccess);
 startSmartSkipQueue(smartSkipConfig);
 startSmartSkipScheduler(smartSkipConfig, () => {
   console.log('Smart Skip proactive scheduler is configured; active-user discovery is a documented V1 follow-up.');
 });
 
-app.post('/api/sync', requireBearerAuth(), syncHandler);
-app.get('/api/podcast-index/search', requireBearerAuth(), podcastIndexSearchHandler);
-app.get('/api/podcast-index/browse', requireBearerAuth(), podcastIndexBrowseHandler);
-app.post('/api/youtube/import', requireBearerAuth(), (req, res) => void handleYoutubeImport(req, res, { publicUrl, dataDir: mediaDataDir }));
-app.post('/api/youtube/sources/:id/refresh', requireBearerAuth(), (req, res) => void handleYoutubeRefresh(req, res, { publicUrl, dataDir: mediaDataDir }));
-app.post('/api/youtube/episodes/:id/enrich', requireBearerAuth(), (req, res) => void handleYoutubeEnrich(req, res, { publicUrl, dataDir: mediaDataDir }));
-app.post('/api/youtube/episodes/:id/extract', requireBearerAuth(), (req, res) => void handleYoutubeExtract(req, res, { publicUrl, dataDir: mediaDataDir }));
-
-const webDist = process.env.WEB_DIST;
-if (webDist) {
-  const absolute = path.isAbsolute(webDist) ? webDist : path.join(process.cwd(), webDist);
-  app.use(express.static(absolute));
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/') || req.path.startsWith('/clip/') || req.path.startsWith('/media/')) return next();
-    res.sendFile(path.join(absolute, 'index.html'));
-  });
-}
+app.get('/api/podcast-index/search', serverServiceAccess, podcastIndexSearchHandler);
+app.get('/api/podcast-index/browse', serverServiceAccess, podcastIndexBrowseHandler);
+app.post('/api/youtube/import', serverServiceAccess, (req, res) => void handleYoutubeImport(req, res, { publicUrl, dataDir: mediaDataDir }));
+app.post('/api/youtube/sources/:id/refresh', serverServiceAccess, (req, res) => void handleYoutubeRefresh(req, res, { publicUrl, dataDir: mediaDataDir }));
+app.post('/api/youtube/episodes/:id/enrich', serverServiceAccess, (req, res) => void handleYoutubeEnrich(req, res, { publicUrl, dataDir: mediaDataDir }));
+app.post('/api/youtube/episodes/:id/extract', serverServiceAccess, (req, res) => void handleYoutubeExtract(req, res, { publicUrl, dataDir: mediaDataDir }));
 
 app.listen(port, () => {
-  console.log(`Elephant Pod server listening on ${publicUrl}`);
+  console.log(`DaisyPod server listening on ${publicUrl}`);
 });

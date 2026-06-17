@@ -119,18 +119,7 @@ export async function processSmartSkipJob(job: SmartSkipJob, config: SmartSkipCo
       episodeId: next.request.episodeId,
       mediaVersionId: mediaVersion.id,
       durationMs,
-      segments: [
-        ...candidateSegments,
-        ...silence.boundaries.map((boundary) => ({
-          type: 'silence' as const,
-          startMs: boundary.startMs,
-          endMs: boundary.endMs,
-          confidence: 1,
-          action: 'auto_skip' as const,
-          source: 'silence_detector' as const,
-          label: 'Silence'
-        }))
-      ],
+      segments: candidateSegments,
       transcriptSegments: transcript.segments,
       silenceMap: silence.boundaries
     }));

@@ -15,7 +15,7 @@ export function createSegmentMap(input: {
     .sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs)
     .map((segment) => ({ ...segment, id: segment.id || stableSegmentId(input.episodeId, input.mediaVersionId, segment) }));
   return {
-    schemaVersion: 'elephant.smart-skip.v1',
+    schemaVersion: 'daisypod.smart-skip.v1',
     episodeId: input.episodeId,
     podcastId: input.podcastId,
     mediaVersionId: input.mediaVersionId,

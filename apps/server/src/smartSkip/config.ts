@@ -59,12 +59,6 @@ function envWhisperFormat(name: string): SmartSkipConfig['whisperFormat'] {
 function readSegmenterBatchCheckIntervalMinutes(): number {
   const minutes = envNumber('SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_MINUTES', Number.NaN);
   if (Number.isFinite(minutes)) return minutes;
-
-  // Backward-compatible fallback: an earlier revision used hours.
-  // Keep this path so deployments that still export *_HOURS continue to work.
-  const legacyHours = envNumber('SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS', Number.NaN);
-  if (Number.isFinite(legacyHours)) return legacyHours * 60;
-
   return 720; // 12 hours
 }
 

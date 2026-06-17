@@ -1,12 +1,11 @@
 import { z } from 'zod';
 
-export const segmentTypeSchema = z.enum(['ad', 'sponsorship', 'network_promo', 'self_promo', 'intro', 'outro', 'silence']);
+export const segmentTypeSchema = z.enum(['ad', 'sponsorship', 'network_promo', 'self_promo', 'intro', 'outro']);
 export const segmentActionSchema = z.enum(['auto_skip', 'soft_skip', 'label_only', 'do_not_skip']);
 export const segmentSourceSchema = z.enum([
   'rss_metadata',
   'whisper_transcript',
   'codex_segmenter',
-  'silence_detector',
   'boundary_refiner',
   'ensemble'
 ]);
@@ -27,7 +26,7 @@ export const smartSkipSegmentSchema = z.object({
 }).refine((segment) => segment.endMs > segment.startMs, { message: 'endMs must be greater than startMs' });
 
 export const smartSkipSegmentMapSchema = z.object({
-  schemaVersion: z.literal('elephant.smart-skip.v1'),
+  schemaVersion: z.literal('daisypod.smart-skip.v1'),
   episodeId: z.string().min(1),
   podcastId: z.string().optional(),
   mediaVersionId: z.string().min(1),
@@ -74,7 +73,7 @@ export const whisperResponseSchema = z.object({
 
 export const segmenterResponseSchema = z.object({
   segments: z.array(z.object({
-    type: segmentTypeSchema.exclude(['silence']),
+    type: segmentTypeSchema,
     subtype: z.string().optional(),
     startMs: z.number().int().min(0),
     endMs: z.number().int().min(0),

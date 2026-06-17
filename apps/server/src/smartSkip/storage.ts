@@ -432,7 +432,7 @@ function rowToExternalTask(row: Record<string, unknown>): SmartSkipExternalTask 
 
 function rowToMap(row: Record<string, unknown>): SmartSkipSegmentMap {
   return {
-    schemaVersion: 'elephant.smart-skip.v1',
+    schemaVersion: 'daisypod.smart-skip.v1',
     episodeId: String(row.episode_local_id),
     podcastId: typeof row.podcast_local_id === 'string' ? row.podcast_local_id : undefined,
     mediaVersionId: String(row.media_version_id),

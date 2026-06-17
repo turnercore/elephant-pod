@@ -1,0 +1,29 @@
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:media="http://search.yahoo.com/mrss/" xmlns:podcast="https://podcastindex.org/namespace/1.0">
+  <channel>
+    <title>Fixture RSS Show Refreshed</title>
+    <itunes:author>Fixture Network</itunes:author>
+    <description>RSS fixture description after refresh.</description>
+    <link>https://example.com/rss-show</link>
+    <itunes:image href="https://example.com/show-art-refresh.jpg" />
+    <item>
+      <title>RSS Fixture Episode One Revised</title>
+      <guid>rss-episode-one</guid>
+      <pubDate>Wed, 17 Jun 2026 10:00:00 +0000</pubDate>
+      <itunes:duration>01:05:00</itunes:duration>
+      <description>Episode one has updated show notes.</description>
+      <media:thumbnail url="https://example.com/episode-one-refresh.jpg" />
+      <podcast:chapters>
+        <podcast:chapter startTime="00:00:00" title="Updated Opening" url="https://example.com/chapter/updated-opening" />
+        <podcast:chapter startTime="00:33:00" title="New Middle" />
+      </podcast:chapters>
+      <enclosure url="https://media.example.com/episode-one.mp3" length="223456" type="audio/mpeg" />
+    </item>
+    <item>
+      <title>RSS Fixture Episode Three</title>
+      <guid>rss-episode-three</guid>
+      <pubDate>Fri, 19 Jun 2026 10:00:00 +0000</pubDate>
+      <description>Episode three arrived during refresh.</description>
+      <enclosure url="https://media.example.com/episode-three.mp3" length="777777" type="audio/mpeg" />
+    </item>
+  </channel>
+</rss>

@@ -21,10 +21,9 @@ describe('Smart Skip config', () => {
     assert.equal(config.segmenterBatchCheckIntervalMinutes, 15);
   });
 
-  it('falls back to legacy hours value when minutes is unset', () => {
+  it('uses the default interval when minutes is unset', () => {
     delete process.env.SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_MINUTES;
-    process.env.SMART_SKIP_SEGMENTER_BATCH_CHECK_INTERVAL_HOURS = '1';
     const config = readSmartSkipConfig(options);
-    assert.equal(config.segmenterBatchCheckIntervalMinutes, 60);
+    assert.equal(config.segmenterBatchCheckIntervalMinutes, 720);
   });
 });

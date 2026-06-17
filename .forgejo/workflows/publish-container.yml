@@ -8,7 +8,6 @@ on:
       - apps/server/Dockerfile
       - apps/server/src/**
       - apps/segmenter/**
-      - apps/web/**
       - workers/whisper/**
       - package.json
       - package-lock.json
@@ -29,13 +28,13 @@ jobs:
       matrix:
         include:
           - name: server
-            image: forge.elephanthand.com/elephant-hand-games/elephant-pod-server
+            image: forge.elephanthand.com/elephant-hand-games/daisy-pod-server
             dockerfile: apps/server/Dockerfile
           - name: segmenter
-            image: forge.elephanthand.com/elephant-hand-games/elephant-pod-segmenter
+            image: forge.elephanthand.com/elephant-hand-games/daisy-pod-segmenter
             dockerfile: apps/segmenter/Dockerfile
           - name: whisper-worker
-            image: forge.elephanthand.com/elephant-hand-games/elephant-pod-whisper-worker
+            image: forge.elephanthand.com/elephant-hand-games/daisy-pod-whisper-worker
             dockerfile: workers/whisper/Dockerfile
 
     steps:

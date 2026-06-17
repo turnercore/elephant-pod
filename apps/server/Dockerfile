@@ -1,25 +1,21 @@
 FROM node:22-alpine AS build
 WORKDIR /app
-ARG VITE_RUNTIME_MODE=server
-ENV VITE_RUNTIME_MODE=${VITE_RUNTIME_MODE}
-COPY package.json package.json
 COPY tsconfig.base.json tsconfig.base.json
-COPY apps/web/package.json apps/web/package.json
-COPY apps/server/package.json apps/server/package.json
+COPY apps/server apps/server
+WORKDIR /app/apps/server
 RUN npm install
-COPY apps apps
-COPY src-tauri src-tauri
-RUN npm run build:web && npm run build:server
+RUN npm run build
 
 FROM node:22-alpine AS runtime
 RUN apk add --no-cache ffmpeg
 RUN apk add --no-cache yt-dlp
-WORKDIR /app
+WORKDIR /app/apps/server
 ENV NODE_ENV=production
 ENV PORT=8787
-ENV WEB_DIST=apps/web/dist
 ENV CLIP_RENDER_ENABLED=true
 ENV FFMPEG_PATH=ffmpeg
-COPY --from=build /app /app
+COPY --from=build /app/apps/server/package.json package.json
+RUN npm install --omit=dev
+COPY --from=build /app/apps/server/dist dist
 EXPOSE 8787
-CMD ["node", "apps/server/dist/index.js"]
+CMD ["node", "dist/index.js"]

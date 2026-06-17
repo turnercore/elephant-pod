@@ -95,8 +95,8 @@ export function clipHtml(clip: ServerClip): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${safeTitle} · Elephant Pod</title>
-  <meta property="og:title" content="${safeTitle} · Elephant Pod" />
+  <title>${safeTitle} · DaisyPod</title>
+  <meta property="og:title" content="${safeTitle} · DaisyPod" />
   <meta property="og:description" content="${escapeHtml(clip.podcastTitle)} · ${escapeHtml(clip.episodeTitle)}" />
   <style>
     :root { color-scheme: dark; --canvas:#131014; --cream:#FFFBE5; --surface:#2C2430; --bone:#C2C5BB; --yellow:#FFE66E; --coral:#ED6A5A; }
@@ -111,7 +111,7 @@ export function clipHtml(clip: ServerClip): string {
 </head>
 <body>
   <main>
-    <span class="tag">Elephant Pod Clip</span>
+    <span class="tag">DaisyPod Clip</span>
     <h1>${safeTitle}</h1>
     <p>${escapeHtml(clip.podcastTitle)} · ${escapeHtml(clip.episodeTitle)}</p>
     ${note}

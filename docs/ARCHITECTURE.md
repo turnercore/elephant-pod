@@ -1,139 +1,121 @@
 # Architecture
 
-Elephant Pod is split into four layers.
+DaisyPod is now a native iOS app plus an Express backend. The retired React/Tauri frontend has been removed from the supported runtime repository.
 
 ```text
-React/Vite UI
+Native SwiftUI iOS app
   - local-first app state
-  - IndexedDB/Dexie persistence
-  - shared web/Tauri UI
-  - browser audio fallback behind server sign-in
-  - serverUrl-only backend endpoint config
-
-Tauri shell
-  - desktop/mobile packaging
-  - Rust filesystem downloads
-  - native audio command boundary
-  - local Tauri audio plugin scaffold plus iOS/Android implementation references
+  - SQLite persistence with explicit schema versioning
+  - AVPlayer/AVAudioSession playback
+  - native downloads, background audio, Now Playing controls
+  - server URL configuration for optional backend services
+  - CloudKit private-database sync target for personal state
 
 Express app server
   - RSS fetch/parse proxy
-  - static web app hosting
-  - public clip pages
-  - ffmpeg rendered clip files
-  - ffmpeg silence-shortening jobs
-  - authenticated API boundary for Supabase sync and PodcastIndex discovery
-  - optional yt-dlp-backed YouTube source and audio import
+  - PodcastIndex mediation
+  - public clip pages and rendered media
+  - YouTube source metadata and audio extraction
+  - silence maps and Smart Skip processing
+  - health and capability contracts
+  - native service gate for private iOS deployments
 
-Self-hosted Supabase
-  - optional accounts/auth
-  - sync tables with RLS
-  - user settings, subscriptions, episodes, states, clips, tombstones
+CloudKit personal sync
+  - target private-database sync for podcasts, episodes, queue, Inbox,
+    preferences, clips, tombstones, settings, silence maps, Smart Skip maps,
+    and transcripts
+  - implemented as deterministic private-zone records with live CloudKit
+    upload/download and persisted per-zone change tokens for incremental fetches
+  - never syncs native file paths, downloads, tokens, sleep timers, offline
+    mode, or listening stats
 ```
 
-## Local-first model
+## Local-First Model
 
-The app always writes to local IndexedDB first. Supabase sync is a second layer that can pull, merge, and push state for signed-in accounts. Sign-in is the sync opt-in; signing out is the opt-out.
+The iOS app writes to SQLite first. Playback, subscriptions, Inbox, Queue, downloads, settings, OPML, JSON backup/restore, and local browsing must work without sign-in or server access.
 
-Runtime policy:
+The server is additive. If a server URL is configured and backend capabilities allow a feature, the iOS app can request server-owned work such as PodcastIndex discovery, YouTube import, clips, silence maps, or Smart Skip. The app has no user-facing server-login state.
 
-- Browser/web runtime is account-required and blocks the app behind a server GitHub sign-in before playback, library actions, sync, or PodcastIndex discovery.
-- Tauri/native runtime remains local-first and can run without a server or account. If a server is configured and the user signs in, sync and server discovery are additive.
-- Both runtimes use local IndexedDB/Dexie app state. Tauri adds native filesystem/audio bridges where available.
-
-Local tables:
+Local collections include:
 
 - `feeds`
 - `episodes`
 - `states`
+- `podcastPreferences`
 - `clips`
 - `settings`
-- `syncMeta`
+- `syncActions`
 - `tombstones`
 - `listeningStats`
+- silence-map and Smart Skip caches
 
-The queue is represented by `EpisodeState.queuePosition`, which keeps queue state easy to sync and backup. Starting playback with a row-level Play action inserts that episode at queue position 1 so playback state survives refresh; the previously current unfinished episode is displaced to Play Next. Playback history is tracked separately with `EpisodeState.lastPlayedAt`, while `playedAt` remains the completion/mark-played timestamp.
+The queue is represented by `EpisodeState.queuePosition`. Starting playback with Play inserts the episode at the head of the queue; Play Next inserts after the current first queue item; Add Last appends. Playback history uses `lastPlayedAt`, while `playedAt` remains the completion/mark-played timestamp.
 
-Per-podcast preferences are keyed by podcast/feed id. They track explicit Library membership, whether a show should resubscribe when re-added after removal, speed, skip forward/back, skip intro, skip outro, silence shortening, episode sort direction, and whether new subscribed RSS episodes enter Inbox. Skip intro/outro default to `0` seconds. Subscription implies Library membership; Library membership does not imply subscription.
+Inbox triage is explicit:
 
-Manual feed refreshes from pull-to-refresh or refresh buttons are client rate-limited to avoid repeated feed fetch bursts. All-feeds manual refresh has a short shared cooldown, while individual podcast-page refresh has a per-podcast cooldown. Scheduled background refresh still follows the configured refresh interval.
+- Play starts the episode.
+- Queue adds it next.
+- Add Last appends it.
+- Mark Played removes it from Inbox and marks played.
+- Dismiss removes it from Inbox. If Inbox auto-download is enabled and the episode had an Inbox-sourced download, the app deletes that download while preserving manual downloads.
 
-Listening stats are local profile facts stored in `listeningStats`: real time spent listening, podcast content time heard, per-podcast listening totals, estimated time saved by speed, and estimated time saved by silence skipping. They are exported in JSON backups but are not part of server sync.
+Downloads are device-local. The app stores native paths only in local SQLite, strips them from sync/export payloads, and verifies that a file exists before using it for playback.
 
-Silence maps are derived cache facts. Signed-in server analysis creates maps for playback, clients cache them locally, and maps are not part of Supabase sync.
+## Native iOS Model
 
-Smart Skip segment maps are also server-derived cache facts. They require a signed-in server session, store transcripts and segment metadata on the server, and are not part of Supabase sync. Local/offline playback ignores Smart Skip entirely.
+Core native files:
 
-Downloaded episode storage is device-local. Automatic queued downloads are enabled by default in Tauri/native builds; browser builds only auto-download same-origin media because most podcast CDNs block cross-origin `fetch()` even when an `<audio>` element can play the stream. Optional inbox downloads are lower priority. Delete-after-listen is enabled by default and treats an episode as inactive once it is no longer in Queue or Inbox; inactive non-favorite downloads are removed. Manual downloads are tagged locally so they can remain while active, then follow the same delete-after-listen/favorite retention rule once played, dismissed, or removed from the triage stack. Storage pruning preserves downloads in this order:
+- `LocalStore.swift`: SQLite object store and typed repository operations.
+- `AppModel.swift`: app coordination, local-first workflows, background maintenance, backend feature gates.
+- `Views.swift`: SwiftUI shell, navigation, list surfaces, player, detail views, settings.
+- `NativeAudioEngine.swift`: AVPlayer playback and system media integration.
+- `NativeDownloadManager.swift`: app-container media and artwork downloads.
+- `BackendClient.swift`: server contracts for RSS, capabilities, PodcastIndex, YouTube, clips, silence maps, and Smart Skip.
+- `CloudKitPersonalSyncEngine.swift`: CloudKit private-record boundary with incremental private-zone downloads.
+- `DataPortability.swift`: OPML and JSON backup codecs.
 
-1. Favorited episodes.
-2. Queued episodes from top to bottom.
-3. Inbox episodes from the current triage top to bottom.
+The iOS app fetches `/api/capabilities` from the configured backend and uses the response as the feature contract. Older servers that omit newer capability fields are treated as available so route-level failures remain graceful during upgrades.
 
-Tauri desktop playback of downloaded files uses the WebView audio fallback, so local download URLs must go through Tauri's asset protocol. The shell enables `app.security.assetProtocol` only for `$APPDATA/downloads/**` and compiles Tauri with `protocol-asset`. Mobile native playback does not use the asset URL for AVPlayer/Media3; it receives the stored native download path as a `file://` URL.
+## Server Model
 
-## Native model
+The backend is optional for ordinary playback and library management, but required for:
 
-Browser/web mode uses an HTML audio element without routing remote podcast media through Web Audio. Tauri builds can use the bridge in `apps/web/src/lib/native/tauriBridge.ts`.
+- PodcastIndex search,
+- YouTube source import and audio extraction,
+- public clip publishing,
+- silence maps,
+- Smart Skip processing,
+- health/capability checks.
 
-Implemented native-facing pieces:
+Native service requests include iOS service headers. Private deployments can additionally require `SERVER_NATIVE_APP_TOKEN`, with the iOS build receiving the matching `DAISYPOD_NATIVE_APP_TOKEN`. This blocks random callers for the private app deployment even when CloudKit account status is unavailable; public distribution should use stronger verification such as App Attest or Sign in with Apple token validation.
 
-- `src-tauri/src/downloads.rs`: app-local native downloads and pruning.
-- `src-tauri/src/native_audio.rs`: desktop-safe command shim for native audio state.
-- `src-tauri/plugins/tauri-plugin-elephant-audio`: local Tauri plugin package with a desktop shim and mobile source scaffolds.
-- `src-tauri/mobile/ios`: AVPlayer/AVAudioSession/remote-command reference implementation.
-- `src-tauri/mobile/android`: Media3/ExoPlayer/MediaSessionService reference implementation.
+The server does not own personal sync. It should receive only the payload needed for a server feature, such as an episode media URL or source URL.
 
-The plugin is registered in the Tauri shell so desktop builds degrade safely. Mobile projects still need generated Tauri plugin wiring, native entitlement/manifest work, and physical-device validation.
-
-## Server model
-
-The server is required for the hosted browser build because that runtime is account-gated. It remains optional for Tauri/native builds. It adds:
-
-- RSS proxying to avoid browser CORS issues.
-- Static web app hosting.
-- Public clip pages.
-- Rendered MP3 clip files via ffmpeg.
-- Signed-in silence-map analysis jobs via ffmpeg.
-- Signed-in Smart Skip metadata jobs for media versions, transcripts, segment maps, segments, durable leasing, and worker orchestration.
-- Sync/search/import mediation layer (server validates auth and calls Supabase/PodcastIndex/yt-dlp-backed YouTube tooling)
-
-YouTube import is optional and can be disabled with `YOUTUBE_IMPORT_ENABLED=false`. Elephant Pod owns YouTube sources as canonical synthetic podcast feeds (`youtube-channel`, `youtube-playlist`, or `youtube-ad-hoc`) plus normal episode rows and a fake RSS-style feed URL. Source import and refresh fetch metadata only. Playlist/channel metadata uses server-side `yt-dlp --flat-playlist` so synthetic feeds can include more than YouTube RSS exposes. Opening an episode runs single-episode metadata enrichment and stores it in the server media cache for future fake RSS generation. Audio extraction runs only after a user explicitly imports, plays, downloads, or requests the RSS enclosure for an episode; final episode playback uses stable app-server `/media/youtube/:id.mp3` URLs backed by cached server audio.
-
-Expensive app-server subprocess work runs through a shared in-process limiter. `SERVER_MAX_JOBS` defaults to `1` and caps concurrent `yt-dlp` metadata/audio extraction plus ffmpeg clip, silence-shortening, and silence-map jobs. Smart Skip keeps its durable queue and `SMART_SKIP_PROCESSING_CONCURRENCY` setting, but its ffmpeg silence analysis still participates in the shared subprocess limiter.
-
-Future server jobs should include:
-
-- scheduled feed refresh
-- push notifications
-- web-push subscription management
-- optional server-side search index
-- durable persisted background queues for clip/silence/YouTube rendering across restarts
-- active-user discovery for proactive Smart Skip processing
-
-## Sync model
-
-The current sync contract is:
+## Sync Model
 
 ```text
-client -> sends bearer token + user state hints to the app server -> server validates auth token -> server syncs against Supabase using server secrets -> app server returns merged rows/tombstones -> client applies updates locally
+local SQLite write -> prepare CloudKit private records -> CloudKit propagates
+personal state between Apple devices -> clients merge back into SQLite
 ```
 
-Client ownership:
+Current implementation:
 
-- UI/settings should only store `serverUrl`.
-- The UI does not store Supabase URLs/anon keys/service keys.
-- All searches are local by default and can run with no account.
+- `CloudKitPersonalSyncEngine` exports deterministic private-record payloads.
+- Device-local fields are stripped.
+- Silence maps, Smart Skip maps, and transcripts are included so offline playback behavior can follow the episode.
+- `LiveCloudKitPersonalSyncStore` persists a private-zone server change token and uses CloudKit zone changes for incremental downloads, falling back to a fresh zone fetch when CloudKit expires the token.
 
-Authenticated discovery:
+Still pending:
 
-- PodcastIndex-backed discovery is available to logged-in users via the server, with `PODCASTINDEX_*` keys kept server-only.
-- YouTube URL import is available to logged-in users only when the server advertises the YouTube import capability. YouTube podcast URLs are treated as YouTube playlist sources unless an actual RSS feed is provided or found through podcast discovery.
+- broader conflict replay validation,
+- two-device physical validation.
 
-Conflict rule:
+Target conflict rules:
 
 - Last writer wins by `updated_at` at row level.
-- Downloads are device-local and are never synced.
-- Tombstones can propagate deletes for future delete UI.
+- Downloads never sync.
+- Tombstones propagate deletes.
 
-This is good enough for a v2 prototype. Production should move to a mutation log with server revisions and paginated pull cursors before heavy real-world use.
+## Deployment Shape
+
+The server image is backend-only. It does not build or serve a web frontend. Superzima pulls the Forgejo registry images and runs the app server plus optional Smart Skip services through Compose.
