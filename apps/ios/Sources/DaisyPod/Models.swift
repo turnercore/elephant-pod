@@ -436,7 +436,8 @@ struct AppSettings: Codable, Hashable {
   var deviceId: String = UUID().uuidString
   var updatedAt: Date = Date()
   var serverRevision: Int? = nil
-  var theme: String = "dark"
+  var theme: AppTheme = .light
+  var themeSchemaVersion: Int = AppTheme.currentSchemaVersion
 
   init() {}
 
@@ -472,6 +473,7 @@ struct AppSettings: Codable, Hashable {
     case updatedAt
     case serverRevision
     case theme
+    case themeSchemaVersion
   }
 
   init(from decoder: Decoder) throws {
@@ -507,7 +509,14 @@ struct AppSettings: Codable, Hashable {
     deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId) ?? deviceId
     updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? updatedAt
     serverRevision = try container.decodeIfPresent(Int.self, forKey: .serverRevision) ?? serverRevision
-    theme = try container.decodeIfPresent(String.self, forKey: .theme) ?? theme
+    themeSchemaVersion = try container.decodeIfPresent(Int.self, forKey: .themeSchemaVersion) ?? 0
+    if themeSchemaVersion >= AppTheme.currentSchemaVersion {
+      let rawTheme = try container.decodeIfPresent(String.self, forKey: .theme)
+      theme = rawTheme.flatMap(AppTheme.init(rawValue:)) ?? theme
+    } else {
+      theme = .light
+      themeSchemaVersion = AppTheme.currentSchemaVersion
+    }
   }
 }
 

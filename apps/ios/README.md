@@ -24,12 +24,12 @@ For physical-device validation, keep the development team as a local command ove
 
 ```bash
 DAISYPOD_DEVELOPMENT_TEAM=<apple-team-id> \
-DAISYPOD_NATIVE_APP_TOKEN=<server-native-app-token> \
 npm run ios:install:device -- <device-udid> <coredevice-id>
 ```
 
-For private SuperZima builds, use the wrapper that reads the live server token
-over SSH and passes it to Xcode without printing or storing it:
+The SuperZima wrapper is retained for compatibility and delegates to the same
+device install flow. Protected backend features use Sign in with Apple after
+install rather than a bundled native app token:
 
 ```bash
 DAISYPOD_DEVELOPMENT_TEAM=<apple-team-id> \
@@ -55,7 +55,7 @@ If Xcode reports `Personal development teams ... do not support the iCloud capab
 - Native `AVPlayer` audio engine with background audio, Now Playing metadata, and remote commands.
 - Existing DaisyPod backend remains the server boundary for RSS proxying, PodcastIndex, public clips, YouTube import, silence maps, Smart Skip, health, and capabilities.
 - Target personal sync is iCloud/CloudKit private-database sync. The server `/api/sync` path is no longer part of the native product runtime. `project.yml` declares the CloudKit entitlement for `iCloud.com.elephanthand.daisypod`, and the live Apple Account status provider checks that explicit container with graceful local-first fallback when iCloud or provisioning is not ready.
-- Native server features are gated in the app by backend `/api/capabilities` and by the private native app token when configured on the server, not by visible GitHub sign-in or local CloudKit account status. Build private device installs with `DAISYPOD_NATIVE_APP_TOKEN=...` matching server `SERVER_NATIVE_APP_TOKEN=...`. The token gate blocks random callers for private deployments; public abuse-sensitive deployments still need App Attest or Sign in with Apple token verification on the server.
+- Native server features are gated in the app by backend `/api/capabilities`, native service headers, and Sign in with Apple backend sessions. PodcastIndex search works with native headers so normal device installs can discover shows. Protected processing and publishing routes require signing in with Apple once; the backend stores an account-linked session and the app keeps its session token in Keychain. Public abuse-sensitive deployments may still add App Attest on top of Apple Sign In.
 
 ## Current Native Slice
 
@@ -64,6 +64,7 @@ Implemented now:
 - Buildable native app scaffold.
 - Local seed library and settings.
 - Inbox, Library, History, Downloads, Search/Add, and Settings top-level surfaces.
+- Native Settings appearance picker with Light as the baseline look, plus Dark and Vaporwave themes for visual styling, effects, and motion only.
 - Native Settings controls for persisted playback speed, skip forward/back, resume rewind, autoplay, native audio preference, auto-download, Inbox downloads, delete-after-listen, Wi-Fi-only downloads, storage cap, Inbox sort order, and automatic feed refresh interval.
 - Native Settings profile stats for time listened, podcast time heard, speed savings, silence savings, and top listened podcasts recorded from local `AVPlayer` playback.
 - Episode and podcast detail navigation.
@@ -81,7 +82,7 @@ Implemented now:
 - Native foreground automatic feed refresh for due library shows using the configured refresh interval, plus native background refresh and processing task registration for download maintenance. Background tasks reuse the same local-first maintenance path as foreground launch/triage changes, and physical-device validation remains required because iOS scheduling is system controlled.
 - App Intents and App Shortcuts for opening a main section, pre-filling Add with a podcast or YouTube URL, toggling playback, and preparing iCloud sync. Intent handoff is stored locally and consumed when the app becomes active.
 - Native URL-scheme routing for `daisypod://add?url=...`, `daisypod://open?section=...`, direct section links such as `daisypod://queue`, playback toggle links, and sync links.
-- Backend health, capabilities, private native app token headers, PodcastIndex search, YouTube import/enrich/extract, Apple Account/iCloud status for personal sync, and CloudKit personal-sync record preparation/merge/upload.
+- Backend health, capabilities, Sign in with Apple backend sessions, PodcastIndex search, YouTube import/enrich/extract, Apple Account/iCloud status for personal sync, and CloudKit personal-sync record preparation/merge/upload.
 - Native capability gates from `/api/capabilities` for PodcastIndex, YouTube import/enrich/extract, clip publishing, silence maps, and Smart Skip. Explicitly disabled backend features show local disabled-state text instead of making failing route calls; local-first behavior remains available without a server.
 - Native Settings backend/data controls show pending local changes, prepared iCloud changes, and local snapshot counts so users can understand what would sync without exposing device-local download paths.
 - RSS import through `/api/rss/parse`, including inline Podcasting 2.0 and Podlove chapter tags plus backend-resolved external Podcasting 2.0 chapter JSON. Direct native RSS/Atom parsing remains available as an offline fallback and skips external chapter URLs.

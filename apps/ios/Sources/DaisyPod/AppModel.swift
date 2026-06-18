@@ -44,6 +44,8 @@ final class AppModel: ObservableObject {
   @Published var runningDownloadMaintenance = false
   @Published var backendCapabilities: BackendCapabilities?
   @Published var appleAccountState: AppleAccountState = .checking
+  @Published var backendSession: BackendSession? = BackendSessionStore.load()
+  @Published var signingInWithApple = false
   @Published private(set) var sleepTimerEndsAt: Date?
 
   let repository: PodcastRepository
@@ -245,6 +247,16 @@ final class AppModel: ObservableObject {
 
   var smartSkipProcessingAvailable: Bool {
     backendCapabilities?.smartSkip?.enabled != false
+  }
+
+  var backendAccountStatusText: String {
+    if let email = backendSession?.account.email, !email.isEmpty {
+      return "Signed in as \(email)"
+    }
+    if backendSession != nil {
+      return "Signed in with Apple"
+    }
+    return "Not signed in"
   }
 
   var syncDiagnostics: SyncDiagnostics {
@@ -977,6 +989,7 @@ final class AppModel: ObservableObject {
       next.serverUrl = BackendClient.normalizeServerUrl(value)
       try repository.saveSettings(next)
       try refresh()
+      status = settings.serverUrl == nil ? "Server URL cleared. Backend features are off." : "Server URL saved."
       if previousServerUrl != settings.serverUrl {
         backendCapabilities = nil
         refreshBackendCapabilities()
@@ -991,6 +1004,7 @@ final class AppModel: ObservableObject {
       status = "Server URL is not configured."
       return
     }
+    status = "Testing server."
     Task {
       do {
         let health = try await client.health()
@@ -1006,6 +1020,47 @@ final class AppModel: ObservableObject {
   func refreshAppleAccountStatus() {
     Task {
       appleAccountState = await appleAccountStatusProvider.accountStatus()
+    }
+  }
+
+  func signInWithApple(identityToken: Data?) {
+    guard let tokenData = identityToken, let token = String(data: tokenData, encoding: .utf8) else {
+      status = "Apple sign-in did not return an identity token."
+      return
+    }
+    guard let client = BackendClient(serverUrl: settings.serverUrl) else {
+      status = "Set a server URL before signing in."
+      return
+    }
+    signingInWithApple = true
+    status = "Signing in with Apple."
+    Task {
+      do {
+        let response = try await client.signInWithApple(identityToken: token)
+        let session = BackendSession(accessToken: response.accessToken, account: response.account, createdAt: response.createdAt)
+        try BackendSessionStore.save(session)
+        backendSession = session
+        status = "Signed in with Apple."
+      } catch let error as BackendClientError {
+        if let message = error.message, !message.isEmpty {
+          status = "Apple sign-in failed: \(message)"
+        } else {
+          status = "Apple sign-in failed with HTTP \(error.statusCode)."
+        }
+      } catch {
+        status = "Apple sign-in failed."
+      }
+      signingInWithApple = false
+    }
+  }
+
+  func signOutBackend() {
+    let client = BackendClient(serverUrl: settings.serverUrl)
+    BackendSessionStore.clear()
+    backendSession = nil
+    status = "Signed out."
+    Task {
+      try? await client?.signOut()
     }
   }
 
@@ -1296,6 +1351,10 @@ final class AppModel: ObservableObject {
       do {
         podcastSearchResults = try await client.searchPodcastIndex(query: query)
         status = podcastSearchResults.isEmpty ? "No PodcastIndex matches." : "Found \(podcastSearchResults.count) podcasts."
+      } catch let error as BackendClientError where error.isNativeAppAccessRequired {
+        status = "PodcastIndex search needs a private app token for this server."
+      } catch let error as BackendClientError {
+        status = error.message ?? "PodcastIndex search failed."
       } catch {
         status = "PodcastIndex search failed."
       }

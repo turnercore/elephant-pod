@@ -18,6 +18,7 @@ docs            Architecture, audio, accessibility, iCloud sync, roadmap, valida
 ## What Works Now
 
 - Native iOS Inbox, Library, Add/Search, History, Downloads, Settings, episode detail, podcast detail, bottom player, and expanded Now Playing queue sheet.
+- Native Light, Dark, and Vaporwave appearance themes selected from Settings. Themes change colors, effects, and motion only; playback, sync, downloads, and server behavior stay local-first and unchanged.
 - Local-first SQLite persistence for podcasts, episodes, episode state, queue, Inbox, preferences, clips, settings, tombstones, sync actions, downloads, and listening stats.
 - Native AVPlayer playback with app-container downloads, progress persistence, Now Playing metadata plumbing, remote commands, sleep timer, speed/skip controls, autoplay next, chapters, and queue reorder.
 - OPML import/export and JSON backup/restore through iOS document flows.
@@ -26,7 +27,7 @@ docs            Architecture, audio, accessibility, iCloud sync, roadmap, valida
 - Server-mediated YouTube source import, metadata enrichment, and audio extraction.
 - Public clip publishing and ffmpeg-rendered clip MP3s.
 - Server-generated silence maps and Smart Skip metadata, cached locally for offline playback behavior and prepared for CloudKit personal sync.
-- Native app-origin filtering for private deployments with `SERVER_NATIVE_APP_TOKEN` on the server and `DAISYPOD_NATIVE_APP_TOKEN` in private iOS builds.
+- Sign in with Apple backed server sessions for protected backend processing and publishing routes.
 
 ## Local Development
 
@@ -71,8 +72,8 @@ npm run build
 The native app can run without a server. When a backend is configured, server features are additive and gated by:
 
 - `/api/capabilities` from the backend,
-- native service headers,
-- and, for private deployments, the optional `SERVER_NATIVE_APP_TOKEN`.
+- native service headers for discovery,
+- and Sign in with Apple sessions for protected processing and publishing routes.
 
 Important environment variables:
 
@@ -81,7 +82,7 @@ Important environment variables:
 - `PODCASTINDEX_API_KEY`
 - `PODCASTINDEX_API_SECRET`
 - `PODCASTINDEX_USER_AGENT`
-- `SERVER_NATIVE_APP_TOKEN` for private native app service calls
+- `APPLE_SIGN_IN_AUDIENCE` or `APPLE_BUNDLE_ID` when the Apple identity-token audience differs from `com.elephanthand.daisypod`
 - `YOUTUBE_IMPORT_ENABLED`
 - `YTDLP_PATH`
 - `SERVER_MAX_JOBS`
@@ -91,7 +92,7 @@ Important environment variables:
 - `SMART_SKIP_WHISPER_BASE_URL`
 - `SMART_SKIP_SEGMENTER_BASE_URL`
 
-Server secrets must stay server-side. Do not put PodcastIndex, database, native app tokens, or processing-service credentials into public client config. Private iOS builds may receive `DAISYPOD_NATIVE_APP_TOKEN` at build time.
+Server secrets must stay server-side. Do not put PodcastIndex, database, account-session tokens, or processing-service credentials into public client config. PodcastIndex discovery accepts native service headers; protected processing and publishing features require an Apple-backed backend session stored in the iOS Keychain.
 
 ## Docker
 

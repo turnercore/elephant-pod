@@ -5,6 +5,27 @@
 
 create extension if not exists pgcrypto;
 
+create table if not exists public.daisy_accounts (
+  id uuid primary key default gen_random_uuid(),
+  apple_sub text not null unique,
+  email text,
+  email_verified boolean,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_seen_at timestamptz
+);
+
+create table if not exists public.daisy_sessions (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references public.daisy_accounts(id) on delete cascade,
+  token_hash text not null unique,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz,
+  revoked_at timestamptz
+);
+
+create index if not exists idx_daisy_sessions_account on public.daisy_sessions(account_id, created_at desc);
+
 create table if not exists public.public_clips (
   id text primary key,
   title text not null,

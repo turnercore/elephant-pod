@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -24,6 +25,8 @@ struct RootView: View {
 
   var body: some View {
     let visibleSection = model.selectedTab.visibleSection
+    let theme = model.settings.theme
+    let themeStyle = theme.style
     NavigationStack(path: $path) {
       VStack(spacing: 0) {
         TopSectionNavigation(selection: Binding(
@@ -33,7 +36,9 @@ struct RootView: View {
         Divider()
         sectionView(visibleSection)
           .id(visibleSection)
+          .themedContentSurface()
       }
+      .background(AppThemeBackground(theme: theme).ignoresSafeArea())
       .navigationTitle(visibleSection.title)
       .navigationBarTitleDisplayMode(.inline)
       .navigationDestination(for: AppRoute.self) { route in
@@ -53,8 +58,19 @@ struct RootView: View {
         }
       }
     }
+    .environment(\.appThemeStyle, themeStyle)
+    .preferredColorScheme(theme.colorScheme)
+    .tint(themeStyle.tint)
+    .toolbarBackground(themeStyle.elevatedSurface.opacity(theme == .vaporwave ? 0.94 : 0.88), for: .navigationBar)
+    .toolbarBackground(.visible, for: .navigationBar)
+    .toolbarColorScheme(theme.colorScheme, for: .navigationBar)
     .environment(\.navigateToRoute) { route in
       path.append(route)
+    }
+    .background(AppThemeBackground(theme: theme).ignoresSafeArea())
+    .overlay {
+      AppThemeForegroundEffects(theme: theme)
+        .ignoresSafeArea()
     }
     .safeAreaInset(edge: .bottom) {
       PlayerBar(audio: model.audio)
@@ -102,6 +118,7 @@ struct RootView: View {
 }
 
 struct StatusToast: View {
+  @Environment(\.appThemeStyle) private var theme
   var message: String
   var onDismiss: () -> Void
 
@@ -117,11 +134,11 @@ struct StatusToast: View {
       }
       .padding(.horizontal, 14)
       .padding(.vertical, 8)
-      .background(.regularMaterial, in: Capsule())
+      .background(theme.elevatedSurface.opacity(theme.isVaporwave ? 0.88 : 0.72), in: Capsule())
       .overlay {
-        Capsule().stroke(.separator.opacity(0.45), lineWidth: 0.5)
+        Capsule().stroke(theme.tint.opacity(theme.isVaporwave ? 0.8 : theme.separatorOpacity), lineWidth: theme.isVaporwave ? 1.2 : 0.5)
       }
-      .shadow(color: .black.opacity(0.16), radius: 12, y: 5)
+      .shadow(color: theme.isVaporwave ? theme.tint.opacity(0.42) : .black.opacity(0.16), radius: theme.isVaporwave ? 18 : 12, y: 5)
       .padding(.horizontal, 14)
     }
     .buttonStyle(.plain)
@@ -132,6 +149,7 @@ struct StatusToast: View {
 
 struct TopSectionNavigation: View {
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+  @Environment(\.appThemeStyle) private var theme
   @Binding var selection: SectionKey
 
   private var iconOnly: Bool {
@@ -154,12 +172,29 @@ struct TopSectionNavigation: View {
       .padding(.horizontal, 12)
       .padding(.vertical, 8)
     }
-    .background(.bar)
+    .background {
+      if theme.isVaporwave {
+        LinearGradient(
+          colors: [theme.elevatedSurface, theme.surface.opacity(0.84)],
+          startPoint: .leading,
+          endPoint: .trailing
+        )
+      } else {
+        theme.elevatedSurface.opacity(0.94)
+      }
+    }
+    .overlay(alignment: .bottom) {
+      Rectangle()
+        .fill(theme.isVaporwave ? theme.secondaryTint.opacity(0.82) : Color(.separator).opacity(theme.separatorOpacity))
+        .frame(height: theme.isVaporwave ? 1.5 : 0.5)
+        .shadow(color: theme.isVaporwave ? theme.secondaryTint.opacity(0.8) : .clear, radius: 8)
+    }
     .accessibilityIdentifier("TopSectionNavigation")
   }
 }
 
 struct TopSectionButton: View {
+  @Environment(\.appThemeStyle) private var theme
   var section: SectionKey
   var isSelected: Bool
   var iconOnly: Bool
@@ -170,7 +205,7 @@ struct TopSectionButton: View {
       content
     }
     .buttonStyle(.plain)
-    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+    .foregroundStyle(isSelected ? theme.tint : Color.primary)
     .accessibilityLabel(section.title)
     .accessibilityIdentifier(section.accessibilityIdentifier)
   }
@@ -184,9 +219,8 @@ struct TopSectionButton: View {
         .frame(minWidth: 42)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-          Capsule().fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
-        )
+        .background(navigationButtonBackground)
+        .shadow(color: isSelected && theme.isVaporwave ? theme.tint.opacity(0.28) : .clear, radius: 10)
     } else {
       Label(section.title, systemImage: section.systemImage)
         .labelStyle(.titleAndIcon)
@@ -194,10 +228,18 @@ struct TopSectionButton: View {
         .lineLimit(1)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-          Capsule().fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
-        )
+        .background(navigationButtonBackground)
+        .shadow(color: isSelected && theme.isVaporwave ? theme.tint.opacity(0.28) : .clear, radius: 10)
     }
+  }
+
+  private var navigationButtonBackground: some View {
+    Capsule()
+      .fill(isSelected ? theme.tint.opacity(theme.isVaporwave ? 0.20 : 0.16) : Color.clear)
+      .overlay {
+        Capsule()
+          .stroke(isSelected && theme.isVaporwave ? theme.tint.opacity(0.72) : .clear, lineWidth: 1)
+      }
   }
 }
 
@@ -1634,6 +1676,21 @@ struct SettingsView: View {
 
   var body: some View {
     Form {
+      Section("Appearance") {
+        Picker("Theme", selection: Binding(
+          get: { model.settings.theme },
+          set: { value in model.updateSettings {
+            $0.theme = value
+            $0.themeSchemaVersion = AppTheme.currentSchemaVersion
+          } }
+        )) {
+          ForEach(AppTheme.allCases) { theme in
+            Text(theme.title).tag(theme)
+          }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("ThemePicker")
+      }
       Section("Playback") {
         Stepper("Skip forward: \(model.settings.skipForwardSec)s", value: Binding(
           get: { model.settings.skipForwardSec },
@@ -1758,15 +1815,66 @@ struct SettingsView: View {
         ))
       }
       Section("Backend") {
-        TextField("https://pod.elephanthand.com", text: $serverUrl)
+        TextField("Optional backend URL", text: $serverUrl)
           .textInputAutocapitalization(.never)
           .keyboardType(.URL)
           .onAppear { serverUrl = model.settings.serverUrl ?? "" }
           .accessibilityIdentifier("ServerURLInput")
-        Button("Save Server URL") { model.saveServerUrl(serverUrl) }
+        Text(model.settings.serverUrl == nil ? "No backend configured. Playback, subscriptions, queueing, triage, and settings stay local." : "Backend: \(model.settings.serverUrl ?? "")")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("ServerURLStatus")
+        Button {
+          model.saveServerUrl(serverUrl)
+        } label: {
+          Label("Save Server URL", systemImage: "square.and.arrow.down")
+        }
           .accessibilityIdentifier("SaveServerURLButton")
-        Button("Test Server") { model.testServer() }
+        Button {
+          model.testServer()
+        } label: {
+          Label("Test Server", systemImage: "waveform.path.ecg")
+        }
           .accessibilityIdentifier("TestServerButton")
+        LabeledContent {
+          Text(model.backendAccountStatusText)
+            .accessibilityIdentifier("BackendAccountStatusValue")
+        } label: {
+          Label("Backend account", systemImage: model.backendSession == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark")
+        }
+        if model.backendSession == nil {
+          if model.settings.serverUrl == nil {
+            Button {
+              model.status = "Set and save a server URL before signing in with Apple."
+            } label: {
+              Label("Sign in with Apple needs a server URL", systemImage: "apple.logo")
+            }
+            .accessibilityIdentifier("SignInWithAppleNeedsServerButton")
+          } else {
+            SignInWithAppleButton(.signIn) { request in
+              request.requestedScopes = [.email]
+            } onCompletion: { result in
+              switch result {
+              case .success(let authorization):
+                let credential = authorization.credential as? ASAuthorizationAppleIDCredential
+                model.signInWithApple(identityToken: credential?.identityToken)
+              case .failure(let error):
+                model.status = "Apple sign-in failed: \(error.localizedDescription)"
+              }
+            }
+            .signInWithAppleButtonStyle(.black)
+            .frame(height: 44)
+            .disabled(model.signingInWithApple)
+            .accessibilityIdentifier("SignInWithAppleButton")
+          }
+        } else {
+          Button(role: .destructive) {
+            model.signOutBackend()
+          } label: {
+            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+          }
+          .accessibilityIdentifier("BackendSignOutButton")
+        }
       }
       Section {
         LabeledContent {
@@ -1860,6 +1968,7 @@ struct SettingsView: View {
         .accessibilityIdentifier("ExportBackupButton")
       }
     }
+    .themedContentSurface()
     .fileImporter(isPresented: $importingOPML, allowedContentTypes: [.xml, .opmlDocument, .plainText]) { result in
       if case let .success(url) = result {
         model.importOPML(from: url)
@@ -1882,6 +1991,7 @@ struct SettingsView: View {
 struct PlayerBar: View {
   @EnvironmentObject private var model: AppModel
   @Environment(\.navigateToRoute) private var navigateToRoute
+  @Environment(\.appThemeStyle) private var theme
   @ObservedObject var audio: NativeAudioEngine
   @State private var playerSheet: PlayerSheet?
 
@@ -1899,7 +2009,7 @@ struct PlayerBar: View {
             cachedURL: model.cachedArtworkURL(for: current),
             fallbackSystemImage: current.state.downloaded ? "arrow.down.circle.fill" : "waveform",
             size: 58,
-            tint: current.state.downloaded ? .green : .blue
+            tint: current.state.downloaded ? .green : theme.artworkTint
           )
 
           Button {
@@ -1944,6 +2054,7 @@ struct PlayerBar: View {
                   .frame(width: 32, height: 32)
               }
               .buttonStyle(.borderedProminent)
+              .tint(theme.isVaporwave ? theme.secondaryTint : theme.tint)
               .accessibilityLabel(audio.isPlaying ? "Pause" : "Play")
 
               Button { audio.skip(by: TimeInterval(model.settings.skipForwardSec)) } label: {
@@ -1961,9 +2072,10 @@ struct PlayerBar: View {
           }
         }
         if let remaining = model.sleepTimerRemainingMinutes() {
+          let sleepTimerText = "Sleep timer: \(remaining)m"
           HStack(spacing: 4) {
             Image(systemName: "timer")
-            Text("Sleep timer: \(remaining)m")
+            Text(sleepTimerText)
           }
           .font(.caption2)
           .foregroundStyle(.secondary)
@@ -1973,12 +2085,7 @@ struct PlayerBar: View {
       .padding(.horizontal, 12)
       .padding(.top, 8)
       .padding(.bottom, 10)
-      .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-      .overlay {
-        RoundedRectangle(cornerRadius: 14)
-          .stroke(.separator.opacity(0.45), lineWidth: 0.5)
-      }
-      .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+      .modifier(PlayerBarChrome(theme: theme))
       .contentShape(Rectangle())
       .gesture(
         DragGesture(minimumDistance: 18)
@@ -2009,6 +2116,38 @@ struct PlayerBar: View {
   private var sleepTimerAccessibilityLabel: String {
     guard let remaining = model.sleepTimerRemainingMinutes() else { return "Sleep timer" }
     return "Sleep timer, \(remaining) minutes remaining"
+  }
+}
+
+private struct PlayerBarChrome: ViewModifier {
+  var theme: AppThemeStyle
+
+  private var cornerRadius: CGFloat {
+    theme.isVaporwave ? 6 : 14
+  }
+
+  func body(content: Content) -> some View {
+    content
+      .background {
+        RoundedRectangle(cornerRadius: cornerRadius)
+          .fill(theme.elevatedSurface.opacity(theme.isVaporwave ? 0.9 : 0.72))
+          .overlay {
+            if theme.isVaporwave {
+              LinearGradient(
+                colors: [theme.tint.opacity(0.20), theme.secondaryTint.opacity(0.17), .clear],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+              )
+              .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            }
+          }
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: cornerRadius)
+          .stroke(theme.isVaporwave ? theme.tint.opacity(0.78) : Color(.separator).opacity(theme.separatorOpacity), lineWidth: theme.isVaporwave ? 1.2 : 0.5)
+      }
+      .shadow(color: theme.isVaporwave ? theme.tint.opacity(0.28) : theme.shadow, radius: theme.isVaporwave ? 22 : 10, y: 4)
+      .shadow(color: theme.isVaporwave ? theme.secondaryTint.opacity(0.20) : .clear, radius: 32, y: 0)
   }
 }
 

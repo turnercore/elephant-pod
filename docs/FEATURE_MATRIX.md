@@ -12,12 +12,13 @@
 | Favorites | Implemented | Favorite/unfavorite is explicit from episode detail and the expanded player. Favorite state protects downloads from auto-delete/prune. |
 | Downloads/offline | Implemented with physical validation pending | App-container downloads, delete controls outside Inbox triage, offline filtering, stale-file reconciliation, Wi-Fi-only policy, auto-delete after listen, and storage-cap pruning are implemented. Cellular/Wi-Fi and system background behavior still need field validation. |
 | RSS import | Implemented | Uses backend RSS parse when configured and direct native RSS/Atom parsing as fallback. |
-| PodcastIndex discovery | Implemented | Server-mediated search through `/api/podcast-index/search`, gated by backend capabilities and the native app token when configured. |
+| PodcastIndex discovery | Implemented | Server-mediated search through `/api/podcast-index/search`, gated by backend capabilities and native service headers without requiring the private build token. |
 | YouTube import | Implemented | Server-mediated video/playlist/channel import plus episode metadata enrichment and audio extraction. Native download waits for server extraction readiness. |
 | Clips | Implemented | Native clip composer saves local clips and publishes through `/api/clips` when enabled. Server renders public MP3 clips with ffmpeg. |
 | Silence maps | Implemented | Native app can request/check/cache server-generated maps and use ready maps for playback jumps. |
 | Smart Skip | Implemented partial | Request/check/cache UI, server durable jobs, transcript-backed segment maps, local playback jumps, and CloudKit preparation exist. Real Whisper/segmenter production validation and proactive active-user discovery remain. |
 | Listening stats | Implemented local | Native AVPlayer telemetry records real listening time, podcast time, speed savings, silence savings, and top podcasts. Stats are backup-exported but not CloudKit synced. |
+| Appearance themes | Implemented | Settings offers Light, Dark, and Vaporwave. Light is the current baseline look; Dark and Vaporwave alter color, glow, backdrop, and animation without changing app behavior. |
 | OPML and JSON backup | Implemented | Native document import/export for subscriptions and portable backup/restore. Device-local download paths and sensitive settings are stripped. |
 | Library filter | Implemented | Library search is an in-content field below navigation and filters local shows by title, author, tags, description, feed URL, website URL, source URL, and external id. |
 | Per-show settings | Implemented | Podcast detail supports Library membership, Subscribe/Unsubscribe, sort, add-new-to-Inbox, playback overrides, and Smart Skip overrides. |

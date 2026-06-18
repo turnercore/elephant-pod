@@ -291,6 +291,76 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertEqual(BackendClient.normalizeServerUrl("pod.elephanthand.com/"), "https://pod.elephanthand.com")
   }
 
+  func testAppModelReportsServerUrlSaveAndClearFeedback() throws {
+    let repository = try PodcastRepository.inMemoryForTests()
+    try repository.ensureSeedData()
+    let model = AppModel(repository: repository)
+
+    model.saveServerUrl("")
+
+    XCTAssertNil(model.settings.serverUrl)
+    XCTAssertEqual(model.status, "Server URL cleared. Backend features are off.")
+  }
+
+  func testAppModelReportsServerTestProgressImmediately() throws {
+    let repository = try PodcastRepository.inMemoryForTests()
+    try repository.ensureSeedData()
+    let model = AppModel(repository: repository)
+    model.settings.serverUrl = "https://pod.example.com"
+
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    BackendClient.defaultSession = URLSession(configuration: configuration)
+    defer {
+      BackendClient.defaultSession = .shared
+      MockURLProtocol.handler = nil
+    }
+
+    MockURLProtocol.handler = { request in
+      let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["content-type": "application/json"])!
+      switch request.url?.path {
+      case "/api/health":
+        return (response, Data(#"{"ok":true}"#.utf8))
+      case "/api/capabilities":
+        return (response, Data(#"{}"#.utf8))
+      default:
+        XCTFail("Unexpected server test request: \(request.url?.path ?? "")")
+        return (response, Data(#"{}"#.utf8))
+      }
+    }
+
+    model.testServer()
+
+    XCTAssertEqual(model.status, "Testing server.")
+  }
+
+  func testAppleSignInShowsBackendErrorMessage() async throws {
+    let repository = try PodcastRepository.inMemoryForTests()
+    try repository.ensureSeedData()
+    let model = AppModel(repository: repository)
+    model.settings.serverUrl = "https://pod.example.com"
+
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    BackendClient.defaultSession = URLSession(configuration: configuration)
+    defer {
+      BackendClient.defaultSession = .shared
+      MockURLProtocol.handler = nil
+    }
+
+    MockURLProtocol.handler = { request in
+      XCTAssertEqual(request.url?.path, "/api/auth/apple")
+      let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: ["content-type": "application/json"])!
+      return (response, Data(#"{"error":"Apple identity token audience is invalid."}"#.utf8))
+    }
+
+    model.signInWithApple(identityToken: Data("identity-token".utf8))
+    XCTAssertEqual(model.status, "Signing in with Apple.")
+    try await waitUntil { !model.signingInWithApple }
+
+    XCTAssertEqual(model.status, "Apple sign-in failed: Apple identity token audience is invalid.")
+  }
+
   func testAppModelUpdateSettingsPersistsPlaybackAndDownloadPreferences() throws {
     let repository = try PodcastRepository.inMemoryForTests()
     try repository.ensureSeedData()
@@ -597,7 +667,46 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertEqual(settings.nativeAudioPreferred, true)
     XCTAssertEqual(settings.downloadOnlyWifi, true)
     XCTAssertEqual(settings.offlineMode, false)
+    XCTAssertEqual(settings.theme, .light)
+    XCTAssertEqual(settings.themeSchemaVersion, AppTheme.currentSchemaVersion)
     XCTAssertNil(settings.sleepTimerEndsAt)
+  }
+
+  func testAppSettingsMigratesLegacyThemeToLight() throws {
+    let json = """
+    {
+      "id": "local",
+      "theme": "dark",
+      "deviceId": "device_a",
+      "updatedAt": "2026-06-17T12:00:00Z"
+    }
+    """
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+
+    let settings = try decoder.decode(AppSettings.self, from: Data(json.utf8))
+
+    XCTAssertEqual(settings.theme, .light)
+    XCTAssertEqual(settings.themeSchemaVersion, AppTheme.currentSchemaVersion)
+  }
+
+  func testAppSettingsDecodesCurrentThemeSelection() throws {
+    let json = """
+    {
+      "id": "local",
+      "theme": "vaporwave",
+      "themeSchemaVersion": 1,
+      "deviceId": "device_a",
+      "updatedAt": "2026-06-17T12:00:00Z"
+    }
+    """
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+
+    let settings = try decoder.decode(AppSettings.self, from: Data(json.utf8))
+
+    XCTAssertEqual(settings.theme, .vaporwave)
+    XCTAssertEqual(settings.themeSchemaVersion, AppTheme.currentSchemaVersion)
   }
 
   func testPodcastIndexDiscoveryResponseDecodesServerShape() throws {
@@ -999,6 +1108,38 @@ final class LocalStoreTests: XCTestCase {
 
     model.requestSilenceMap(episode)
     XCTAssertEqual(model.status, "Preparing Shorten Silence.")
+  }
+
+  func testPodcastIndexUnauthorizedSearchReportsPrivateTokenRequirement() async throws {
+    let repository = try PodcastRepository.inMemoryForTests()
+    try repository.ensureSeedData()
+    let model = AppModel(repository: repository)
+    model.start()
+    model.settings.serverUrl = "https://pod.example.com"
+
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    BackendClient.defaultSession = URLSession(configuration: configuration)
+    defer {
+      BackendClient.defaultSession = .shared
+      MockURLProtocol.handler = nil
+    }
+
+    MockURLProtocol.handler = { request in
+      XCTAssertEqual(request.url?.path, "/api/podcast-index/search")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "x-daisypod-client"), "ios")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "x-daisypod-native-account"), "icloud")
+      let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: ["content-type": "application/json"])!
+      return (response, Data(#"{"error":"Native iOS app access is required."}"#.utf8))
+    }
+
+    model.searchPodcasts("native podcasts")
+    for _ in 0..<100 where model.searchingPodcasts {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+
+    XCTAssertFalse(model.searchingPodcasts)
+    XCTAssertEqual(model.status, "PodcastIndex search needs a private app token for this server.")
   }
 
   func testSilenceMapAndSmartSkipResponsesDecode() throws {

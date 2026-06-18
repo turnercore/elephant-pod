@@ -87,7 +87,7 @@ The backend is optional for ordinary playback and library management, but requir
 - Smart Skip processing,
 - health/capability checks.
 
-Native service requests include iOS service headers. Private deployments can additionally require `SERVER_NATIVE_APP_TOKEN`, with the iOS build receiving the matching `DAISYPOD_NATIVE_APP_TOKEN`. This blocks random callers for the private app deployment even when CloudKit account status is unavailable; public distribution should use stronger verification such as App Attest or Sign in with Apple token validation.
+Native service requests include iOS service headers. PodcastIndex search and browse stop at that lightweight native gate so normal device installs can discover shows. Protected processing and publishing routes such as YouTube import, clips, silence maps, and Smart Skip require a backend session issued after Sign in with Apple. The server verifies Apple's identity JWT, links the stable Apple subject to a backend account, stores only a hash of the app session token, and the iOS app stores the session token in Keychain. CloudKit account status remains separate from backend allowance; public distribution may add App Attest on top of Apple Sign In.
 
 The server does not own personal sync. It should receive only the payload needed for a server feature, such as an episode media URL or source URL.
 

@@ -10,6 +10,7 @@ import { ClipStore, clipHtml, parseClipPayload } from './clips.js';
 import { createOrGetSilenceJob, createOrGetSilenceMapJob, getSilenceJob, getSilenceMapJob, renderClipFile } from './mediaJobs.js';
 import { parseRemoteFeed } from './rss.js';
 import { requireServerServiceAccess } from './auth.js';
+import { handleAppleSignIn, handleSession, handleSignOut } from './appleAuth.js';
 import { podcastIndexBrowseHandler, podcastIndexSearchHandler } from './podcastIndex.js';
 import { upsertPublicClip } from './database.js';
 import { readSmartSkipConfig } from './smartSkip/config.js';
@@ -33,6 +34,7 @@ const mediaDataDir = path.isAbsolute(rawMediaDataDir) ? rawMediaDataDir : path.j
 const clipStore = new ClipStore(clipStoreDir);
 const smartSkipConfig = readSmartSkipConfig({ dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
 const serverServiceAccess = requireServerServiceAccess();
+const discoveryServiceAccess = requireServerServiceAccess({ allowNativeHeaders: true });
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors());
@@ -60,6 +62,10 @@ app.get('/api/capabilities', (_req, res) => {
     smartSkipEnabled: smartSkipConfig.enabled
   }));
 });
+
+app.post('/api/auth/apple', (req, res) => void handleAppleSignIn(req, res));
+app.get('/api/auth/session', (req, res) => void handleSession(req, res));
+app.post('/api/auth/sign-out', (req, res) => void handleSignOut(req, res));
 
 app.get('/api/rss/parse', async (req, res) => {
   try {
@@ -231,8 +237,8 @@ startSmartSkipScheduler(smartSkipConfig, () => {
   console.log('Smart Skip proactive scheduler is configured; active-user discovery is a documented V1 follow-up.');
 });
 
-app.get('/api/podcast-index/search', serverServiceAccess, podcastIndexSearchHandler);
-app.get('/api/podcast-index/browse', serverServiceAccess, podcastIndexBrowseHandler);
+app.get('/api/podcast-index/search', discoveryServiceAccess, podcastIndexSearchHandler);
+app.get('/api/podcast-index/browse', discoveryServiceAccess, podcastIndexBrowseHandler);
 app.post('/api/youtube/import', serverServiceAccess, (req, res) => void handleYoutubeImport(req, res, { publicUrl, dataDir: mediaDataDir }));
 app.post('/api/youtube/sources/:id/refresh', serverServiceAccess, (req, res) => void handleYoutubeRefresh(req, res, { publicUrl, dataDir: mediaDataDir }));
 app.post('/api/youtube/episodes/:id/enrich', serverServiceAccess, (req, res) => void handleYoutubeEnrich(req, res, { publicUrl, dataDir: mediaDataDir }));

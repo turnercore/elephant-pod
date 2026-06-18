@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { getBearerSessionAuthContext } from './appleAuth.js';
 
 const nativeServiceUserId = '00000000-0000-4000-8000-000000000002';
 
@@ -14,10 +15,22 @@ export function getAuthContext(res: Response): ServerAuthContext | null {
   return maybeContext && maybeContext.userId ? maybeContext : null;
 }
 
-export function requireServerServiceAccess() {
-  return function handleServerServiceAccess(req: Request, res: Response, next: NextFunction) {
-    if (!isNativeIOSServiceRequest(req)) {
-      res.status(401).json({ error: 'Native iOS app access is required.' });
+type ServerServiceAccessOptions = {
+  allowNativeHeaders?: boolean;
+};
+
+export function requireServerServiceAccess(options: ServerServiceAccessOptions = {}) {
+  const allowNativeHeaders = options.allowNativeHeaders ?? false;
+  return async function handleServerServiceAccess(req: Request, res: Response, next: NextFunction) {
+    const sessionContext = await getBearerSessionAuthContext(req);
+    if (sessionContext) {
+      res.locals.serverAuthContext = sessionContext;
+      next();
+      return;
+    }
+
+    if (!allowNativeHeaders || !isNativeIOSServiceRequest(req)) {
+      res.status(401).json({ error: 'Sign in with Apple is required.' });
       return;
     }
 
@@ -33,19 +46,5 @@ export function requireServerServiceAccess() {
 
 function isNativeIOSServiceRequest(req: Request) {
   return req.header('x-daisypod-client')?.toLowerCase() === 'ios'
-    && req.header('x-daisypod-native-account')?.toLowerCase() === 'icloud'
-    && hasNativeAppAccess(req);
-}
-
-function hasNativeAppAccess(req: Request) {
-  const configured = readStringEnv('SERVER_NATIVE_APP_TOKEN') || readStringEnv('NATIVE_APP_TOKEN');
-  if (!configured) return true;
-  return req.header('x-daisypod-app-token') === configured;
-}
-
-function readStringEnv(name: string): string | undefined {
-  const value = process.env[name];
-  if (!value) return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+    && req.header('x-daisypod-native-account')?.toLowerCase() === 'icloud';
 }

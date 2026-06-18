@@ -26,7 +26,7 @@ Device-local data is not synced:
 - offline-mode browsing state
 - listening analytics
 - server URL
-- native app tokens
+- backend account-session tokens
 
 `CloudKitPersonalSyncEngine` prepares deterministic private-record snapshots from the portable backup shape, strips device-local fields before upload, downloads CloudKit private-zone changes with a persisted server change token, merges newer local and remote records by `modifiedAt`, protects actively playing episode state during restore, and uses a private CloudKit zone when an iCloud account is available.
 
@@ -48,17 +48,16 @@ The server no longer exposes product auth routes or `/api/sync` from the app run
 
 ## Native Service Access
 
-Native processing routes accept app-origin requests through service headers:
+Native discovery routes accept app-origin requests through service headers:
 
 - `x-daisypod-client: ios`
 - `x-daisypod-native-account: icloud`
-- `x-daisypod-app-token: <token>` when `SERVER_NATIVE_APP_TOKEN` is configured
 
-Build private iOS installs with `DAISYPOD_NATIVE_APP_TOKEN=...` matching the server's `SERVER_NATIVE_APP_TOKEN=...`.
+PodcastIndex search and browse require those native service headers. Protected processing and publishing routes require `Authorization: Bearer <session-token>` from a backend session created by `POST /api/auth/apple`.
 
-This is a practical random-internet filter for a private app/server deployment. It is not marketplace-grade anti-tamper. Add App Attest or a stronger Apple-token verification path before exposing abuse-sensitive processing broadly.
+The Apple sign-in endpoint verifies the native Apple identity token with Apple's public keys, links the stable Apple subject to a backend account, stores only a SHA-256 hash of the issued app session token, and returns the clear session token once for Keychain storage on the device.
 
-Protected processing/discovery routes no longer accept product-login bearer tokens. Native service access requires the iOS service headers, and requires `SERVER_NATIVE_APP_TOKEN` when that token is configured. Local CloudKit account status is used for personal iCloud sync, not as the app-side gate for PodcastIndex, YouTube, clips, silence maps, or Smart Skip.
+Protected processing routes no longer accept product-login bearer tokens or bundled native app tokens. Local CloudKit account status is used for personal iCloud sync, not as the app-side gate for PodcastIndex, YouTube, clips, silence maps, or Smart Skip.
 
 ## Capabilities
 
@@ -74,7 +73,7 @@ Protected processing/discovery routes no longer accept product-login bearer toke
 }
 ```
 
-The capabilities payload must not expose PodcastIndex keys, database secrets, filesystem paths, worker URLs, native app tokens, or other private server configuration.
+The capabilities payload must not expose PodcastIndex keys, database secrets, filesystem paths, worker URLs, account-session tokens, or other private server configuration.
 
 ## Offline Behavior
 

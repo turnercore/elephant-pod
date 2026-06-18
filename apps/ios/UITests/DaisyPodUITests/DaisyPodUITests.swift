@@ -218,6 +218,7 @@ final class DaisyPodUITests: XCTestCase {
     app.launch()
 
     XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+    XCTAssertTrue(scrollTo(app.segmentedControls["ThemePicker"], in: app, maxSwipes: 1))
     XCTAssertTrue(scrollTo(app.descendants(matching: .any)["FeedRefreshIntervalStepper"], in: app, maxSwipes: 2))
     XCTAssertTrue(scrollTo(app.staticTexts["StatsEmptyMessage"], in: app, maxSwipes: 3))
     XCTAssertTrue(scrollTo(app.textFields["ServerURLInput"], in: app))

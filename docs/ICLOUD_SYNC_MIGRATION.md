@@ -10,7 +10,7 @@ This changes the product split:
 - CloudKit syncs personal state between the user's Apple devices.
 - The DaisyPod server no longer needs to own personal sync as the default path.
 - The server remains required for PodcastIndex discovery, YouTube import and audio extraction, public clip publishing, silence maps, Smart Skip, health, and capabilities.
-- Server services use native app assumptions plus the private native app token for this private deployment. CloudKit/iCloud account state gates personal sync, not PodcastIndex, YouTube, clips, silence maps, or Smart Skip. Add App Attest or Sign in with Apple token verification only if stronger public abuse controls become necessary.
+- Server services use native app assumptions. PodcastIndex discovery requires native service headers only, while protected processing and publishing routes use Sign in with Apple backend sessions. CloudKit/iCloud account state gates personal sync, not PodcastIndex, YouTube, clips, silence maps, or Smart Skip. Add App Attest on top of Apple Sign In if stronger public abuse controls become necessary.
 
 The previous `/api/sync` Postgres path is retired from the native product runtime. Fresh server schemas no longer create personal podcast sync tables; personal sync work targets CloudKit.
 
@@ -60,7 +60,7 @@ Native personal sync should use iCloud account state, not a server login. If the
 
 Server services should become Apple-native:
 
-- Use backend `/api/capabilities` plus `SERVER_NATIVE_APP_TOKEN`/`DAISYPOD_NATIVE_APP_TOKEN` as the private deployment app-origin gate so random internet clients cannot call processing routes with only spoofed native headers.
+- Use backend `/api/capabilities` plus Sign in with Apple backend sessions as the protected processing gate so random internet clients cannot call processing routes with only spoofed native headers.
 - Keep local iCloud account availability scoped to CloudKit personal sync status and sync attempts.
 - Add server-side App Attest or Sign in with Apple token verification before treating this as a public abuse-control identity.
 - Do not sync app/server tokens through CloudKit or JSON backup.
@@ -99,8 +99,8 @@ Server services should become Apple-native:
 ## Backend Migration Plan
 
 1. Keep processing/discovery routes separate from personal sync state.
-2. Accept native iOS service requests for processing/discovery routes when the request passes the native service header contract and the private native app token gate when configured.
-3. Add App Attest or Sign in with Apple verification for production abuse controls if the processing server becomes public.
+2. Accept native iOS service requests for PodcastIndex discovery when the request passes the native service header contract; require Sign in with Apple backend sessions for protected processing and publishing routes.
+3. Add App Attest for stronger production abuse controls if the processing server becomes public.
 4. Do not reintroduce product auth routes for normal app use.
 5. Keep browser sign-in assumptions out of the native/server runtime.
 
@@ -116,7 +116,7 @@ CloudKit is not complete until these pass on physical Apple devices:
 - Download/play offline on one device without syncing file paths to the other.
 - OPML import on one device syncs subscriptions and episodes.
 - JSON backup/restore preserves local device identity and does not duplicate CloudKit rows.
-- Use backend capabilities plus the private native app token for PodcastIndex/YouTube/clips/Smart Skip; add App Attest or Sign in with Apple verification before public abuse-sensitive deployment.
+- Use backend capabilities plus native service headers for PodcastIndex, and Sign in with Apple backend sessions for YouTube/clips/Smart Skip processing; add App Attest before public abuse-sensitive deployment if needed.
 - Server-only features still fail gracefully from `/api/capabilities`.
 - Server-only features still require the native service gate when configured, so random internet clients cannot call processing routes with only spoofed headers.
 - Ready silence maps, Smart Skip maps, and transcripts fetched on device A are available offline on device B after CloudKit sync.

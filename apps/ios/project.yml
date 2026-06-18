@@ -11,7 +11,6 @@ settings:
     MARKETING_VERSION: "0.4.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
-    DAISYPOD_NATIVE_APP_TOKEN: ""
 targets:
   DaisyPod:
     type: application
@@ -21,6 +20,7 @@ targets:
     dependencies:
       - sdk: AVFoundation.framework
       - sdk: AppIntents.framework
+      - sdk: AuthenticationServices.framework
       - sdk: BackgroundTasks.framework
       - sdk: CloudKit.framework
       - sdk: MediaPlayer.framework
@@ -32,7 +32,6 @@ targets:
         CFBundleDisplayName: DaisyPod
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        DaisyPodNativeAppToken: "$(DAISYPOD_NATIVE_APP_TOKEN)"
         LSRequiresIPhoneOS: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -61,6 +60,8 @@ targets:
           - iCloud.com.elephanthand.daisypod
         com.apple.developer.icloud-services:
           - CloudKit
+        com.apple.developer.applesignin:
+          - Default
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.elephanthand.daisypod

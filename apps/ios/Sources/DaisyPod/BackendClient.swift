@@ -18,6 +18,25 @@ struct BackendCapabilities: Decodable {
   var smartSkip: Feature?
 }
 
+struct AppleSignInResponse: Decodable {
+  var accessToken: String
+  var account: BackendSession.Account
+  var createdAt: Date?
+}
+
+struct BackendClientError: Error, Equatable {
+  var statusCode: Int
+  var message: String?
+
+  var isNativeAppAccessRequired: Bool {
+    statusCode == 401
+  }
+}
+
+private struct BackendErrorResponse: Decodable {
+  var error: String?
+}
+
 enum YouTubeURLClassifier {
   enum SourceKind: String {
     case video
@@ -340,6 +359,25 @@ struct BackendClient {
     try await get("/api/capabilities")
   }
 
+  func signInWithApple(identityToken: String) async throws -> AppleSignInResponse {
+    var request = URLRequest(url: baseURL.appending(path: "/api/auth/apple"))
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "content-type")
+    request.setValue("application/json", forHTTPHeaderField: "accept")
+    request.httpBody = try JSONEncoder().encode(["identityToken": identityToken])
+    return try await perform(request)
+  }
+
+  func signOut() async throws {
+    var request = URLRequest(url: baseURL.appending(path: "/api/auth/sign-out"))
+    request.httpMethod = "POST"
+    applyServerServiceAccessHeaders(&request)
+    let (_, response) = try await session.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+      throw URLError(.badServerResponse)
+    }
+  }
+
   func parseRSS(feedUrl: String) async throws -> ParsedFeedResult {
     var components = URLComponents(url: baseURL.appending(path: "/api/rss/parse"), resolvingAgainstBaseURL: false)
     components?.queryItems = [URLQueryItem(name: "url", value: feedUrl)]
@@ -479,20 +517,18 @@ struct BackendClient {
   private func applyServerServiceAccessHeaders(_ request: inout URLRequest) {
     request.setValue("ios", forHTTPHeaderField: "x-daisypod-client")
     request.setValue("icloud", forHTTPHeaderField: "x-daisypod-native-account")
-    if let appToken = Self.nativeAppToken {
-      request.setValue(appToken, forHTTPHeaderField: "x-daisypod-app-token")
+    if let accessToken = BackendSessionStore.accessToken {
+      request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "authorization")
     }
-  }
-
-  private static var nativeAppToken: String? {
-    guard let value = Bundle.main.object(forInfoDictionaryKey: "DaisyPodNativeAppToken") as? String else { return nil }
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty || trimmed == "$(DAISYPOD_NATIVE_APP_TOKEN)" ? nil : trimmed
   }
 
   private func perform<T: Decodable>(_ request: URLRequest, as type: T.Type = T.self) async throws -> T {
     let (data, response) = try await session.data(for: request)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+      if let http = response as? HTTPURLResponse {
+        let serverError = try? JSONDecoder().decode(BackendErrorResponse.self, from: data)
+        throw BackendClientError(statusCode: http.statusCode, message: serverError?.error)
+      }
       throw URLError(.badServerResponse)
     }
     let decoder = JSONDecoder()

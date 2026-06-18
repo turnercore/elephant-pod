@@ -7,7 +7,7 @@
 - Add more feed refresh fixtures for unusual publisher changes. Native unit coverage now includes mocked RSS and Atom fixtures for artwork, enclosure, inline chapter metadata, local Inbox import behavior, and RSS refresh merge behavior that preserves device-local playback/download/queue state while adding new Inbox items.
 - Validate live CloudKit two-device sync on physical Apple devices after provisioning, imports, incremental private-zone sync, and conflict replay are exercised on real devices.
 - Harden CloudKit private-database sync for personal podcast state with more two-device conflict testing, following `docs/ICLOUD_SYNC_MIGRATION.md`; the old server `/api/sync` product path is retired.
-- Add App Attest or Sign in with Apple server verification only if this private deployment becomes public or needs stronger abuse controls than the native app token gate.
+- Add App Attest if this deployment needs stronger abuse controls on top of Sign in with Apple backend sessions.
 - Add live storage-cap validation with real app-container pressure. Native unit coverage now verifies storage-cap pruning removes the lowest-priority backlog download before Inbox, Queue, and favorite downloads, and iOS background task scheduling now reuses the same maintenance path.
 - Keep retired frontend references out of the runtime repo; the supported product surface is native iOS plus the backend server.
 

@@ -17,7 +17,6 @@ Environment alternatives:
   IOS_DEVICE_UDID=<device-udid>
   IOS_COREDEVICE_ID=<coredevice-id>
   DAISYPOD_DEVELOPMENT_TEAM=<team-id>
-  DAISYPOD_NATIVE_APP_TOKEN=<server-native-app-token>
 
 Find ids with:
   xcrun xctrace list devices
@@ -37,29 +36,15 @@ fi
 cd "$IOS_DIR"
 xcodegen generate
 
-BUILD_XCCONFIG="$(mktemp "${TMPDIR:-/tmp}/daisypod-device-build.XXXXXX.xcconfig")"
-chmod 600 "$BUILD_XCCONFIG"
-trap 'rm -f "$BUILD_XCCONFIG"' EXIT
-cat >"$BUILD_XCCONFIG" <<EOF
-DAISYPOD_NATIVE_APP_TOKEN = ${DAISYPOD_NATIVE_APP_TOKEN:-}
-EOF
-
-set +e
 xcodebuild \
   -project DaisyPod.xcodeproj \
   -scheme DaisyPod \
   -configuration Debug \
-  -xcconfig "$BUILD_XCCONFIG" \
   -destination "id=$DEVICE_UDID" \
   CODE_SIGN_STYLE=Automatic \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
   -allowProvisioningUpdates \
-  build 2>&1 | sed "s/${DAISYPOD_NATIVE_APP_TOKEN:-__DAISYPOD_EMPTY_TOKEN__}/<redacted>/g"
-build_status="${PIPESTATUS[0]}"
-set -e
-if [[ "$build_status" -ne 0 ]]; then
-  exit "$build_status"
-fi
+  build
 
 APP_PATH="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Debug-iphoneos/DaisyPod.app' -type d -print -quit)"
 if [[ -z "$APP_PATH" ]]; then
