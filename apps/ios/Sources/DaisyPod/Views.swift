@@ -38,6 +38,22 @@ struct RootView: View {
           .id(visibleSection)
           .themedContentSurface()
       }
+      .overlay(alignment: .top) {
+        if let status = model.status {
+          StatusToast(message: status) {
+            model.dismissStatus()
+          }
+          .padding(.top, 8)
+          .zIndex(10)
+          .transition(.move(edge: .top).combined(with: .opacity))
+          .task(id: status) {
+            try? await Task.sleep(for: .seconds(3))
+            if model.status == status {
+              model.dismissStatus()
+            }
+          }
+        }
+      }
       .background(AppThemeBackground(theme: theme).ignoresSafeArea())
       .navigationTitle(visibleSection.title)
       .navigationBarTitleDisplayMode(.inline)
@@ -77,21 +93,6 @@ struct RootView: View {
         .environmentObject(model)
         .padding(.horizontal, 10)
         .padding(.bottom, 6)
-    }
-    .overlay(alignment: .top) {
-      if let status = model.status {
-        StatusToast(message: status) {
-          model.dismissStatus()
-        }
-        .padding(.top, 8)
-        .transition(.move(edge: .top).combined(with: .opacity))
-        .task(id: status) {
-          try? await Task.sleep(for: .seconds(3))
-          if model.status == status {
-            model.dismissStatus()
-          }
-        }
-      }
     }
     .animation(.snappy, value: model.status)
   }
