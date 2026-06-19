@@ -351,14 +351,14 @@ final class LocalStoreTests: XCTestCase {
     MockURLProtocol.handler = { request in
       XCTAssertEqual(request.url?.path, "/api/auth/apple")
       let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: ["content-type": "application/json"])!
-      return (response, Data(#"{"error":"Apple identity token audience is invalid."}"#.utf8))
+      return (response, Data(#"{"error":"Apple identity token audience is invalid.","code":"invalid_identity_token_audience"}"#.utf8))
     }
 
     model.signInWithApple(identityToken: Data("identity-token".utf8))
     XCTAssertEqual(model.status, "Signing in with Apple.")
     try await waitUntil { !model.signingInWithApple }
 
-    XCTAssertEqual(model.status, "Apple sign-in failed: Apple identity token audience is invalid.")
+    XCTAssertEqual(model.status, "Apple sign-in failed: app bundle ID does not match the server audience.")
   }
 
   func testAppModelUpdateSettingsPersistsPlaybackAndDownloadPreferences() throws {

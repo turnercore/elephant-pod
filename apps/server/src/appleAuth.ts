@@ -23,6 +23,20 @@ type AppleClaims = {
   email_verified?: string | boolean;
 };
 
+class AppleAuthError extends Error {
+  statusCode: number;
+  code: string;
+  details?: Record<string, unknown>;
+
+  constructor(message: string, code: string, statusCode = 401, details?: Record<string, unknown>) {
+    super(message);
+    this.name = 'AppleAuthError';
+    this.code = code;
+    this.statusCode = statusCode;
+    this.details = details;
+  }
+}
+
 type DaisySessionRow = {
   session_id: string;
   account_id: string;
@@ -54,7 +68,20 @@ export async function handleAppleSignIn(req: Request, res: Response) {
     const session = await createAccountSession(claims);
     res.status(201).json(session);
   } catch (error) {
-    res.status(401).json({ error: error instanceof Error ? error.message : 'Apple sign-in failed.' });
+    if (error instanceof AppleAuthError) {
+      res.status(error.statusCode).json({ error: error.message, code: error.code, details: error.details });
+      return;
+    }
+    console.error('Apple sign-in exchange failed:', error);
+    res.status(500).json({ error: 'Apple sign-in server exchange failed.', code: 'server_exchange_failed' });
+  }
+}
+
+function safeParseJwtSegment<T>(value: string, code: string): T {
+  try {
+    return JSON.parse(base64urlDecode(value).toString('utf8')) as T;
+  } catch (error) {
+    throw new AppleAuthError('Apple identity token could not be decoded.', code);
   }
 }
 
@@ -113,21 +140,25 @@ export async function getBearerSessionAuthContext(req: Request): Promise<AppleSe
 
 export async function verifyAppleIdentityToken(identityToken: string): Promise<AppleClaims> {
   const [encodedHeader, encodedPayload, encodedSignature] = identityToken.split('.');
-  if (!encodedHeader || !encodedPayload || !encodedSignature) throw new Error('Invalid Apple identity token.');
+  if (!encodedHeader || !encodedPayload || !encodedSignature) {
+    throw new AppleAuthError('Invalid Apple identity token.', 'invalid_identity_token');
+  }
 
-  const header = JSON.parse(base64urlDecode(encodedHeader).toString('utf8')) as { alg?: string; kid?: string };
-  if (header.alg !== 'RS256' || !header.kid) throw new Error('Unsupported Apple identity token.');
+  const header = safeParseJwtSegment<{ alg?: string; kid?: string }>(encodedHeader, 'invalid_identity_token_header');
+  if (header.alg !== 'RS256' || !header.kid) {
+    throw new AppleAuthError('Unsupported Apple identity token.', 'unsupported_identity_token');
+  }
 
-  const claims = JSON.parse(base64urlDecode(encodedPayload).toString('utf8')) as AppleClaims;
+  const claims = safeParseJwtSegment<AppleClaims>(encodedPayload, 'invalid_identity_token_payload');
   const key = (await fetchAppleKeys()).find((candidate) => candidate.kid === header.kid);
-  if (!key) throw new Error('Apple identity token key is not recognized.');
+  if (!key) throw new AppleAuthError('Apple identity token key is not recognized.', 'unknown_identity_token_key');
 
   const verifier = crypto.createVerify('RSA-SHA256');
   verifier.update(`${encodedHeader}.${encodedPayload}`);
   verifier.end();
   const publicKey = crypto.createPublicKey({ key: key as crypto.JsonWebKey, format: 'jwk' });
   if (!verifier.verify(publicKey, base64urlDecode(encodedSignature))) {
-    throw new Error('Apple identity token signature is invalid.');
+    throw new AppleAuthError('Apple identity token signature is invalid.', 'invalid_identity_token_signature');
   }
 
   validateAppleClaims(claims);
@@ -163,7 +194,9 @@ async function createAccountSession(claims: AppleClaims) {
     return sessions;
   });
   const session = rows?.[0];
-  if (!session) throw new Error('Apple sign-in needs the server database.');
+  if (!session) {
+    throw new AppleAuthError('Apple sign-in needs the server database.', 'server_database_unavailable', 503);
+  }
   return {
     accessToken,
     account: {
@@ -208,19 +241,26 @@ async function ensureAuthSchema() {
 
 async function fetchAppleKeys(): Promise<AppleJwk[]> {
   const response = await fetch(appleJwksUrl, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error('Unable to fetch Apple identity keys.');
+  if (!response.ok) throw new AppleAuthError('Unable to fetch Apple identity keys.', 'apple_keys_unavailable', 503);
   const payload = await response.json() as { keys?: AppleJwk[] };
   return payload.keys ?? [];
 }
 
 function validateAppleClaims(claims: AppleClaims) {
-  if (claims.iss !== appleIssuer) throw new Error('Apple identity token issuer is invalid.');
+  if (claims.iss !== appleIssuer) throw new AppleAuthError('Apple identity token issuer is invalid.', 'invalid_identity_token_issuer');
   const expectedAudience = process.env.APPLE_SIGN_IN_AUDIENCE || process.env.APPLE_BUNDLE_ID || defaultAppleAudience;
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (!audiences.includes(expectedAudience)) throw new Error('Apple identity token audience is invalid.');
-  if (!claims.sub) throw new Error('Apple identity token subject is missing.');
+  if (!audiences.includes(expectedAudience)) {
+    throw new AppleAuthError('Apple identity token audience is invalid.', 'invalid_identity_token_audience', 401, {
+      expectedAudience,
+      tokenAudience: audiences
+    });
+  }
+  if (!claims.sub) throw new AppleAuthError('Apple identity token subject is missing.', 'missing_identity_token_subject');
   const nowSec = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(claims.exp) || claims.exp <= nowSec) throw new Error('Apple identity token has expired.');
+  if (!Number.isFinite(claims.exp) || claims.exp <= nowSec) {
+    throw new AppleAuthError('Apple identity token has expired.', 'expired_identity_token');
+  }
 }
 
 function parseEmailVerified(value: string | boolean | undefined) {

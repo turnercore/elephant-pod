@@ -1038,15 +1038,17 @@ final class AppModel: ObservableObject {
       do {
         let response = try await client.signInWithApple(identityToken: token)
         let session = BackendSession(accessToken: response.accessToken, account: response.account, createdAt: response.createdAt)
-        try BackendSessionStore.save(session)
-        backendSession = session
-        status = "Signed in with Apple."
-      } catch let error as BackendClientError {
-        if let message = error.message, !message.isEmpty {
-          status = "Apple sign-in failed: \(message)"
-        } else {
-          status = "Apple sign-in failed with HTTP \(error.statusCode)."
+        do {
+          try BackendSessionStore.save(session)
+          backendSession = session
+          status = "Signed in with Apple."
+        } catch let error as KeychainError {
+          status = "Apple sign-in succeeded, but Keychain save failed (\(error.status))."
+        } catch {
+          status = "Apple sign-in succeeded, but the session could not be saved."
         }
+      } catch let error as BackendClientError {
+        status = appleSignInFailureStatus(for: error)
       } catch {
         status = "Apple sign-in failed."
       }
@@ -1061,6 +1063,28 @@ final class AppModel: ObservableObject {
     status = "Signed out."
     Task {
       try? await client?.signOut()
+    }
+  }
+
+  private func appleSignInFailureStatus(for error: BackendClientError) -> String {
+    switch error.code {
+    case "invalid_identity_token_audience":
+      return "Apple sign-in failed: app bundle ID does not match the server audience."
+    case "server_database_unavailable":
+      return "Apple sign-in failed: server database is unavailable."
+    case "server_exchange_failed":
+      return "Apple sign-in failed: server could not create a session."
+    case "apple_keys_unavailable":
+      return "Apple sign-in failed: server could not reach Apple identity keys."
+    case "invalid_identity_token", "invalid_identity_token_header", "invalid_identity_token_payload":
+      return "Apple sign-in failed: Apple returned an unreadable identity token."
+    case "invalid_identity_token_signature", "unknown_identity_token_key", "invalid_identity_token_issuer", "expired_identity_token", "missing_identity_token_subject":
+      return "Apple sign-in failed: Apple identity token was rejected."
+    default:
+      if let message = error.message, !message.isEmpty {
+        return "Apple sign-in failed: \(message)"
+      }
+      return "Apple sign-in failed with HTTP \(error.statusCode)."
     }
   }
 

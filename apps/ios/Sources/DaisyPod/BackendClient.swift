@@ -27,6 +27,8 @@ struct AppleSignInResponse: Decodable {
 struct BackendClientError: Error, Equatable {
   var statusCode: Int
   var message: String?
+  var code: String?
+  var details: [String: String]?
 
   var isNativeAppAccessRequired: Bool {
     statusCode == 401
@@ -35,6 +37,21 @@ struct BackendClientError: Error, Equatable {
 
 private struct BackendErrorResponse: Decodable {
   var error: String?
+  var code: String?
+  var details: [String: String]?
+
+  enum CodingKeys: String, CodingKey {
+    case error
+    case code
+    case details
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    error = try container.decodeIfPresent(String.self, forKey: .error)
+    code = try container.decodeIfPresent(String.self, forKey: .code)
+    details = try? container.decodeIfPresent([String: String].self, forKey: .details)
+  }
 }
 
 enum YouTubeURLClassifier {
@@ -527,7 +544,12 @@ struct BackendClient {
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
       if let http = response as? HTTPURLResponse {
         let serverError = try? JSONDecoder().decode(BackendErrorResponse.self, from: data)
-        throw BackendClientError(statusCode: http.statusCode, message: serverError?.error)
+        throw BackendClientError(
+          statusCode: http.statusCode,
+          message: serverError?.error,
+          code: serverError?.code,
+          details: serverError?.details
+        )
       }
       throw URLError(.badServerResponse)
     }
