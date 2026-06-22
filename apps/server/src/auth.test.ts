@@ -100,6 +100,43 @@ describe('native iOS service access', () => {
       restore();
     }
   });
+
+  it('returns an ISO Apple session creation timestamp', async () => {
+    const createdAt = new Date('2026-06-22T08:55:49.249Z');
+    const restore = __authTestHooks.setDependencies({
+      verifyAppleIdentityToken: async () => ({
+        iss: 'https://appleid.apple.com',
+        aud: 'com.elephanthand.daisypod',
+        exp: Math.floor(Date.now() / 1000) + 300,
+        sub: 'apple-test-sub',
+        email: 'listener@example.com',
+        email_verified: true
+      }),
+      withDatabaseTransaction: async (callback) => callback(async (sql) => {
+        if (sql.includes('public.daisy_accounts')) {
+          return [{ id: 'account-1', email: 'listener@example.com' }];
+        }
+        return [{
+          session_id: 'session-1',
+          account_id: 'account-1',
+          email: 'listener@example.com',
+          created_at: createdAt
+        }];
+      })
+    });
+
+    try {
+      const result = await invokeAppleSignIn({
+        identityToken: 'test.identity.token.value'
+      });
+
+      assert.equal(result.statusCode, 201);
+      const wireJson = JSON.parse(JSON.stringify(result.json)) as { createdAt: string };
+      assert.equal(wireJson.createdAt, createdAt.toISOString());
+    } finally {
+      restore();
+    }
+  });
 });
 
 async function invokeServerServiceAccess(headers: Record<string, string | undefined>) {

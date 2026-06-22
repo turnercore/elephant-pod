@@ -212,7 +212,7 @@ async function createAccountSession(claims: AppleClaims) {
       const sessions = await query<DaisySessionRow>(
         `insert into public.daisy_sessions (account_id, token_hash, last_seen_at)
           values ($1, $2, now())
-          returning id as session_id, account_id, $3::text as email, created_at::text`,
+          returning id as session_id, account_id, $3::text as email, created_at`,
         [account.id, tokenHash, account.email]
       );
       return sessions;
