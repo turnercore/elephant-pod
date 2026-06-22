@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-superzima
-  cancel-in-progress: false
+  group: deploy-superzima-studio
+  cancel-in-progress: true
 
 env:
   DEPLOY_ROOT: /mnt/nvme/apps/elephant-pod
