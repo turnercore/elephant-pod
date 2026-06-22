@@ -29,7 +29,7 @@ jobs:
           github.event.workflow_run.head_branch == 'main'
         )
       }}
-    runs-on: [studio, superzima]
+    runs-on: [studio]
 
     steps:
       - name: Check out repository
