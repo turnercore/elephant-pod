@@ -975,6 +975,25 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertEqual(response.renderStatus, .pending)
   }
 
+  func testBackendClientSearchUsesServerMaxLimit() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { MockURLProtocol.handler = nil }
+    MockURLProtocol.handler = { request in
+      XCTAssertEqual(request.url?.path, "/api/podcast-index/search")
+      XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "max" }?.value, "25")
+      let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["content-type": "application/json"])!
+      return (response, Data(#"{"items":[]}"#.utf8))
+    }
+    var client = try XCTUnwrap(BackendClient(serverUrl: "https://pod.example.com"))
+    client.session = session
+
+    let results = try await client.searchPodcastIndex(query: "native podcasts")
+
+    XCTAssertTrue(results.isEmpty)
+  }
+
   func testRepositorySavesClipAndIncrementsEpisodeClipCountOnce() throws {
     let repository = try PodcastRepository.inMemoryForTests()
     try repository.ensureSeedData()

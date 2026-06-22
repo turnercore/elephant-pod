@@ -498,7 +498,7 @@ struct BackendClient {
     return try await perform(request)
   }
 
-  func searchPodcastIndex(query: String, max: Int = 30) async throws -> [PodcastDiscoveryResult] {
+  func searchPodcastIndex(query: String, max: Int = 25) async throws -> [PodcastDiscoveryResult] {
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard trimmed.count >= 2 else { return [] }
     var components = URLComponents(url: baseURL.appending(path: "/api/podcast-index/search"), resolvingAgainstBaseURL: false)
