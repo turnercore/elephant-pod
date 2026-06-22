@@ -1719,11 +1719,6 @@ struct SettingsView: View {
         ))
       }
       Section("Downloads") {
-        Toggle("Offline mode", isOn: Binding(
-          get: { model.settings.offlineMode },
-          set: { value in model.setOfflineMode(value) }
-        ))
-        .accessibilityIdentifier("OfflineModeToggle")
         Toggle("Auto-download Queue", isOn: Binding(
           get: { model.settings.autoDownload },
           set: { value in model.updateSettings { $0.autoDownload = value } }

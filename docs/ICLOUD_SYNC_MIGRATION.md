@@ -34,7 +34,7 @@ Do not sync these through CloudKit:
 - Cached artwork file paths.
 - Native app tokens or any future server tokens.
 - Sleep timer deadline.
-- Offline Mode.
+- Device-local browsing filters.
 - Device-specific background task state.
 - Server job queue internals, leases, and processing-only cache state that does not affect offline playback.
 

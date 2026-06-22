@@ -201,13 +201,6 @@ final class PodcastRepository: ObservableObject {
     try store.put(next, id: "local", collection: "settings", updatedAt: next.updatedAt)
   }
 
-  func saveOfflineMode(_ enabled: Bool) throws {
-    var next = try settings()
-    next.id = "local"
-    next.offlineMode = enabled
-    try store.put(next, id: "local", collection: "settings", updatedAt: next.updatedAt)
-  }
-
   func podcasts() throws -> [Podcast] {
     try store.list(Podcast.self, collection: "feeds").sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
   }
@@ -261,6 +254,12 @@ final class PodcastRepository: ObservableObject {
         state.inboxPosition = nil
         state.queuePosition = nil
         state.queuedAt = nil
+        state.downloaded = false
+        state.downloadedAt = nil
+        state.downloadPath = nil
+        state.downloadBytes = nil
+        state.downloadBackend = nil
+        state.downloadSource = nil
       }
     }
     try normalizeQueuePositions()
@@ -494,7 +493,6 @@ final class PodcastRepository: ObservableObject {
     restoredSettings.serverUrl = currentSettings.serverUrl
     restoredSettings.lastSyncAt = currentSettings.lastSyncAt
     restoredSettings.sleepTimerEndsAt = currentSettings.sleepTimerEndsAt
-    restoredSettings.offlineMode = currentSettings.offlineMode
     restoredSettings.updatedAt = timestamp
     try saveSettings(restoredSettings)
     try normalizeQueuePositions()

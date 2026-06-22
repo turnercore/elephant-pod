@@ -66,8 +66,9 @@ Results:
 - Server tests: passed for the active server surface, including auth/native service gate behavior, capabilities, Smart Skip, RSS parsing, and media-processing contracts.
 - Server capabilities tests: passed, including the native `/api/capabilities` shape for YouTube import, PodcastIndex, clips, silence maps, and Smart Skip, plus a guard that the response does not expose API key names.
 - Server TypeScript build: passed.
+- iOS podcast-flow regression tests: passed on iPhone 13 mini simulator for custom RSS import, PodcastIndex subscribe/import, backend RSS date decoding, local Library membership derivation, remove-from-Library cleanup, Queue and Inbox triage, automatic download candidate priority, Inbox auto-download deletion behavior, and downloaded-file playback fallback.
 - iOS unit tests: passed on iPhone 13 mini simulator, including native URL-scheme routing for add/open/playback/sync handoff, native chapter seek/progress persistence, local clip saving without a server, capability-disabled local clip publishing fallback, server capability gates that short-circuit PodcastIndex/YouTube/silence-map/Smart Skip actions, CloudKit personal-sync record preparation, OPML import through the same injectable RSS importer used by Add/refresh, fixture-backed RSS refresh merge behavior, automatic feed refresh selection for due library feeds, and current-player state refresh after local favorite changes.
-- iOS UI tests: passed on iPhone 13 mini simulator, including Add YouTube mode, native `daisypod://add?url=...` handoff into the Add field, Settings backend/data diagnostics for pending local changes and local snapshot counts, Settings feed-refresh interval control, visible episode row triage actions moving an episode from Inbox to Queue and back, podcast-detail per-show playback controls, episode-detail chapter/clip/server-intelligence controls, local clip saving from the composer, Offline Mode persistence with Library/Downloads filtering, expanded-player favorite, and sleep-timer controls.
+- iOS UI tests: passed on iPhone 13 mini simulator, including Add YouTube mode, native `daisypod://add?url=...` handoff into the Add field, Settings backend/data diagnostics for pending local changes and local snapshot counts, Settings feed-refresh interval control, visible episode row triage actions moving an episode from Inbox to Queue and back, podcast-detail per-show playback controls, episode-detail chapter/clip/server-intelligence controls, local clip saving from the composer, expanded-player favorite, and sleep-timer controls.
 - iOS App Intents metadata export: passed as part of the iPhone 13 mini simulator build.
 - iOS simulator build/run: passed through XcodeBuildMCP.
 - iOS physical-device build/install: passed on iPhone 13 mini with team `2UTACZ8KMY`.
@@ -96,7 +97,7 @@ cd infra
 SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
 ```
 
-Then sign in with Apple, queue a test episode in the native app, and confirm `POST /api/smart-skip/process` requires the backend account session. Local/offline mode should not show Smart Skip as available and should continue normal playback.
+Then sign in with Apple, queue a test episode in the native app, and confirm `POST /api/smart-skip/process` requires the backend account session. Local playback should continue normally when Smart Skip is unavailable.
 This validates only the local integration contract because the compose workers default to mocks. Real Smart Skip processing requires production `SMART_SKIP_WHISPER_BASE_URL` and `SMART_SKIP_SEGMENTER_BASE_URL` endpoints.
 
 Real segmenter check:

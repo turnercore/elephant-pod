@@ -126,7 +126,6 @@ struct DaisyPodBackup: Codable, Hashable {
     copy.settings.serverUrl = nil
     copy.settings.lastSyncAt = nil
     copy.settings.sleepTimerEndsAt = nil
-    copy.settings.offlineMode = false
     copy.states = states.map { state in
       var portable = state
       portable.downloaded = false

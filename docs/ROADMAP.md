@@ -3,7 +3,7 @@
 ## V2 hardening
 
 - Validate native iOS background playback, background download scheduling, lock-screen controls, interruptions, route changes, AirPods/Bluetooth, and cellular/Wi-Fi transitions on a physical iPhone.
-- Continue adding XCUITest coverage for any remaining parity workflows that can be proven in Simulator. Current coverage includes visible Inbox/Queue row action triage, Offline Mode Library/Downloads filtering, Add/YouTube mode, native Add deep-link handoff, Library search, podcast and episode detail controls, clip composer, expanded player, and Settings.
+- Continue adding XCUITest coverage for any remaining parity workflows that can be proven in Simulator. Current coverage includes visible Inbox/Queue row action triage, Add/YouTube mode, native Add deep-link handoff, Library search, podcast and episode detail controls, clip composer, expanded player, and Settings.
 - Add more feed refresh fixtures for unusual publisher changes. Native unit coverage now includes mocked RSS and Atom fixtures for artwork, enclosure, inline chapter metadata, local Inbox import behavior, and RSS refresh merge behavior that preserves device-local playback/download/queue state while adding new Inbox items.
 - Validate live CloudKit two-device sync on physical Apple devices after provisioning, imports, incremental private-zone sync, and conflict replay are exercised on real devices.
 - Harden CloudKit private-database sync for personal podcast state with more two-device conflict testing, following `docs/ICLOUD_SYNC_MIGRATION.md`; the old server `/api/sync` product path is retired.

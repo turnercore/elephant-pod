@@ -180,6 +180,28 @@ struct PodcastDiscoveryResponse: Decodable {
   var total: Int?
 }
 
+private enum BackendJSONDate {
+  static func decode(_ decoder: Decoder) throws -> Date {
+    let container = try decoder.singleValueContainer()
+    let raw = try container.decode(String.self)
+    let isoFormatter = ISO8601DateFormatter()
+    let fractionalISOFormatter = ISO8601DateFormatter()
+    fractionalISOFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let rssFormatter = rssDateFormatter()
+    if let date = isoFormatter.date(from: raw) ?? fractionalISOFormatter.date(from: raw) ?? rssFormatter.date(from: raw) {
+      return date
+    }
+    throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported date format: \(raw)")
+  }
+}
+
+private func rssDateFormatter() -> DateFormatter {
+  let formatter = DateFormatter()
+  formatter.locale = Locale(identifier: "en_US_POSIX")
+  formatter.dateFormat = "EEE, d MMM yyyy HH:mm:ss Z"
+  return formatter
+}
+
 struct YouTubeEpisodePatch: Decodable, Hashable {
   var id: String?
   var title: String?
@@ -554,7 +576,7 @@ struct BackendClient {
       throw URLError(.badServerResponse)
     }
     let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
+    decoder.dateDecodingStrategy = .custom(BackendJSONDate.decode)
     return try decoder.decode(T.self, from: data)
   }
 }
@@ -807,10 +829,7 @@ final class RSSFeedParser: NSObject, XMLParserDelegate {
   private func parseDate(_ raw: String?) -> Date? {
     guard let raw, !raw.isEmpty else { return nil }
     if let date = ISO8601DateFormatter().date(from: raw) { return date }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.dateFormat = "EEE, d MMM yyyy HH:mm:ss Z"
-    return formatter.date(from: raw)
+    return rssDateFormatter().date(from: raw)
   }
 
   private func parseDuration(_ raw: String?) -> TimeInterval? {

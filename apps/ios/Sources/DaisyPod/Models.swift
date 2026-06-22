@@ -416,7 +416,6 @@ struct AppSettings: Codable, Hashable {
   var autoDownloadInbox: Bool = false
   var autoDeleteAfterListen: Bool = true
   var downloadOnlyWifi: Bool = true
-  var offlineMode: Bool = false
   var storageCapMb: Int = 2048
   var inboxSortDirection: SortDirection = .newest
   var refreshIntervalMinutes: Int = 720
@@ -452,7 +451,6 @@ struct AppSettings: Codable, Hashable {
     case autoDownloadInbox
     case autoDeleteAfterListen
     case downloadOnlyWifi
-    case offlineMode
     case storageCapMb
     case inboxSortDirection
     case refreshIntervalMinutes
@@ -489,7 +487,6 @@ struct AppSettings: Codable, Hashable {
     autoDownloadInbox = try container.decodeIfPresent(Bool.self, forKey: .autoDownloadInbox) ?? autoDownloadInbox
     autoDeleteAfterListen = try container.decodeIfPresent(Bool.self, forKey: .autoDeleteAfterListen) ?? autoDeleteAfterListen
     downloadOnlyWifi = try container.decodeIfPresent(Bool.self, forKey: .downloadOnlyWifi) ?? downloadOnlyWifi
-    offlineMode = try container.decodeIfPresent(Bool.self, forKey: .offlineMode) ?? offlineMode
     storageCapMb = try container.decodeIfPresent(Int.self, forKey: .storageCapMb) ?? storageCapMb
     inboxSortDirection = try container.decodeIfPresent(SortDirection.self, forKey: .inboxSortDirection) ?? inboxSortDirection
     refreshIntervalMinutes = try container.decodeIfPresent(Int.self, forKey: .refreshIntervalMinutes) ?? refreshIntervalMinutes

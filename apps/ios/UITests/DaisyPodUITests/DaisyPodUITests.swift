@@ -237,36 +237,6 @@ final class DaisyPodUITests: XCTestCase {
   }
 
   @MainActor
-  func testOfflineModeFiltersLibraryAndKeepsDownloadsVisible() {
-    let app = XCUIApplication()
-    app.launchArguments.append("--daisy-ui-test-reset-store")
-    app.launchArguments.append("--daisy-ui-test-downloaded-seed")
-    app.launchArguments.append("--daisy-ui-test-offline-mode-off")
-    app.launchArguments.append("--daisy-ui-test-tab=settings")
-    app.launch()
-
-    XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
-    let offlineMode = app.switches["OfflineModeToggle"]
-    XCTAssertTrue(scrollTo(offlineMode, in: app, maxSwipes: 2))
-    offlineMode.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-
-    app.terminate()
-    app.launchArguments = ["--daisy-ui-test-downloaded-seed", "--daisy-ui-test-tab=library"]
-    app.launch()
-    XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["DaisyPod Field Notes"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["1 podcast"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.staticTexts["Open Podcast Lab"].exists)
-
-    app.terminate()
-    app.launchArguments = ["--daisy-ui-test-downloaded-seed", "--daisy-ui-test-tab=downloads"]
-    app.launch()
-    XCTAssertTrue(app.navigationBars["Downloads"].waitForExistence(timeout: 5))
-    let downloadedRow = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "EpisodeRow_")).element(boundBy: 0)
-    XCTAssertTrue(downloadedRow.waitForExistence(timeout: 5))
-  }
-
-  @MainActor
   func testInboxVisibleRowActionsExposeQueueChoices() {
     let app = XCUIApplication()
     app.launchArguments.append("--daisy-ui-test-reset-store")

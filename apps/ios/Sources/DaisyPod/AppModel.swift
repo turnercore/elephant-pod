@@ -82,11 +82,11 @@ final class AppModel: ObservableObject {
   }
 
   var inbox: [EpisodeWithState] {
-    offlineFiltered((try? repository.inboxEpisodes(settings: settings)) ?? [])
+    (try? repository.inboxEpisodes(settings: settings)) ?? []
   }
 
   var queue: [EpisodeWithState] {
-    offlineFiltered((try? repository.queuedEpisodes()) ?? [])
+    (try? repository.queuedEpisodes()) ?? []
   }
 
   var downloads: [EpisodeWithState] {
@@ -94,7 +94,7 @@ final class AppModel: ObservableObject {
   }
 
   var history: [EpisodeWithState] {
-    offlineFiltered((try? repository.history()) ?? [])
+    (try? repository.history()) ?? []
   }
 
   var topListeningPodcasts: [PodcastListeningStats] {
@@ -109,10 +109,7 @@ final class AppModel: ObservableObject {
   }
 
   var libraryPodcasts: [Podcast] {
-    let visible = podcasts.filter { isPodcastInLibrary($0) }
-    guard settings.offlineMode else { return visible }
-    let downloadedPodcastIds = Set(downloads.map(\.episode.podcastId))
-    return visible.filter { downloadedPodcastIds.contains($0.id) }
+    podcasts.filter { isPodcastInLibrary($0) }
   }
 
   func libraryPodcasts(matching rawQuery: String) -> [Podcast] {
@@ -193,7 +190,14 @@ final class AppModel: ObservableObject {
   }
 
   func isPodcastInLibrary(_ podcast: Podcast) -> Bool {
-    podcastPreference(for: podcast).inLibrary != false
+    let preference = podcastPreference(for: podcast)
+    if preference.inLibrary == true || preference.addNewEpisodesToInbox {
+      return true
+    }
+    return episodes.contains { item in
+      item.episode.podcastId == podcast.id &&
+        (item.state.downloaded || item.state.inboxState == .new || item.state.queuePosition != nil)
+    }
   }
 
   func isPodcastSubscribed(_ podcast: Podcast) -> Bool {
@@ -201,7 +205,7 @@ final class AppModel: ObservableObject {
   }
 
   func podcastEpisodes(for podcast: Podcast, filter: PodcastEpisodeFilter = .all) -> [EpisodeWithState] {
-    offlineFiltered((try? repository.podcastEpisodes(podcast.id, filter: filter)) ?? [])
+    (try? repository.podcastEpisodes(podcast.id, filter: filter)) ?? []
   }
 
   var appleAccountAvailable: Bool {
@@ -305,14 +309,6 @@ final class AppModel: ObservableObject {
       let url = FileManager.default.temporaryDirectory.appending(path: "daisy-pod-ui-test-\(firstEpisode.id).mp3")
       try Data("ui-test-download".utf8).write(to: url, options: .atomic)
       try repository.setDownloaded(firstEpisode.id, path: url.path, bytes: 16, source: "ui-test")
-      try refresh()
-    }
-    if arguments.contains("--daisy-ui-test-offline-mode-off") {
-      try repository.saveOfflineMode(false)
-      try refresh()
-    }
-    if arguments.contains("--daisy-ui-test-offline-mode") {
-      try repository.saveOfflineMode(true)
       try refresh()
     }
     if let tabArgument = arguments.first(where: { $0.hasPrefix("--daisy-ui-test-tab=") }) {
@@ -549,21 +545,6 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func setOfflineMode(_ enabled: Bool) {
-    do {
-      try repository.saveOfflineMode(enabled)
-      try refresh()
-      status = enabled ? "Offline mode on." : "Offline mode off."
-    } catch {
-      settings.offlineMode = enabled
-      status = "Could not save offline mode."
-    }
-  }
-
-  private func offlineFiltered(_ values: [EpisodeWithState]) -> [EpisodeWithState] {
-    settings.offlineMode ? values.filter { $0.state.downloaded } : values
-  }
-
   func queueEpisode(_ episode: EpisodeWithState) {
     do {
       try repository.addToQueueEnd(episode.id)
@@ -747,7 +728,11 @@ final class AppModel: ObservableObject {
 
   func removePodcastFromLibrary(_ podcast: Podcast) {
     do {
+      let downloadedEpisodes = podcastEpisodes(for: podcast).filter(\.state.downloaded)
       try repository.removePodcastFromLibrary(podcast.id)
+      for episode in downloadedEpisodes {
+        _ = try? downloadManager.delete(episodeId: episode.id, storedPath: episode.state.downloadPath)
+      }
       try refresh()
       status = "Removed from Library."
       runDownloadMaintenance()

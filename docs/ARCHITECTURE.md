@@ -26,8 +26,8 @@ CloudKit personal sync
     and transcripts
   - implemented as deterministic private-zone records with live CloudKit
     upload/download and persisted per-zone change tokens for incremental fetches
-  - never syncs native file paths, downloads, tokens, sleep timers, offline
-    mode, or listening stats
+  - never syncs native file paths, downloads, tokens, sleep timers, or listening
+    stats
 ```
 
 ## Local-First Model
@@ -48,6 +48,13 @@ Local collections include:
 - `tombstones`
 - `listeningStats`
 - silence-map and Smart Skip caches
+
+Library membership is derived locally. A podcast appears in Library when it is
+manually added, subscribed, has a downloaded episode, has an episode in Inbox,
+or has an episode in Queue. Removing a podcast from Library is a cleanup action:
+it unsubscribes the show, archives its Inbox episodes, removes its Queue
+positions, clears local download state, and the app-level workflow deletes the
+associated device files through `NativeDownloadManager`.
 
 The queue is represented by `EpisodeState.queuePosition`. Starting playback with Play inserts the episode at the head of the queue; Play Next inserts after the current first queue item; Add Last appends. Playback history uses `lastPlayedAt`, while `playedAt` remains the completion/mark-played timestamp.
 

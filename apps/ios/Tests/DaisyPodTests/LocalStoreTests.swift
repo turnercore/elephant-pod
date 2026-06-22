@@ -397,38 +397,9 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertEqual(saved.inboxSortDirection, .oldest)
   }
 
-  func testOfflineModeFiltersPlayableLocalSurfaces() throws {
+  func testLibrarySearchMatchesPodcastMetadata() throws {
     let repository = try PodcastRepository.inMemoryForTests()
     try repository.ensureSeedData()
-    let episodes = try repository.episodes()
-    try repository.addToQueueEnd(episodes[0].id)
-    try repository.addToQueueEnd(episodes[1].id)
-    try repository.setDownloaded(episodes[1].id, path: "/tmp/downloaded.mp3", bytes: 10)
-    try repository.setDownloaded(episodes[2].id, path: "/tmp/inbox-downloaded.mp3", bytes: 10)
-    try repository.updateEpisodeState(episodes[2].id) { state in
-      state.lastPlayedAt = Date()
-    }
-    let model = AppModel(repository: repository)
-    model.start()
-
-    XCTAssertGreaterThan(model.inbox.count, 1)
-    XCTAssertEqual(model.queue.count, 2)
-    model.setOfflineMode(true)
-
-    XCTAssertTrue(model.settings.offlineMode)
-    XCTAssertEqual(model.inbox.map(\.id), [episodes[2].id])
-    XCTAssertEqual(model.queue.map(\.id), [episodes[1].id])
-    XCTAssertEqual(model.history.map(\.id), [episodes[2].id])
-    XCTAssertEqual(Set(model.libraryPodcasts.map(\.id)), Set([episodes[1].episode.podcastId, episodes[2].episode.podcastId]))
-
-    model.setOfflineMode(false)
-  }
-
-  func testLibrarySearchMatchesPodcastMetadataAndRespectsOfflineMode() throws {
-    let repository = try PodcastRepository.inMemoryForTests()
-    try repository.ensureSeedData()
-    let episodes = try repository.episodes()
-    try repository.setDownloaded(episodes[3].id, path: "/tmp/open-lab.mp3", bytes: 10)
     let model = AppModel(repository: repository)
     model.start()
 
@@ -436,11 +407,6 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertEqual(model.libraryPodcasts(matching: "testing queueing").map(\.title), ["Open Podcast Lab"])
     XCTAssertEqual(model.libraryPodcasts(matching: "daisy-pod.xml").map(\.title), ["DaisyPod Field Notes"])
     XCTAssertEqual(model.libraryPodcasts(matching: "Local First Radio").map(\.title), ["Open Podcast Lab"])
-
-    model.setOfflineMode(true)
-
-    XCTAssertEqual(model.libraryPodcasts(matching: "").map(\.title), ["Open Podcast Lab"])
-    XCTAssertEqual(model.libraryPodcasts(matching: "field notes"), [])
   }
 
   func testPodcastDetailSortFilterAndBulkActionsUseLocalStateAndSyncActions() throws {
@@ -488,12 +454,22 @@ final class LocalStoreTests: XCTestCase {
   }
 
   func testPodcastLibraryAndSubscriptionControlsPreserveLocalFirstState() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "daisy-pod-library-remove-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
     let repository = try PodcastRepository.inMemoryForTests()
     try repository.ensureSeedData()
     let podcast = try XCTUnwrap(try repository.podcasts().first { $0.title == "DaisyPod Field Notes" })
-    let episode = try XCTUnwrap(try repository.podcastEpisodes(podcast.id).first)
-    try repository.addToQueueEnd(episode.id)
-    let model = AppModel(repository: repository)
+    let episodes = try repository.podcastEpisodes(podcast.id)
+    let queuedEpisode = try XCTUnwrap(episodes.first)
+    let downloadedEpisode = try XCTUnwrap(episodes.dropFirst().first)
+    let downloadedPath = try writeDownloadStub(root: root, episodeId: downloadedEpisode.id)
+    try repository.addToQueueEnd(queuedEpisode.id)
+    try repository.setDownloaded(downloadedEpisode.id, path: downloadedPath, bytes: 10)
+    let model = AppModel(
+      repository: repository,
+      downloadManager: NativeDownloadManager(downloadsRoot: root)
+    )
     model.start()
 
     XCTAssertTrue(model.libraryPodcasts.contains { $0.id == podcast.id })
@@ -505,25 +481,81 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertFalse(model.isPodcastSubscribed(podcast))
     XCTAssertEqual(try repository.podcastPreference(for: podcast.id).inLibrary, true)
 
-    model.subscribePodcast(podcast)
     model.removePodcastFromLibrary(podcast)
 
     XCTAssertFalse(model.libraryPodcasts.contains { $0.id == podcast.id })
     XCTAssertFalse(model.isPodcastSubscribed(podcast))
     XCTAssertFalse(model.queue.contains { $0.episode.podcastId == podcast.id })
+    XCTAssertTrue(model.podcastEpisodes(for: podcast).allSatisfy { item in
+      item.state.inboxState == .archived &&
+        item.state.queuePosition == nil &&
+        item.state.downloaded == false &&
+        item.state.downloadPath == nil
+    })
+    XCTAssertFalse(FileManager.default.fileExists(atPath: downloadedPath))
     let hiddenPreference = try repository.podcastPreference(for: podcast.id)
     XCTAssertEqual(hiddenPreference.inLibrary, false)
-    XCTAssertEqual(hiddenPreference.wasSubscribedBeforeLibraryRemoval, true)
-    XCTAssertTrue(model.podcastEpisodes(for: podcast).allSatisfy { $0.state.inboxState == .archived && $0.state.queuePosition == nil })
+    XCTAssertEqual(hiddenPreference.wasSubscribedBeforeLibraryRemoval, false)
 
+    try repository.setDownloaded(downloadedEpisode.id, path: downloadedPath, bytes: 10)
+    try model.refresh()
+    XCTAssertTrue(model.libraryPodcasts.contains { $0.id == podcast.id })
+
+    model.removePodcastFromLibrary(podcast)
+    try repository.sendAllUnplayedInPodcastToInbox(podcast.id)
+    try model.refresh()
+    XCTAssertTrue(model.libraryPodcasts.contains { $0.id == podcast.id })
+
+    model.removePodcastFromLibrary(podcast)
+    try repository.addToQueueEnd(queuedEpisode.id)
+    try model.refresh()
+    XCTAssertTrue(model.libraryPodcasts.contains { $0.id == podcast.id })
+
+    model.removePodcastFromLibrary(podcast)
     model.addPodcastToLibrary(podcast)
 
     XCTAssertTrue(model.libraryPodcasts.contains { $0.id == podcast.id })
-    XCTAssertTrue(model.isPodcastSubscribed(podcast))
+    XCTAssertFalse(model.isPodcastSubscribed(podcast))
     let restoredPreference = try repository.podcastPreference(for: podcast.id)
     XCTAssertEqual(restoredPreference.inLibrary, true)
     XCTAssertEqual(restoredPreference.wasSubscribedBeforeLibraryRemoval, false)
-    XCTAssertEqual(restoredPreference.addNewEpisodesToInbox, true)
+    XCTAssertEqual(restoredPreference.addNewEpisodesToInbox, false)
+  }
+
+  func testAppModelImportsCustomRSSFeedIntoLibrary() async throws {
+    let feedUrl = "https://example.com/custom-rss.xml"
+    let repository = try PodcastRepository.inMemoryForTests()
+    let model = AppModel(repository: repository, importRSS: { requestedFeedUrl, _ in
+      XCTAssertEqual(requestedFeedUrl, feedUrl)
+      return Self.testParsedFeed(feedUrl: requestedFeedUrl, title: "Custom RSS Show")
+    })
+    model.start()
+
+    model.importFeed(feedUrl)
+
+    try await waitUntil { !model.importingFeed }
+    XCTAssertEqual(model.status, "Added Custom RSS Show.")
+    let podcast = try XCTUnwrap(model.libraryPodcasts.first { $0.feedUrl == feedUrl })
+    XCTAssertTrue(model.isPodcastSubscribed(podcast))
+    XCTAssertEqual(model.podcastEpisodes(for: podcast).map(\.episode.title), ["Custom RSS Show Episode"])
+  }
+
+  func testSubscribeToDiscoveredPodcastImportsSearchResultIntoLibrary() async throws {
+    let feedUrl = "https://example.com/discovered-rss.xml"
+    let repository = try PodcastRepository.inMemoryForTests()
+    let model = AppModel(repository: repository, importRSS: { requestedFeedUrl, _ in
+      XCTAssertEqual(requestedFeedUrl, feedUrl)
+      return Self.testParsedFeed(feedUrl: requestedFeedUrl, title: "Discovered RSS Show")
+    })
+    model.start()
+
+    model.subscribeToDiscoveredPodcast(PodcastDiscoveryResult(title: "Discovered RSS Show", feedUrl: feedUrl))
+
+    try await waitUntil { !model.importingFeed }
+    XCTAssertEqual(model.status, "Added Discovered RSS Show.")
+    let podcast = try XCTUnwrap(model.libraryPodcasts.first { $0.feedUrl == feedUrl })
+    XCTAssertTrue(model.isPodcastSubscribed(podcast))
+    XCTAssertEqual(model.podcastEpisodes(for: podcast).count, 1)
   }
 
   func testPodcastRefreshUpsertsFeedAndRateLimitsImmediateRepeats() async throws {
@@ -626,21 +658,6 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertEqual(model.status, "Refreshed 1 feed.")
   }
 
-  func testOfflineModePersistsWithoutChangingSettingsSyncTimestamp() throws {
-    let repository = try PodcastRepository.inMemoryForTests()
-    try repository.ensureSeedData()
-    let before = try repository.settings()
-    let model = AppModel(repository: repository)
-    model.start()
-
-    model.setOfflineMode(true)
-
-    let saved = try repository.settings()
-    XCTAssertEqual(saved.offlineMode, true)
-    XCTAssertEqual(saved.updatedAt, before.updatedAt)
-    model.setOfflineMode(false)
-  }
-
   func testAppSettingsDecodeKeepsDefaultsForMissingNewKeys() throws {
     let json = """
     {
@@ -666,7 +683,6 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertEqual(settings.smartSkipUseServerMedia, true)
     XCTAssertEqual(settings.nativeAudioPreferred, true)
     XCTAssertEqual(settings.downloadOnlyWifi, true)
-    XCTAssertEqual(settings.offlineMode, false)
     XCTAssertEqual(settings.theme, .light)
     XCTAssertEqual(settings.themeSchemaVersion, AppTheme.currentSchemaVersion)
     XCTAssertNil(settings.sleepTimerEndsAt)
@@ -981,8 +997,11 @@ final class LocalStoreTests: XCTestCase {
     let session = URLSession(configuration: configuration)
     defer { MockURLProtocol.handler = nil }
     MockURLProtocol.handler = { request in
-      XCTAssertEqual(request.url?.path, "/api/podcast-index/search")
-      XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "max" }?.value, "25")
+      guard request.url?.path == "/api/podcast-index/search",
+            request.url?.absoluteString.contains("max=25") == true else {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: ["content-type": "application/json"])!
+        return (response, Data(#"{"error":"Unexpected test request."}"#.utf8))
+      }
       let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["content-type": "application/json"])!
       return (response, Data(#"{"items":[]}"#.utf8))
     }
@@ -992,6 +1011,59 @@ final class LocalStoreTests: XCTestCase {
     let results = try await client.searchPodcastIndex(query: "native podcasts")
 
     XCTAssertTrue(results.isEmpty)
+  }
+
+  func testBackendClientParsesRSSDatesFromServerFeedResponse() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { MockURLProtocol.handler = nil }
+    MockURLProtocol.handler = { request in
+      guard request.url?.path == "/api/rss/parse" else {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: ["content-type": "application/json"])!
+        return (response, Data(#"{"error":"Unexpected test request."}"#.utf8))
+      }
+      let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["content-type": "application/json"])!
+      let data = Data("""
+      {
+        "podcast": {
+          "id": "feed_butterscotch",
+          "title": "Game Dev Podcast | Coffee with Butterscotch",
+          "feedUrl": "http://feeds.feedburner.com/CoffeeWithButterscotch",
+          "tags": [],
+          "sourceType": "rss",
+          "sourceUrl": "http://feeds.feedburner.com/CoffeeWithButterscotch",
+          "lastRefreshedAt": "2026-06-22T16:39:53Z",
+          "createdAt": "2026-06-22T16:39:53Z",
+          "updatedAt": "2026-06-22T16:39:53Z"
+        },
+        "episodes": [
+          {
+            "id": "ep_577",
+            "podcastId": "feed_butterscotch",
+            "podcastTitle": "Game Dev Podcast | Coffee with Butterscotch",
+            "title": "Indie Devs React",
+            "audioUrl": "https://media.transistor.fm/example.mp3",
+            "publishedAt": "Wed, 17 Jun 2026 08:00:00 -0500",
+            "chapters": [],
+            "guid": "episode-577",
+            "sourceType": "rss",
+            "sourceUrl": "http://feeds.feedburner.com/CoffeeWithButterscotch",
+            "createdAt": "2026-06-22T16:39:53Z",
+            "updatedAt": "2026-06-22T16:39:53Z"
+          }
+        ]
+      }
+      """.utf8)
+      return (response, data)
+    }
+    var client = try XCTUnwrap(BackendClient(serverUrl: "https://pod.example.com"))
+    client.session = session
+
+    let result = try await client.parseRSS(feedUrl: "http://feeds.feedburner.com/CoffeeWithButterscotch")
+
+    XCTAssertEqual(result.podcast.title, "Game Dev Podcast | Coffee with Butterscotch")
+    XCTAssertEqual(result.episodes.first?.publishedAt, ISO8601DateFormatter().date(from: "2026-06-17T13:00:00Z"))
   }
 
   func testRepositorySavesClipAndIncrementsEpisodeClipCountOnce() throws {
@@ -1145,9 +1217,12 @@ final class LocalStoreTests: XCTestCase {
     }
 
     MockURLProtocol.handler = { request in
-      XCTAssertEqual(request.url?.path, "/api/podcast-index/search")
-      XCTAssertEqual(request.value(forHTTPHeaderField: "x-daisypod-client"), "ios")
-      XCTAssertEqual(request.value(forHTTPHeaderField: "x-daisypod-native-account"), "icloud")
+      guard request.url?.path == "/api/podcast-index/search",
+            request.value(forHTTPHeaderField: "x-daisypod-client") == "ios",
+            request.value(forHTTPHeaderField: "x-daisypod-native-account") == "icloud" else {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: ["content-type": "application/json"])!
+        return (response, Data(#"{"error":"Unexpected test request."}"#.utf8))
+      }
       let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: ["content-type": "application/json"])!
       return (response, Data(#"{"error":"Native iOS app access is required."}"#.utf8))
     }
@@ -1515,6 +1590,54 @@ final class LocalStoreTests: XCTestCase {
           episodeId: episodeId,
           priority: payload["priority"] as? String
         )
+        if episodeId == queued.id {
+          let audioUrl = payload["audioUrl"] as? String ?? queued.episode.audioUrl
+          let podcastId = payload["podcastId"] as? String ?? queued.episode.podcastId
+          let json = """
+          {
+            "jobId": "smart-\(episodeId)",
+            "status": "ready",
+            "stage": "ready",
+            "segmentMap": {
+              "id": "map-\(episodeId)",
+              "schemaVersion": "daisypod.smart-skip.v1",
+              "episodeId": "\(episodeId)",
+              "podcastId": "\(podcastId)",
+              "mediaVersionId": "media-\(episodeId)",
+              "audioUrl": "\(audioUrl)",
+              "durationMs": 120000,
+              "generatedAt": "2026-06-17T00:00:00Z",
+              "status": "ready",
+              "createdAt": "2026-06-17T00:00:00Z",
+              "updatedAt": "2026-06-17T00:00:00Z",
+              "segments": [
+                {
+                  "id": "segment-\(episodeId)",
+                  "type": "sponsorship",
+                  "startMs": 1000,
+                  "endMs": 5000,
+                  "confidence": 0.95,
+                  "action": "auto_skip",
+                  "source": "codex_segmenter",
+                  "label": "Sponsor"
+                }
+              ]
+            },
+            "transcript": {
+              "mediaVersionId": "media-\(episodeId)",
+              "provider": "whisper",
+              "model": "test",
+              "language": "en",
+              "durationMs": 120000,
+              "segments": [
+                { "startMs": 1000, "endMs": 5000, "text": "Sponsor read." }
+              ]
+            },
+            "error": null
+          }
+          """
+          return (response, Data(json.utf8))
+        }
         let json = """
         {
           "jobId": "smart-\(episodeId)",
@@ -1544,8 +1667,9 @@ final class LocalStoreTests: XCTestCase {
     let refreshedInbox = try XCTUnwrap(try repository.episodes().first { $0.id == inbox.id })
     XCTAssertEqual(try repository.cachedSilenceMap(for: refreshedQueued)?.status, .ready)
     XCTAssertEqual(try repository.cachedSilenceMap(for: refreshedInbox)?.status, .ready)
-    XCTAssertEqual(try repository.cachedSmartSkipEntry(for: refreshedQueued)?.status, .queued)
-    XCTAssertEqual(try repository.cachedSmartSkipEntry(for: refreshedQueued)?.reason, "queue")
+    XCTAssertEqual(try repository.cachedSmartSkipEntry(for: refreshedQueued)?.status, .ready)
+    XCTAssertEqual(try repository.cachedSmartSkipEntry(for: refreshedQueued)?.map?.segments.first?.id, "segment-\(queued.id)")
+    XCTAssertEqual(try repository.cachedSmartSkipEntry(for: refreshedQueued)?.transcript?.segments.first?.text, "Sponsor read.")
     XCTAssertEqual(try repository.cachedSmartSkipEntry(for: refreshedInbox)?.status, .queued)
     XCTAssertEqual(try repository.cachedSmartSkipEntry(for: refreshedInbox)?.reason, "inbox")
   }
@@ -2148,7 +2272,6 @@ final class LocalStoreTests: XCTestCase {
     let episode = try repository.episodes()[0]
     try repository.setDownloaded(episode.id, path: "/private/var/mobile/Containers/Data/audio.mp3", bytes: 42)
     try repository.saveSleepTimerDeadline(Date().addingTimeInterval(15 * 60))
-    try repository.saveOfflineMode(true)
 
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
@@ -2158,7 +2281,6 @@ final class LocalStoreTests: XCTestCase {
     XCTAssertFalse(json.contains("/private/var/mobile"))
     XCTAssertFalse(json.contains("ios-filesystem"))
     XCTAssertFalse(json.contains("sleepTimerEndsAt"))
-    XCTAssertFalse(json.contains(#""offlineMode":true"#))
   }
 
   func testNativeDownloadUpdatesDoNotCreateSyncActionsOrAdvanceStateTimestamp() throws {
@@ -2183,7 +2305,6 @@ final class LocalStoreTests: XCTestCase {
     var settings = try repository.settings()
     settings.serverUrl = "https://pod.example.com"
     settings.sleepTimerEndsAt = Date().addingTimeInterval(300)
-    settings.offlineMode = true
     try repository.saveSettings(settings)
     let episode = try repository.episodes()[0]
     try repository.setDownloaded(episode.id, path: "/private/device/audio.mp3", bytes: 42_000, source: "manual")
@@ -2196,7 +2317,6 @@ final class LocalStoreTests: XCTestCase {
     let cloudSettings = try XCTUnwrap(snapshot.records(ofType: .settings).first).decode(AppSettings.self)
     XCTAssertNil(cloudSettings.serverUrl)
     XCTAssertNil(cloudSettings.sleepTimerEndsAt)
-    XCTAssertFalse(cloudSettings.offlineMode)
 
     let cloudState = try XCTUnwrap(snapshot.records(ofType: .episodeState).first { $0.recordName == "EpisodeState.\(episode.id)" }).decode(EpisodeState.self)
     XCTAssertFalse(cloudState.downloaded)
@@ -2567,14 +2687,12 @@ final class LocalStoreTests: XCTestCase {
     let episode = try repository.episodes()[0]
     try repository.setDownloaded(episode.id, path: "/private/var/mobile/Containers/Data/audio.mp3", bytes: 42)
     try repository.saveSleepTimerDeadline(Date().addingTimeInterval(15 * 60))
-    try repository.saveOfflineMode(true)
 
     let json = try repository.exportBackup().encodedString()
 
     XCTAssertFalse(json.contains("/private/var/mobile"))
     XCTAssertFalse(json.contains("ios-filesystem"))
     XCTAssertFalse(json.contains("sleepTimerEndsAt"))
-    XCTAssertFalse(json.contains(#""offlineMode" : true"#))
     XCTAssertTrue(json.contains("\"feeds\""))
   }
 
@@ -2771,6 +2889,51 @@ final class LocalStoreTests: XCTestCase {
     }
     """
     return try JSONDecoder().decode(BackendCapabilities.self, from: Data(json.utf8))
+  }
+
+  private static func testParsedFeed(feedUrl: String, title: String) -> ParsedFeedResult {
+    let timestamp = ISO8601DateFormatter().date(from: "2026-06-17T13:00:00Z")!
+    let podcastId = stableId(feedUrl, prefix: "feed")
+    return ParsedFeedResult(
+      podcast: Podcast(
+        id: podcastId,
+        title: title,
+        author: "Example Network",
+        description: "A test podcast feed.",
+        imageUrl: nil,
+        feedUrl: feedUrl,
+        websiteUrl: "https://example.com",
+        tags: [],
+        sourceType: .rss,
+        sourceUrl: feedUrl,
+        lastRefreshedAt: timestamp,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      ),
+      episodes: [
+        Episode(
+          id: stableId("\(feedUrl):episode-1", prefix: "ep"),
+          podcastId: podcastId,
+          podcastTitle: title,
+          title: "\(title) Episode",
+          description: "A test episode.",
+          audioUrl: "https://example.com/audio.mp3",
+          websiteUrl: "https://example.com/episode",
+          imageUrl: nil,
+          publishedAt: timestamp,
+          durationSec: 600,
+          explicit: false,
+          chapters: [],
+          guid: "episode-1",
+          enclosureLength: 1200,
+          sourceType: .rss,
+          sourceUrl: feedUrl,
+          extractionStatus: .none,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        )
+      ]
+    )
   }
 }
 
