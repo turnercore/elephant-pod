@@ -18,6 +18,7 @@ on:
 
 env:
   REGISTRY: forge.elephanthand.com
+  DOCKER_HOST: tcp://172.17.0.1:2375
 
 jobs:
   publish:
