@@ -81,7 +81,7 @@ jobs:
 
       - name: Log in to Forgejo registry on the host
         env:
-          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
         run: |
           set -Eeuo pipefail
@@ -94,7 +94,7 @@ jobs:
           )
 
           printf '%s' "$REGISTRY_TOKEN" | ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
-            "docker login '$REGISTRY' -u '$REGISTRY_USERNAME' --password-stdin"
+            "docker login '$REGISTRY' -u '$REGISTRY_USER' --password-stdin"
 
       - name: Pull image, migrate database, and restart the stack
         run: |
