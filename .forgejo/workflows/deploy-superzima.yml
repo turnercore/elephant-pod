@@ -29,11 +29,11 @@ jobs:
           github.event.workflow_run.head_branch == 'main'
         )
       }}
-    runs-on: [self-hosted, studio-runner, elephant-hand, superzima, ssh, rsync, docker, linux, x64]
+    runs-on: [studio, superzima]
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: https://data.forgejo.org/actions/checkout@v4
         with:
           fetch-depth: 1
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
