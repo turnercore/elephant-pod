@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import type { ServerClip } from './types.js';
+import { clipRenderStatuses, type ServerClip } from './types.js';
 
 const clipSchema = z.object({
   id: z.string().optional(),
@@ -17,7 +17,7 @@ const clipSchema = z.object({
   publicUrl: z.string().url().optional(),
   renderedAudioUrl: z.string().url().optional(),
   renderedVideoUrl: z.string().url().optional(),
-  renderStatus: z.enum(['local-only', 'pending', 'queued', 'rendering', 'ready', 'rendered', 'failed', 'range-link', 'time-range-only']).optional(),
+  renderStatus: z.enum(clipRenderStatuses).optional(),
   renderError: z.string().optional(),
   fileSizeBytes: z.number().optional(),
   createdAt: z.string().optional(),

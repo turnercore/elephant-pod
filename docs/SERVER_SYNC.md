@@ -46,6 +46,12 @@ The server remains a processing and discovery boundary:
 
 The server no longer exposes product auth routes or `/api/sync` from the app runtime. Personal sync should not require the server.
 
+## Server URL Safety
+
+Server-side fetch and media-processing routes accept only public `http(s)` URLs. RSS feed parsing validates the original URL and each redirect target, rejects loopback, private, link-local, multicast, unspecified, and metadata-service network targets, and reads feed XML with a timeout plus pre-read and post-read byte caps. Optional external chapter JSON uses the same public-network check and keeps its smaller JSON byte cap.
+
+Clip rendering and silence-map generation also reject private-network media URLs before invoking ffmpeg. Downloads remain device-local in the native app; this server check only applies to server-owned RSS, clip, and media-analysis work.
+
 ## Native Service Access
 
 Native discovery routes accept app-origin requests through service headers:
@@ -56,6 +62,8 @@ Native discovery routes accept app-origin requests through service headers:
 PodcastIndex search and browse require those native service headers. Protected processing and publishing routes require `Authorization: Bearer <session-token>` from a backend session created by `POST /api/auth/apple`.
 
 The Apple sign-in endpoint verifies the native Apple identity token with Apple's public keys, links the stable Apple subject to a backend account, stores only a SHA-256 hash of the issued app session token, and returns the clear session token once for Keychain storage on the device.
+
+Apple account/session schema is provisioned through `infra/postgres/init.sql` and migrations. The server runtime assumes `pgcrypto`, `public.daisy_accounts`, `public.daisy_sessions`, and their indexes already exist; protected requests and sign-in do not create schema objects.
 
 Protected processing routes no longer accept product-login bearer tokens or bundled native app tokens. Local CloudKit account status is used for personal iCloud sync, not as the app-side gate for PodcastIndex, YouTube, clips, silence maps, or Smart Skip.
 

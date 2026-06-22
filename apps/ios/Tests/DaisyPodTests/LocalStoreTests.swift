@@ -555,7 +555,7 @@ final class LocalStoreTests: XCTestCase {
     var importCount = 0
     let model = AppModel(
       repository: repository,
-      rssImporter: RSSImporting { feedUrl, _ in
+      importRSS: { feedUrl, _ in
         importCount += 1
         var refreshedPodcast = podcast
         refreshedPodcast.title = "DaisyPod Field Notes"
@@ -609,7 +609,7 @@ final class LocalStoreTests: XCTestCase {
     var importedFeedUrls: [String] = []
     let model = AppModel(
       repository: repository,
-      rssImporter: RSSImporting { feedUrl, _ in
+      importRSS: { feedUrl, _ in
         importedFeedUrls.append(feedUrl)
         let podcast = self.testPodcast(id: duePodcastId, title: "Due Show Refreshed", feedUrl: feedUrl, lastRefreshedAt: now)
         let episode = self.testEpisode(id: "ep_due_auto_refresh", podcast: podcast, title: "Automatic Refresh Episode", publishedAt: now)
@@ -2487,7 +2487,7 @@ final class LocalStoreTests: XCTestCase {
     var importedURLs: [String] = []
     let model = AppModel(
       repository: repository,
-      rssImporter: RSSImporting { requestedFeedUrl, serverUrl in
+      importRSS: { requestedFeedUrl, serverUrl in
         importedURLs.append(requestedFeedUrl)
         XCTAssertNil(serverUrl)
         let podcast = Podcast(

@@ -71,7 +71,7 @@ Results:
 - iOS App Intents metadata export: passed as part of the iPhone 13 mini simulator build.
 - iOS simulator build/run: passed through XcodeBuildMCP.
 - iOS physical-device build/install: passed on iPhone 13 mini with team `2UTACZ8KMY`.
-- CloudKit personal-sync tests: passed on iPhone 13 mini simulator, including deterministic portable personal record snapshots, stripping device-local settings/download fields, excluding listening stats, preserving sync actions, including silence maps/Smart Skip maps/transcripts for offline playback behavior, upload through the `PersonalSyncing` boundary, remote-newer snapshot merge into SQLite, local-newer protection over stale remote records, active playback episode-state protection when a newer remote state exists, current tombstone application, stale tombstone protection, preserving device files when tombstoned rows are removed, and per-zone CloudKit change-token persistence.
+- CloudKit personal-sync tests: passed on iPhone 13 mini simulator, including deterministic portable personal record snapshots, stripping device-local settings/download fields, excluding listening stats, preserving sync actions, including silence maps/Smart Skip maps/transcripts for offline playback behavior, upload through the CloudKit sync store boundary, remote-newer snapshot merge into SQLite, local-newer protection over stale remote records, active playback episode-state protection when a newer remote state exists, current tombstone application, stale tombstone protection, preserving device files when tombstoned rows are removed, and per-zone CloudKit change-token persistence.
 - Server health endpoint: passed and returned JSON.
 - Live Superzima backend deploy: passed. `forge.elephanthand.com/elephant-hand-games/daisy-pod-server:latest` was built from the current worktree and pushed; Superzima pulled it, removed the retired `elephant-pod` orphan container that held port `20001`, and now runs `daisy-pod` on `100.92.133.126:20001` / `https://pod.elephanthand.com`.
 - Live `/api/health`: passed through Superzima local port and the public proxy. The response reported service `daisypod`, ffmpeg available, server job limiter status, and Smart Skip enabled.
@@ -79,6 +79,7 @@ Results:
 - Live native service gate: passed. A random public PodcastIndex request returned `401`, a native-looking request without a backend account session returned `200` with real PodcastIndex results, and protected processing routes require a Sign in with Apple backend session.
 - Smart Skip pure server tests: passed.
 - RSS parser contract tests cover native-safe inline chapter payloads from Podcasting 2.0 and Podlove RSS tags, backend-resolved external Podcasting 2.0 chapter JSON, and graceful import when optional external chapter metadata is unavailable.
+- Server URL safety tests cover private-network RSS rejection before fetch, oversized feed XML rejection, redirect target validation, and private media URL rejection before ffmpeg clip or silence-map work.
 
 Warnings/notes:
 

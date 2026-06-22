@@ -39,7 +39,7 @@ Foreground maintenance runs after launch and after local queue/triage/play-state
 The backend server still owns expensive or public media processing:
 
 - Rendered MP3 clip files for public clip links.
-- Cached silence-shortening and silence-map analysis jobs through ffmpeg.
+- Cached silence-map analysis jobs through ffmpeg.
 - YouTube metadata and audio caching through yt-dlp.
 - Smart Skip processing through ffmpeg silence boundaries, Whisper-compatible transcription, and the segmenter service.
 

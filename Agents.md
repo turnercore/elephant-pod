@@ -3,8 +3,8 @@
 ## Operating principles
 
 - Preserve local-first behavior. The app must be usable with no account and no server.
-- Sync must be additive and recoverable. Never make Supabase required for playback, subscriptions, queueing, triage, or settings.
-- Keep web, server, Tauri, native mobile, and Supabase boundaries explicit.
+- Sync must be additive and recoverable. Never make the server required for playback, subscriptions, queueing, triage, or settings.
+- Keep native iOS, server, worker, deployment, and local Postgres boundaries explicit.
 - Update docs in the same change when behavior, commands, schemas, env variables, security assumptions, storage behavior, or sync contracts change.
 - Do not bundle font files. Reference fonts via CSS or document where maintainers can place their licensed local copies.
 - Keep icon-only controls accessible: every interactive icon needs `aria-label`, visible focus, keyboard operation, and non-color-only state.
@@ -20,26 +20,27 @@ Please read the following documentation as it relates to your task. Please keep 
 3. `docs/FEATURE_MATRIX.md` - Feature matrix comparing Elephant Pod to other podcast apps and listing planned features.
 4. `docs/SERVER_SYNC.md` - Documentation for server-side sync logic.
 5. `docs/AUDIO_ENGINE.md` - Documentation for the audio engine implementation.
-6. `docs/MOBILE_TAURI_NOTES.md` - Notes and guidelines for mobile development with Tauri.
+6. `docs/ICLOUD_SYNC_MIGRATION.md` - iCloud/CloudKit personal-sync migration notes and validation scope.
 7. `docs/ACCESSIBILITY.md` - Accessibility guidelines and implementation details.
-8. `infra/supabase/schema.sql` - Database schema and sync contract documentation for Supabase.
-9. `infra/supabase/README.md` - Setup instructions, environment variable documentation, and security guidelines for Supabase.
+8. `docs/VALIDATION.md` - Current validation commands, results, and remaining physical-device checks.
+9. `infra/postgres/init.sql` - Server-owned Postgres schema for clips, accounts, sessions, and Smart Skip data.
 
 ## Project boundaries
 
-### `apps/web`
+### `apps/ios`
 
-The product UI and local-first application logic. Uses React, TypeScript, Tailwind, Dexie/IndexedDB, shadcn-style components, and lucide icons.
+The supported product UI and local-first application logic. Uses SwiftUI, SQLite, AVPlayer, CloudKit, App Intents, and native iOS storage.
 
-Do not put trusted server secrets here. `VITE_*` variables are public.
+Do not make server access required for local playback, subscriptions, downloads, queueing, triage, settings, OPML, or backups.
 
 ### `apps/server`
 
-RSS proxying, clip-link publishing, ffmpeg rendering, static app hosting, and future background jobs. It may use service-role Supabase credentials, but those credentials must never cross into the browser bundle.
+RSS proxying, PodcastIndex mediation, clip-link publishing, ffmpeg rendering, YouTube import, Smart Skip processing, health, and capabilities. Server secrets stay server-side.
 
-### `src-tauri`
+### `apps/segmenter` and `workers/whisper`
 
-Native wrapper. Contains native filesystem download commands, audio shim commands, and mobile audio plugin scaffolds.
+Optional Smart Skip worker surfaces. Local compose can run mock workers; production must point at real processing endpoints.
 
-### `infra/supabase`
-Superbase is only used for authentication while the local postgres database is the source of truth for sync and data.
+### `infra/postgres`
+
+Server-owned Postgres schema. Personal podcast sync belongs to native SQLite plus CloudKit private database records, not to the server database.

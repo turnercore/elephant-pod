@@ -1,13 +1,11 @@
 import cors from 'cors';
-import { config as loadDotenv } from 'dotenv';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { ClipStore, clipHtml, parseClipPayload } from './clips.js';
-import { createOrGetSilenceJob, createOrGetSilenceMapJob, getSilenceJob, getSilenceMapJob, renderClipFile } from './mediaJobs.js';
+import { createOrGetSilenceMapJob, getSilenceMapJob, renderClipFile } from './mediaJobs.js';
 import { parseRemoteFeed } from './rss.js';
 import { requireServerServiceAccess } from './auth.js';
 import { handleAppleSignIn, handleSession, handleSignOut } from './appleAuth.js';
@@ -16,13 +14,9 @@ import { upsertPublicClip } from './database.js';
 import { readSmartSkipConfig } from './smartSkip/config.js';
 import { startSmartSkipQueue } from './smartSkip/jobs.js';
 import { registerSmartSkipRoutes } from './smartSkip/routes.js';
-import { startSmartSkipScheduler } from './smartSkip/scheduler.js';
 import { handleYoutubeAudio, handleYoutubeEnrich, handleYoutubeExtract, handleYoutubeFeed, handleYoutubeImport, handleYoutubeRefresh, isYoutubeImportConfigured } from './youtubeImport.js';
 import { readServerMaxJobs, serverJobLimiter } from './serverJobs.js';
 import { buildServerCapabilities } from './capabilities.js';
-
-loadDotenv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
-loadDotenv();
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -158,27 +152,9 @@ app.get('/media/clips/:id.mp3', async (req, res) => {
   });
 });
 
-const silenceJobSchema = z.object({
-  episodeId: z.string().min(1),
-  audioUrl: z.string().url(),
-  thresholdDb: z.number().min(-90).max(-10).default(-42),
-  minimumDurationSec: z.number().min(0.1).max(3).default(0.35),
-  bitRate: z.string().regex(/^\d{2,3}k$/).default('96k')
-});
-
 const silenceMapSchema = z.object({
   episodeId: z.string().min(1),
   audioUrl: z.string().url()
-});
-
-app.post('/api/audio/silence-shortening-jobs', serverServiceAccess, async (req, res) => {
-  try {
-    const input = silenceJobSchema.parse(req.body);
-    const job = await createOrGetSilenceJob(input, { dataDir: mediaDataDir, publicUrl, ffmpegPath: process.env.FFMPEG_PATH });
-    res.status(job.status === 'ready' ? 200 : 202).json({ jobId: job.jobId, status: job.status, audioUrl: job.publicAudioUrl, error: job.error });
-  } catch (error) {
-    res.status(422).json({ error: error instanceof Error ? error.message : 'Invalid silence-shortening request.' });
-  }
 });
 
 app.post('/api/audio/silence-maps', serverServiceAccess, async (req, res) => {
@@ -200,23 +176,6 @@ app.get('/api/audio/silence-maps/:id', serverServiceAccess, async (req, res) => 
   res.json(job);
 });
 
-app.get('/api/audio/silence-shortening-jobs/:id', (req, res) => {
-  const job = getSilenceJob(req.params.id);
-  if (!job) {
-    res.status(404).json({ error: 'Silence-shortening job not found or server was restarted before completion.' });
-    return;
-  }
-  res.json({ jobId: job.jobId, status: job.status, audioUrl: job.publicAudioUrl, error: job.error });
-});
-
-app.get('/media/silence/:id.mp3', (req, res) => {
-  const job = getSilenceJob(req.params.id);
-  const file = job?.outputPath || path.join(mediaDataDir, 'silence', `${req.params.id}.mp3`);
-  res.sendFile(file, (error) => {
-    if (error && !res.headersSent) res.status(404).json({ error: 'Silence-shortened audio not found.' });
-  });
-});
-
 app.get('/media/youtube/:id.mp3', (req, res) => {
   void handleYoutubeAudio(req, res).catch((error: unknown) => {
     if (!res.headersSent) res.status(502).json({ error: error instanceof Error ? error.message : 'YouTube audio lookup failed.' });
@@ -233,9 +192,6 @@ app.get('/media/youtube-thumbnails/:file', (req, res) => {
 
 registerSmartSkipRoutes(app, smartSkipConfig, serverServiceAccess);
 startSmartSkipQueue(smartSkipConfig);
-startSmartSkipScheduler(smartSkipConfig, () => {
-  console.log('Smart Skip proactive scheduler is configured; active-user discovery is a documented V1 follow-up.');
-});
 
 app.get('/api/podcast-index/search', discoveryServiceAccess, podcastIndexSearchHandler);
 app.get('/api/podcast-index/browse', discoveryServiceAccess, podcastIndexBrowseHandler);

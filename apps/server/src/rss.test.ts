@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parseFeedXml, parseFeedXmlWithExternalChapters } from './rss.js';
+import { parseFeedXml, parseFeedXmlWithExternalChapters, parseRemoteFeed } from './rss.js';
+
+const publicLookup = async () => [{ address: '93.184.216.34' }];
 
 describe('rss parser native contract', () => {
   it('preserves inline Podcasting 2.0 and Podlove chapter metadata', () => {
@@ -77,7 +79,7 @@ describe('rss parser native contract', () => {
     assert.equal(localOnly.episodes[0].chapters.length, 0);
     assert.equal(localOnly.externalChapterRefs.length, 1);
 
-    const result = await parseFeedXmlWithExternalChapters(xml, 'https://example.com/feed.xml', fetcher);
+    const result = await parseFeedXmlWithExternalChapters(xml, 'https://example.com/feed.xml', fetcher, { lookup: publicLookup });
 
     assert.deepEqual(calls, ['https://example.com/chapters/external-one.json']);
     assert.equal(result.episodes[0].chapters.length, 2);
@@ -105,10 +107,51 @@ describe('rss parser native contract', () => {
       </rss>
       `,
       'https://example.com/feed.xml',
-      fetcher
+      fetcher,
+      { lookup: publicLookup }
     );
 
     assert.equal(result.episodes.length, 1);
     assert.equal(result.episodes[0].chapters.length, 0);
+  });
+
+  it('rejects private feed URLs before fetching', async () => {
+    const fetcher = (async () => {
+      throw new Error('fetch should not be called for private URLs');
+    }) as typeof fetch;
+
+    await assert.rejects(
+      parseRemoteFeed('http://127.0.0.1/feed.xml', fetcher),
+      /Private network URLs are not allowed/
+    );
+  });
+
+  it('rejects oversized feed XML by content length', async () => {
+    const fetcher = (async () => new Response('', {
+      status: 200,
+      headers: { 'content-length': String(5 * 1024 * 1024 + 1) }
+    })) as typeof fetch;
+
+    await assert.rejects(
+      parseRemoteFeed('https://feeds.example.test/feed.xml', fetcher, { lookup: publicLookup }),
+      /exceeded/
+    );
+  });
+
+  it('validates redirect targets before fetching redirected feeds', async () => {
+    const calls: string[] = [];
+    const fetcher = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return new Response('', {
+        status: 302,
+        headers: { location: 'http://169.254.169.254/latest/meta-data/' }
+      });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      parseRemoteFeed('https://feeds.example.test/feed.xml', fetcher, { lookup: publicLookup }),
+      /Private network URLs are not allowed/
+    );
+    assert.deepEqual(calls, ['https://feeds.example.test/feed.xml']);
   });
 });

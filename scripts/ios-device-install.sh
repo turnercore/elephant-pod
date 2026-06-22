@@ -36,19 +36,22 @@ fi
 cd "$IOS_DIR"
 xcodegen generate
 
+DERIVED_DATA_PATH="$(mktemp -d "${TMPDIR:-/tmp}/daisypod-device-build.XXXXXX")"
+
 xcodebuild \
   -project DaisyPod.xcodeproj \
   -scheme DaisyPod \
   -configuration Debug \
   -destination "id=$DEVICE_UDID" \
+  -derivedDataPath "$DERIVED_DATA_PATH" \
   CODE_SIGN_STYLE=Automatic \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
   -allowProvisioningUpdates \
   build
 
-APP_PATH="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Debug-iphoneos/DaisyPod.app' -type d -print -quit)"
-if [[ -z "$APP_PATH" ]]; then
-  echo "Built app was not found in DerivedData." >&2
+APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug-iphoneos/DaisyPod.app"
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "Built app was not found at expected path: $APP_PATH" >&2
   exit 1
 fi
 

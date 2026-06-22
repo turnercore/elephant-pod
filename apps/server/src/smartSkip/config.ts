@@ -8,11 +8,6 @@ export interface SmartSkipConfig {
   segmenterModel: string;
   segmenterBatchEnabled: boolean;
   segmenterBatchCheckIntervalMinutes: number;
-  proactiveEnabled: boolean;
-  activeUserDays: number;
-  proactiveRunsPerDay: number;
-  maxProactiveEpisodesPerShow: number;
-  maxBacklogPerUserPerDay: number;
   processingConcurrency: number;
   dataDir: string;
   publicUrl: string;
@@ -30,11 +25,6 @@ export function readSmartSkipConfig(options: { dataDir: string; publicUrl: strin
     segmenterModel: envString('SMART_SKIP_SEGMENTER_MODEL') || 'gpt-5.4-mini',
     segmenterBatchEnabled: envBool('SMART_SKIP_SEGMENTER_BATCH_ENABLED', true),
     segmenterBatchCheckIntervalMinutes: Math.max(1, readSegmenterBatchCheckIntervalMinutes()),
-    proactiveEnabled: envBool('SMART_SKIP_PROACTIVE_ENABLED', false),
-    activeUserDays: envNumber('SMART_SKIP_ACTIVE_USER_DAYS', 30),
-    proactiveRunsPerDay: envNumber('SMART_SKIP_PROACTIVE_RUNS_PER_DAY', 2),
-    maxProactiveEpisodesPerShow: envNumber('SMART_SKIP_MAX_PROACTIVE_EPISODES_PER_SHOW', 3),
-    maxBacklogPerUserPerDay: envNumber('SMART_SKIP_MAX_BACKLOG_PER_USER_PER_DAY', 25),
     processingConcurrency: Math.max(1, envNumber('SMART_SKIP_PROCESSING_CONCURRENCY', 1)),
     ...options
   };

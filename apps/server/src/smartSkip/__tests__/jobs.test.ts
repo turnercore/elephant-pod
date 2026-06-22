@@ -110,11 +110,6 @@ function configFixture(): SmartSkipConfig {
     segmenterModel: 'mock',
     segmenterBatchEnabled: true,
     segmenterBatchCheckIntervalMinutes: 12,
-    proactiveEnabled: false,
-    activeUserDays: 30,
-    proactiveRunsPerDay: 2,
-    maxProactiveEpisodesPerShow: 3,
-    maxBacklogPerUserPerDay: 25,
     processingConcurrency: 1,
     dataDir: '.data/test',
     publicUrl: 'http://localhost:8787'

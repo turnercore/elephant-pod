@@ -1,13 +1,7 @@
 import Foundation
 import UIKit
 
-struct RSSImporting {
-  var importFeed: @MainActor (String, String?) async throws -> ParsedFeedResult
-
-  static let live = RSSImporting { feedUrl, serverUrl in
-    try await NativeRSSClient.importFeed(feedUrl: feedUrl, serverUrl: serverUrl)
-  }
-}
+typealias RSSImportHandler = @MainActor (String, String?) async throws -> ParsedFeedResult
 
 struct SyncDiagnostics: Hashable {
   var pendingActionCount: Int = 0
@@ -51,7 +45,7 @@ final class AppModel: ObservableObject {
   let repository: PodcastRepository
   private let downloadManager: NativeDownloadManager
   private let backgroundDownloadScheduler: BackgroundDownloadScheduling
-  private let rssImporter: RSSImporting
+  private let importRSS: RSSImportHandler
   private let appleAccountStatusProvider: AppleAccountStatusProviding
   private let podcastRefreshCooldown: TimeInterval
   let audio = NativeAudioEngine()
@@ -63,14 +57,16 @@ final class AppModel: ObservableObject {
     repository: PodcastRepository,
     downloadManager: NativeDownloadManager = NativeDownloadManager(),
     backgroundDownloadScheduler: BackgroundDownloadScheduling = NoopBackgroundDownloadScheduler(),
-    rssImporter: RSSImporting = .live,
+    importRSS: @escaping RSSImportHandler = { feedUrl, serverUrl in
+      try await NativeRSSClient.importFeed(feedUrl: feedUrl, serverUrl: serverUrl)
+    },
     appleAccountStatusProvider: AppleAccountStatusProviding = .live,
     podcastRefreshCooldown: TimeInterval = 20
   ) {
     self.repository = repository
     self.downloadManager = downloadManager
     self.backgroundDownloadScheduler = backgroundDownloadScheduler
-    self.rssImporter = rssImporter
+    self.importRSS = importRSS
     self.appleAccountStatusProvider = appleAccountStatusProvider
     self.podcastRefreshCooldown = podcastRefreshCooldown
     audio.onEnded = { [weak self] in
@@ -1123,7 +1119,7 @@ final class AppModel: ObservableObject {
     importingFeed = true
     Task {
       do {
-        let result = try await rssImporter.importFeed(url.absoluteString, settings.serverUrl)
+        let result = try await importRSS(url.absoluteString, settings.serverUrl)
         try repository.upsertParsedFeed(result)
         try refresh()
         selectedTab = .library
@@ -1156,7 +1152,7 @@ final class AppModel: ObservableObject {
         if podcast.sourceType?.isYouTube == true {
           result = try await refreshYouTubePodcastSource(podcast)
         } else {
-          result = try await rssImporter.importFeed(podcast.feedUrl, settings.serverUrl)
+          result = try await importRSS(podcast.feedUrl, settings.serverUrl)
         }
         try repository.upsertParsedFeed(result)
         try refresh()
@@ -1196,7 +1192,7 @@ final class AppModel: ObservableObject {
         if podcast.sourceType?.isYouTube == true {
           result = try await refreshYouTubePodcastSource(podcast)
         } else {
-          result = try await rssImporter.importFeed(podcast.feedUrl, settings.serverUrl)
+          result = try await importRSS(podcast.feedUrl, settings.serverUrl)
         }
         try repository.upsertParsedFeed(result)
         refreshedCount += 1
@@ -1429,7 +1425,7 @@ final class AppModel: ObservableObject {
         var count = 0
         for subscription in subscriptions {
           guard let url = URL(string: subscription.feedUrl), ["http", "https"].contains(url.scheme?.lowercased()) else { continue }
-          let result = try await rssImporter.importFeed(url.absoluteString, settings.serverUrl)
+          let result = try await importRSS(url.absoluteString, settings.serverUrl)
           try repository.upsertParsedFeed(result)
           count += 1
         }

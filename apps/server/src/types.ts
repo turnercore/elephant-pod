@@ -1,4 +1,6 @@
-export type ClipRenderStatus = 'local-only' | 'pending' | 'queued' | 'rendering' | 'ready' | 'rendered' | 'failed' | 'range-link' | 'time-range-only';
+export const clipRenderStatuses = ['local-only', 'pending', 'queued', 'rendering', 'ready', 'rendered', 'failed', 'range-link', 'time-range-only'] as const;
+
+export type ClipRenderStatus = typeof clipRenderStatuses[number];
 
 export interface ServerClip {
   id: string;
@@ -16,21 +18,6 @@ export interface ServerClip {
   renderStatus?: ClipRenderStatus;
   renderError?: string;
   fileSizeBytes?: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SilenceJob {
-  jobId: string;
-  episodeId: string;
-  audioUrl: string;
-  status: 'queued' | 'rendering' | 'ready' | 'failed';
-  outputPath: string;
-  publicAudioUrl?: string;
-  thresholdDb: number;
-  minimumDurationSec: number;
-  bitRate: string;
-  error?: string;
   createdAt: string;
   updatedAt: string;
 }

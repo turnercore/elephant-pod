@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { queryDatabase, withDatabaseTransaction } from './database.js';
+import * as database from './database.js';
 
 const appleIssuer = 'https://appleid.apple.com';
 const appleJwksUrl = 'https://appleid.apple.com/auth/keys';
@@ -56,6 +56,29 @@ const appleSignInSchema = z.object({
   authorizationCode: z.string().optional()
 });
 
+type AuthDependencies = {
+  queryDatabase: typeof database.queryDatabase;
+  withDatabaseTransaction: typeof database.withDatabaseTransaction;
+  verifyAppleIdentityToken: typeof verifyAppleIdentityToken;
+};
+
+const defaultAuthDependencies: AuthDependencies = {
+  queryDatabase: database.queryDatabase,
+  withDatabaseTransaction: database.withDatabaseTransaction,
+  verifyAppleIdentityToken
+};
+
+const authDependencies: AuthDependencies = { ...defaultAuthDependencies };
+
+export const __authTestHooks = {
+  setDependencies(overrides: Partial<AuthDependencies>) {
+    Object.assign(authDependencies, overrides);
+    return () => {
+      Object.assign(authDependencies, defaultAuthDependencies);
+    };
+  }
+};
+
 export async function handleAppleSignIn(req: Request, res: Response) {
   const parsed = appleSignInSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -64,7 +87,7 @@ export async function handleAppleSignIn(req: Request, res: Response) {
   }
 
   try {
-    const claims = await verifyAppleIdentityToken(parsed.data.identityToken);
+    const claims = await authDependencies.verifyAppleIdentityToken(parsed.data.identityToken);
     const session = await createAccountSession(claims);
     res.status(201).json(session);
   } catch (error) {
@@ -112,8 +135,7 @@ export async function getBearerSessionAuthContext(req: Request): Promise<AppleSe
   const token = readBearerToken(req);
   if (!token) return null;
   const tokenHash = hashToken(token);
-  await ensureAuthSchema();
-  const rows = await queryDatabase<{
+  const rows = await authDependencies.queryDatabase<{
     session_id: string;
     account_id: string;
     email: string | null;
@@ -129,7 +151,7 @@ export async function getBearerSessionAuthContext(req: Request): Promise<AppleSe
   );
   const row = rows?.[0];
   if (!row) return null;
-  await queryDatabase('update public.daisy_accounts set last_seen_at = now() where id = $1', [row.account_id]);
+  await authDependencies.queryDatabase('update public.daisy_accounts set last_seen_at = now() where id = $1', [row.account_id]);
   return {
     userId: row.account_id,
     email: row.email,
@@ -168,34 +190,39 @@ export async function verifyAppleIdentityToken(identityToken: string): Promise<A
 async function createAccountSession(claims: AppleClaims) {
   const accessToken = crypto.randomBytes(sessionTokenBytes).toString('base64url');
   const tokenHash = hashToken(accessToken);
-  await ensureAuthSchema();
-  const rows = await withDatabaseTransaction<DaisySessionRow[]>(async (query) => {
-    const accounts = await query<{
-      id: string;
-      email: string | null;
-    }>(
-      `insert into public.daisy_accounts (apple_sub, email, email_verified, last_seen_at)
-        values ($1, $2, $3, now())
-        on conflict (apple_sub) do update set
-          email = coalesce(excluded.email, public.daisy_accounts.email),
-          email_verified = coalesce(excluded.email_verified, public.daisy_accounts.email_verified),
-          updated_at = now(),
-          last_seen_at = now()
-        returning id, email`,
-      [claims.sub, claims.email ?? null, parseEmailVerified(claims.email_verified)]
-    );
-    const account = accounts[0];
-    const sessions = await query<DaisySessionRow>(
-      `insert into public.daisy_sessions (account_id, token_hash, last_seen_at)
-        values ($1, $2, now())
-        returning id as session_id, account_id, $3::text as email, created_at::text`,
-      [account.id, tokenHash, account.email]
-    );
-    return sessions;
-  });
+  let rows: DaisySessionRow[] | null;
+  try {
+    rows = await authDependencies.withDatabaseTransaction<DaisySessionRow[]>(async (query) => {
+      const accounts = await query<{
+        id: string;
+        email: string | null;
+      }>(
+        `insert into public.daisy_accounts (apple_sub, email, email_verified, last_seen_at)
+          values ($1, $2, $3, now())
+          on conflict (apple_sub) do update set
+            email = coalesce(excluded.email, public.daisy_accounts.email),
+            email_verified = coalesce(excluded.email_verified, public.daisy_accounts.email_verified),
+            updated_at = now(),
+            last_seen_at = now()
+          returning id, email`,
+        [claims.sub, claims.email ?? null, parseEmailVerified(claims.email_verified)]
+      );
+      const account = accounts[0];
+      if (!account) throw new Error('Missing DaisyPod account row.');
+      const sessions = await query<DaisySessionRow>(
+        `insert into public.daisy_sessions (account_id, token_hash, last_seen_at)
+          values ($1, $2, now())
+          returning id as session_id, account_id, $3::text as email, created_at::text`,
+        [account.id, tokenHash, account.email]
+      );
+      return sessions;
+    });
+  } catch (error) {
+    throw serverDatabaseUnavailableError();
+  }
   const session = rows?.[0];
   if (!session) {
-    throw new AppleAuthError('Apple sign-in needs the server database.', 'server_database_unavailable', 503);
+    throw serverDatabaseUnavailableError();
   }
   return {
     accessToken,
@@ -208,35 +235,14 @@ async function createAccountSession(claims: AppleClaims) {
 }
 
 async function revokeSession(token: string) {
-  await ensureAuthSchema();
-  await queryDatabase(
+  await authDependencies.queryDatabase(
     'update public.daisy_sessions set revoked_at = now() where token_hash = $1 and revoked_at is null',
     [hashToken(token)]
   );
 }
 
-async function ensureAuthSchema() {
-  await queryDatabase('create extension if not exists pgcrypto');
-  await queryDatabase(`
-    create table if not exists public.daisy_accounts (
-      id uuid primary key default gen_random_uuid(),
-      apple_sub text not null unique,
-      email text,
-      email_verified boolean,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      last_seen_at timestamptz
-    )`);
-  await queryDatabase(`
-    create table if not exists public.daisy_sessions (
-      id uuid primary key default gen_random_uuid(),
-      account_id uuid not null references public.daisy_accounts(id) on delete cascade,
-      token_hash text not null unique,
-      created_at timestamptz not null default now(),
-      last_seen_at timestamptz,
-      revoked_at timestamptz
-    )`);
-  await queryDatabase('create index if not exists idx_daisy_sessions_account on public.daisy_sessions(account_id, created_at desc)');
+function serverDatabaseUnavailableError() {
+  return new AppleAuthError('Apple sign-in needs the server database.', 'server_database_unavailable', 503);
 }
 
 async function fetchAppleKeys(): Promise<AppleJwk[]> {

@@ -67,8 +67,8 @@ Server services should become Apple-native:
 
 ## Native Implementation Plan
 
-1. Add an internal `PersonalSyncEngine` boundary in Swift so the UI talks to one sync coordinator instead of assuming a server route.
-   - Status: implemented. `PersonalSyncEngine.swift` contains a `PersonalSyncing` protocol backed by `CloudKitPersonalSyncEngine`.
+1. Keep the UI pointed at a native sync coordinator instead of assuming a server route.
+   - Status: implemented. `CloudKitPersonalSyncEngine` prepares local snapshots, merges remote records, restores portable state, and uploads through the selected CloudKit store.
 2. Keep SQLite as the canonical local store and map local repository changes into idempotent sync actions.
 3. Add a CloudKit adapter behind that boundary:
    - Use private database records for personal rows.

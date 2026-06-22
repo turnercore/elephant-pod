@@ -86,7 +86,12 @@ struct CloudKitPersonalSyncResult: Equatable {
   var message: String
 }
 
-struct CloudKitPersonalSyncEngine: PersonalSyncing {
+struct PersonalSyncResult: Equatable {
+  var pageCount: Int
+  var message: String
+}
+
+struct CloudKitPersonalSyncEngine {
   var repository: PodcastRepository
   var store: CloudKitPersonalSyncStoring
 

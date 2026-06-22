@@ -1,4 +1,4 @@
-export type ServerJobKind = 'youtube-metadata' | 'youtube-audio' | 'clip-render' | 'silence-render' | 'silence-map';
+export type ServerJobKind = 'youtube-metadata' | 'youtube-audio' | 'clip-render' | 'silence-map';
 
 export class ServerJobLimiter {
   private active = 0;

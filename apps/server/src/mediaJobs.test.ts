@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it } from 'node:test';
-import { parseSilenceDetect, resolveSilenceMapConfig } from './mediaJobs.js';
+import { createOrGetSilenceMapJob, parseSilenceDetect, renderClipFile, resolveSilenceMapConfig } from './mediaJobs.js';
+import type { ServerClip } from './types.js';
 
 describe('resolveSilenceMapConfig', () => {
   it('uses defaults for unset env', () => {
@@ -72,5 +76,49 @@ describe('parseSilenceDetect', () => {
       skipToSec: 5,
       retainedSilenceSec: 0.25
     });
+  });
+});
+
+describe('media URL safety', () => {
+  it('fails clip rendering for private audio URLs before ffmpeg runs', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'daisypod-clip-test-'));
+    const now = new Date().toISOString();
+    const clip: ServerClip = {
+      id: 'private-clip',
+      episodeId: 'episode-one',
+      podcastTitle: 'Podcast',
+      episodeTitle: 'Episode',
+      sourceAudioUrl: 'http://127.0.0.1/audio.mp3',
+      startSec: 1,
+      endSec: 5,
+      title: 'Clip',
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const result = await renderClipFile(clip, {
+      dataDir: dir,
+      publicUrl: 'https://pod.example.test',
+      ffmpegPath: '/missing-ffmpeg-for-test',
+      enabled: true
+    });
+
+    assert.equal(result.renderStatus, 'failed');
+    assert.match(String(result.renderError), /Private network URLs are not allowed/);
+  });
+
+  it('fails silence-map jobs for private audio URLs before queueing ffmpeg work', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'daisypod-silence-test-'));
+    const job = await createOrGetSilenceMapJob(
+      { episodeId: 'episode-one', audioUrl: 'http://[::1]/audio.mp3' },
+      {
+        dataDir: dir,
+        publicUrl: 'https://pod.example.test',
+        ffmpegPath: '/missing-ffmpeg-for-test'
+      }
+    );
+
+    assert.equal(job.status, 'failed');
+    assert.match(String(job.error), /Private network URLs are not allowed/);
   });
 });

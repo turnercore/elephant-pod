@@ -27,14 +27,7 @@ DAISYPOD_DEVELOPMENT_TEAM=<apple-team-id> \
 npm run ios:install:device -- <device-udid> <coredevice-id>
 ```
 
-The SuperZima wrapper is retained for compatibility and delegates to the same
-device install flow. Protected backend features use Sign in with Apple after
-install rather than a bundled native app token:
-
-```bash
-DAISYPOD_DEVELOPMENT_TEAM=<apple-team-id> \
-npm run ios:install:superzima -- <device-udid> <coredevice-id>
-```
+The install script builds into a per-run DerivedData directory and installs the `DaisyPod.app` produced by that build.
 
 The currently known local device ids are:
 
@@ -50,7 +43,7 @@ If Xcode reports `Personal development teams ... do not support the iCloud capab
 - SwiftUI app shell with native top navigation and a persistent player surface.
 - SQLite-backed local object store with explicit schema versioning.
 - Local-first repository APIs for library, Inbox, Queue, downloads, settings, playback state, sync actions, and tombstones.
-- `PersonalSyncing` boundary backed by `CloudKitPersonalSyncEngine` for deterministic private-database record snapshots, live CloudKit private-zone upload/download when iCloud is available, and portable local restore after local/remote merge.
+- `CloudKitPersonalSyncEngine` for deterministic private-database record snapshots, live CloudKit private-zone upload/download when iCloud is available, and portable local restore after local/remote merge.
 - Native OPML and JSON backup import/export using iOS document flows.
 - Native `AVPlayer` audio engine with background audio, Now Playing metadata, and remote commands.
 - Existing DaisyPod backend remains the server boundary for RSS proxying, PodcastIndex, public clips, YouTube import, silence maps, Smart Skip, health, and capabilities.

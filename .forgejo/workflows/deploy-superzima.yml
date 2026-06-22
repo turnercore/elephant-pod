@@ -71,7 +71,7 @@ jobs:
 
           rsync -a \
             -e "ssh ${ssh_opts[*]}" \
-            deploy/superzima/postgres/init.sql \
+            infra/postgres/init.sql \
             "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}:$DEPLOY_ROOT/postgres/init.sql"
 
           rsync -a \

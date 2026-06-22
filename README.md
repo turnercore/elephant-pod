@@ -52,7 +52,7 @@ without copying secrets into the shell history:
 
 ```bash
 DAISYPOD_DEVELOPMENT_TEAM=<apple-team-id> \
-npm run ios:install:superzima -- <device-udid> <coredevice-id>
+npm run ios:install:device -- <device-udid> <coredevice-id>
 ```
 
 ## Root Checks

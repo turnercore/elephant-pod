@@ -1,7 +1,10 @@
 import { XMLParser } from 'fast-xml-parser';
 import crypto from 'node:crypto';
+import { fetchBoundedText, type UrlSafetyOptions } from './urlSafety.js';
 
 const MAX_EXTERNAL_CHAPTER_BYTES = 512 * 1024;
+const MAX_FEED_BYTES = 5 * 1024 * 1024;
+const FEED_FETCH_TIMEOUT_MS = 15_000;
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -145,22 +148,21 @@ function parseExternalChapterJson(raw: unknown, feedUrl: string, guid: string) {
     .sort((a, b) => a.startsAt - b.startsAt);
 }
 
-async function fetchExternalChapters(chapterUrl: string, feedUrl: string, guid: string, fetcher: typeof fetch = fetch) {
+async function fetchExternalChapters(chapterUrl: string, feedUrl: string, guid: string, fetcher: typeof fetch = fetch, safetyOptions: UrlSafetyOptions = {}) {
   const url = new URL(chapterUrl, feedUrl);
   if (!['http:', 'https:'].includes(url.protocol)) return [];
-  const response = await fetcher(url, {
+  const { body, response } = await fetchBoundedText(url, {
+    ...safetyOptions,
+    fetcher,
+    maxBytes: MAX_EXTERNAL_CHAPTER_BYTES,
+    timeoutMs: FEED_FETCH_TIMEOUT_MS,
     headers: {
       accept: 'application/json',
       'user-agent': 'DaisyPod/0.4 (+https://elephanthand.com)'
-    },
-    redirect: 'follow'
+    }
   });
   if (!response.ok) return [];
-  const contentLength = Number(response.headers.get('content-length') || 0);
-  if (contentLength > MAX_EXTERNAL_CHAPTER_BYTES) return [];
-  const textBody = await response.text();
-  if (Buffer.byteLength(textBody, 'utf8') > MAX_EXTERNAL_CHAPTER_BYTES) return [];
-  return parseExternalChapterJson(JSON.parse(textBody), feedUrl, guid);
+  return parseExternalChapterJson(JSON.parse(body), feedUrl, guid);
 }
 
 export function parseFeedXml(xml: string, feedUrl: string) {
@@ -232,13 +234,13 @@ export function parseFeedXml(xml: string, feedUrl: string) {
   return { podcast, episodes, externalChapterRefs };
 }
 
-export async function parseFeedXmlWithExternalChapters(xml: string, feedUrl: string, fetcher: typeof fetch = fetch) {
+export async function parseFeedXmlWithExternalChapters(xml: string, feedUrl: string, fetcher: typeof fetch = fetch, safetyOptions: UrlSafetyOptions = {}) {
   const parsed = parseFeedXml(xml, feedUrl);
   const chapterMap = new Map<string, Awaited<ReturnType<typeof fetchExternalChapters>>>();
   await Promise.all(
     parsed.externalChapterRefs.map(async (ref) => {
       try {
-        const chapters = await fetchExternalChapters(ref.url, feedUrl, ref.guid, fetcher);
+        const chapters = await fetchExternalChapters(ref.url, feedUrl, ref.guid, fetcher, safetyOptions);
         if (chapters.length) chapterMap.set(ref.episodeId, chapters);
       } catch {
         // External chapter metadata is optional; failed fetches should not break RSS import.
@@ -254,14 +256,17 @@ export async function parseFeedXmlWithExternalChapters(xml: string, feedUrl: str
   };
 }
 
-export async function parseRemoteFeed(feedUrl: string) {
-  const response = await fetch(feedUrl, {
+export async function parseRemoteFeed(feedUrl: string, fetcher: typeof fetch = fetch, safetyOptions: UrlSafetyOptions = {}) {
+  const { body, response } = await fetchBoundedText(feedUrl, {
+    ...safetyOptions,
+    fetcher,
+    maxBytes: MAX_FEED_BYTES,
+    timeoutMs: FEED_FETCH_TIMEOUT_MS,
     headers: {
+      accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
       'user-agent': 'DaisyPod/0.4 (+https://elephanthand.com)'
-    },
-    redirect: 'follow'
+    }
   });
   if (!response.ok) throw new Error(`Feed returned ${response.status}`);
-  const xml = await response.text();
-  return parseFeedXmlWithExternalChapters(xml, feedUrl);
+  return parseFeedXmlWithExternalChapters(body, feedUrl, fetcher, safetyOptions);
 }
