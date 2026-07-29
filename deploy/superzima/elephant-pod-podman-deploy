@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly DEPLOY_ROOT=/mnt/nvme/apps/elephant-pod
+
+exec 9>/run/lock/elephant-pod-podman-deploy.lock
+flock -n 9 || {
+  echo "Another Elephant Pod deployment is active." >&2
+  exit 75
+}
+[[ $(id -u) -eq 0 ]] || {
+  echo "This fixed-scope deployment helper must run as root." >&2
+  exit 77
+}
+
+cd "$DEPLOY_ROOT"
+podman compose config --quiet
+podman compose pull
+podman compose up -d postgres
+for migration in postgres/migrations/*.sql; do
+  [[ -f "$migration" ]] || continue
+  podman compose exec -T postgres \
+    psql -U postgres -d elephant_pod -v ON_ERROR_STOP=1 < "$migration"
+done
+podman compose up -d --force-recreate
+podman compose ps

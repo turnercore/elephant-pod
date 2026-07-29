@@ -19,7 +19,7 @@ on:
 
 env:
   REGISTRY: forge.elephanthand.com
-  DOCKER_HOST: tcp://172.17.0.1:2375
+  CONTAINER_HOST: tcp://host.containers.internal:2375
 
 jobs:
   publish:
@@ -54,14 +54,14 @@ jobs:
             echo "REGISTRY_USER/REGISTRY_USERNAME and REGISTRY_TOKEN secrets are required."
             exit 1
           fi
-          printf '%s' "$REGISTRY_TOKEN" | docker login "$REGISTRY" --username "$registry_user" --password-stdin
+          printf '%s' "$REGISTRY_TOKEN" | podman --remote login "$REGISTRY" --username "$registry_user" --password-stdin
 
       - name: Build and push ${{ matrix.name }} image
         run: |
           set -Eeuo pipefail
 
           short_sha="$(git rev-parse --short HEAD)"
-          docker build \
+          podman --remote build \
             --file "${{ matrix.dockerfile }}" \
             --platform linux/amd64 \
             --label "org.opencontainers.image.source=https://forge.elephanthand.com/elephant-hand-games/elephant-pod" \
@@ -69,8 +69,8 @@ jobs:
             --tag "${{ matrix.image }}:sha-${short_sha}" \
             .
 
-          docker push "${{ matrix.image }}:latest"
-          docker push "${{ matrix.image }}:sha-${short_sha}"
+          podman --remote push "${{ matrix.image }}:latest"
+          podman --remote push "${{ matrix.image }}:sha-${short_sha}"
 
   deploy-superzima:
     name: Refresh Superzima stack
@@ -126,29 +126,6 @@ jobs:
             infra/postgres/migrations/ \
             "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}:$DEPLOY_ROOT/postgres/migrations/"
 
-      - name: Log in to Forgejo registry on the host
-        env:
-          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
-          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
-        run: |
-          set -Eeuo pipefail
-
-          ssh_opts=(
-            -i "$RUNNER_TEMP/superzima-ssh/id_ed25519"
-            -o UserKnownHostsFile="$RUNNER_TEMP/superzima-ssh/known_hosts"
-            -o StrictHostKeyChecking=yes
-            -o BatchMode=yes
-          )
-
-          registry_user="${REGISTRY_USER:-${REGISTRY_USERNAME:-}}"
-          if [ -z "$registry_user" ] || [ -z "${REGISTRY_TOKEN:-}" ]; then
-            echo "REGISTRY_USER/REGISTRY_USERNAME and REGISTRY_TOKEN secrets are required."
-            exit 1
-          fi
-          printf '%s' "$REGISTRY_TOKEN" | ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
-            "docker login '$REGISTRY' -u '$registry_user' --password-stdin"
-
       - name: Pull image, migrate database, and restart the stack
         run: |
           set -Eeuo pipefail
@@ -161,12 +138,4 @@ jobs:
           )
 
           ssh "${ssh_opts[@]}" "${SUPERZIMA_SSH_USER}@${SUPERZIMA_SSH_HOST}" \
-            "cd '$DEPLOY_ROOT' && \
-             docker compose config --quiet && \
-             docker compose pull && \
-             docker compose up -d postgres && \
-             for migration in postgres/migrations/*.sql; do \
-               [ -f \"\$migration\" ] || continue; \
-               docker compose exec -T postgres psql -U postgres -d elephant_pod -v ON_ERROR_STOP=1 < \"\$migration\"; \
-             done && \
-             docker compose up -d --force-recreate"
+            "sudo -n /usr/local/sbin/elephant-pod-podman-deploy"

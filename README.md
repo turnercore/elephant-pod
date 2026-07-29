@@ -9,7 +9,7 @@ The backend in `apps/server` remains the durable service boundary for RSS parsin
 ```text
 apps/ios        Native SwiftUI iPhone app, SQLite local store, AVPlayer engine, tests
 apps/server     Express backend for RSS, clips, PodcastIndex, YouTube, silence maps, Smart Skip
-infra           Docker Compose and Postgres schema for local backend development
+infra           Podman Compose and Postgres schema for local backend development
 deploy          Superzima deployment compose files
 workers         Optional Smart Skip worker services
 docs            Architecture, audio, accessibility, iCloud sync, roadmap, validation
@@ -94,27 +94,27 @@ Important environment variables:
 
 Server secrets must stay server-side. Do not put PodcastIndex, database, account-session tokens, or processing-service credentials into public client config. PodcastIndex discovery accepts native service headers; protected processing and publishing features require an Apple-backed backend session stored in the iOS Keychain.
 
-## Docker
+## Podman
 
 Direct server image:
 
 ```bash
-docker build -f apps/server/Dockerfile -t daisy-pod:local .
-docker run --env-file .env -p 8787:8787 daisy-pod:local
+podman build -f apps/server/Dockerfile -t daisy-pod:local .
+podman run --env-file .env -p 8787:8787 daisy-pod:local
 ```
 
 Local app server plus Postgres:
 
 ```bash
 cd infra
-docker compose up -d
+podman compose up -d
 ```
 
 Optional Smart Skip workers:
 
 ```bash
 cd infra
-SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
+SMART_SKIP_ENABLED=true podman compose --profile smart-skip up --build
 ```
 
 ## Deployment

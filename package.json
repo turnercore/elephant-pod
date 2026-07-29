@@ -18,8 +18,8 @@
     "ios:build": "cd apps/ios && xcodegen generate && xcodebuild -project DaisyPod.xcodeproj -scheme DaisyPod -destination 'platform=iOS Simulator,name=iPhone 13 mini' build",
     "ios:test": "cd apps/ios && xcodegen generate && xcodebuild test -project DaisyPod.xcodeproj -scheme DaisyPod -destination 'platform=iOS Simulator,name=iPhone 13 mini'",
     "ios:install:device": "scripts/ios-device-install.sh",
-    "docker:build": "docker build -f apps/server/Dockerfile -t daisy-pod:local .",
-    "docker:run": "docker run --env-file .env -p 8787:8787 daisy-pod:local"
+    "podman:build": "podman build -f apps/server/Dockerfile -t daisy-pod:local .",
+    "podman:run": "podman run --env-file .env -p 8787:8787 daisy-pod:local"
   },
   "engines": {
     "node": ">=22"

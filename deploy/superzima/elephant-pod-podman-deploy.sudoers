@@ -1,0 +1,2 @@
+# Install as /etc/sudoers.d/elephant-pod-podman-deploy with mode 0440.
+turnercore ALL=(root) NOPASSWD: /usr/local/sbin/elephant-pod-podman-deploy

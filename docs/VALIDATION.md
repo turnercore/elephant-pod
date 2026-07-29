@@ -87,14 +87,14 @@ Warnings/notes:
 - Physical iPhone validation is still required for lock-screen metadata, Control Center, AirPods/Bluetooth, interruptions, route changes, cellular/Wi-Fi transitions, deep-link auth, app relaunch, and system-scheduled background download/playback behavior.
 - CloudKit account status is linked and calls `accountStatus` on the explicit `iCloud.com.elephanthand.daisypod` container. Physical-device provisioning validation is still required with an online device.
 - Live CloudKit two-device validation is still required against physical Apple devices using the change-token optimized incremental sync path.
-- Docker Compose backend/Postgres flows are not covered by the root validation commands.
+- Podman Compose backend/Postgres flows are not covered by the root validation commands.
 - The retired React/Tauri frontend is no longer part of validation or the runtime repository.
 
 Smart Skip local mock check:
 
 ```bash
 cd infra
-SMART_SKIP_ENABLED=true docker compose --profile smart-skip up --build
+SMART_SKIP_ENABLED=true podman compose --profile smart-skip up --build
 ```
 
 Then sign in with Apple, queue a test episode in the native app, and confirm `POST /api/smart-skip/process` requires the backend account session. Local playback should continue normally when Smart Skip is unavailable.
@@ -104,7 +104,7 @@ Real segmenter check:
 
 ```bash
 cd infra
-SMART_SKIP_ENABLED=true MOCK_SEGMENTER=false OPENAI_API_KEY=sk-... docker compose --profile smart-skip up --build openai-batch-segmenter
+SMART_SKIP_ENABLED=true MOCK_SEGMENTER=false OPENAI_API_KEY=sk-... podman compose --profile smart-skip up --build openai-batch-segmenter
 curl http://localhost:8002/health
 ```
 
