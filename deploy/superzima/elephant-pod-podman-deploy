@@ -17,6 +17,16 @@ cd "$DEPLOY_ROOT"
 podman compose config --quiet
 podman compose pull
 podman compose up -d postgres
+for attempt in $(seq 1 60); do
+  if podman compose exec -T postgres pg_isready -U postgres -d elephant_pod; then
+    break
+  fi
+  if [[ $attempt -eq 60 ]]; then
+    echo "Elephant Pod PostgreSQL did not become ready within 60 seconds." >&2
+    exit 1
+  fi
+  sleep 1
+done
 for migration in postgres/migrations/*.sql; do
   [[ -f "$migration" ]] || continue
   podman compose exec -T postgres \
