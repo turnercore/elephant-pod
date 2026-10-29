@@ -121,9 +121,9 @@ SMART_SKIP_ENABLED=true podman compose --profile smart-skip up --build
 
 Forgejo Actions builds and publishes:
 
-- `forge.elephanthand.com/elephant-hand-games/daisy-pod-server`
-- `forge.elephanthand.com/elephant-hand-games/daisy-pod-segmenter`
-- `forge.elephanthand.com/elephant-hand-games/daisy-pod-whisper-worker`
+- `forge.elephanthand.com/elephant-hand/daisy-pod-server`
+- `forge.elephanthand.com/elephant-hand/daisy-pod-segmenter`
+- `forge.elephanthand.com/elephant-hand/daisy-pod-whisper-worker`
 
 Superzima pulls those images through `deploy/superzima/docker-compose.yml`. The live app server is published on Tailscale at `100.92.133.126:20001`, with the public proxy expected to route `pod.elephanthand.com` there.
 
