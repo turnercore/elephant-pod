@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
 
   daisy-pod:
-    image: forge.elephanthand.com/elephant-hand-games/daisy-pod-server:latest
+    image: forge.elephanthand.com/elephant-hand/daisy-pod-server:latest
     container_name: daisy-pod
     env_file:
       - path: ./.env
@@ -64,7 +64,7 @@ services:
     restart: unless-stopped
 
   openai-batch-segmenter:
-    image: forge.elephanthand.com/elephant-hand-games/daisy-pod-segmenter:latest
+    image: forge.elephanthand.com/elephant-hand/daisy-pod-segmenter:latest
     environment:
       SEGMENTER_MODEL: ${SMART_SKIP_SEGMENTER_MODEL:-gpt-5.4-mini}
       # Segmenter backend options: "none" disables real segmenting;
@@ -76,7 +76,7 @@ services:
     profiles: ["smart-skip"]
 
   whisper-worker:
-    image: forge.elephanthand.com/elephant-hand-games/daisy-pod-whisper-worker:latest
+    image: forge.elephanthand.com/elephant-hand/daisy-pod-whisper-worker:latest
     environment:
       WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
